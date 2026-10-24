@@ -22,6 +22,10 @@ final class Renderer: NSObject, MTKViewDelegate {
     /// Main thread. False draws the cloud on black so the filmer can judge coverage.
     var showsCameraFeed = true
 
+    /// Main thread. Dims the frozen room cloud while the moment records, so
+    /// people in the camera feed stay readable over it.
+    var dimsCloud = false
+
     private let session: ARSession
     private let accumulator: PointAccumulator
     private let commandQueue: MTLCommandQueue
@@ -122,7 +126,7 @@ final class Renderer: NSObject, MTKViewDelegate {
             var uniforms = PointUniforms(
                 viewProjection: projection * viewMatrix,
                 pointSize: Float(2.5 * view.contentScaleFactor),
-                brightness: showsCameraFeed ? 1.2 : 1.0)
+                brightness: dimsCloud ? 0.5 : (showsCameraFeed ? 1.2 : 1.0))
             encoder.setRenderPipelineState(pointPipeline)
             encoder.setDepthStencilState(pointDepthState)
             encoder.setVertexBuffer(accumulator.pointBuffer, offset: 0, index: 0)

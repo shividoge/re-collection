@@ -10,6 +10,7 @@ final class CaptureEngine: NSObject, ARSessionDelegate {
         case tracking(String?)
         case pointCount(Int)
         case roomCaptured
+        case momentTimeLimitReached
         case failed(String)
     }
 
@@ -28,6 +29,7 @@ final class CaptureEngine: NSObject, ARSessionDelegate {
     private var isAccumulating = false
     private var lastAccumulatedPose: simd_float4x4?
     private var lastCountReport: TimeInterval = 0
+    private var recorder: CaptureRecorder?
 
     init(accumulator: PointAccumulator?) {
         self.accumulator = accumulator
@@ -36,9 +38,15 @@ final class CaptureEngine: NSObject, ARSessionDelegate {
         session.delegateQueue = captureQueue
     }
 
-    func start(token: UUID) {
+    /// Starts a fresh capture whose files go in `folder`.
+    func start(token: UUID, folder: URL) {
         captureQueue.async {
             self.token = token
+            do {
+                self.recorder = try CaptureRecorder(folder: folder)
+            } catch {
+                self.emit(.failed("The capture files couldn't be created: \(error.localizedDescription)"))
+            }
             self.isAccumulating = true
             self.lastAccumulatedPose = nil
             self.lastCountReport = 0
@@ -50,6 +58,9 @@ final class CaptureEngine: NSObject, ARSessionDelegate {
         config.sceneReconstruction = []                  // our point cloud replaces the mesh
         config.environmentTexturing = .none
         config.planeDetection = []
+        // Set from the start: changing the configuration later could shift
+        // the world frame, and the scan and the moment must share one.
+        config.providesAudioData = true
         // Keep the default 1920x1440 @ 30 fps format: same 4:3 aspect as the
         // 256x192 depth map, so image and depth pixels map by a straight scale.
         session.run(config, options: [.resetTracking, .removeExistingAnchors])
@@ -60,7 +71,24 @@ final class CaptureEngine: NSObject, ARSessionDelegate {
     func pauseAccumulation(then: @escaping () -> Void) {
         captureQueue.async {
             self.isAccumulating = false
+            self.recorder?.pauseScan()
             then()
+        }
+    }
+
+    /// Starts recording the moment on the next frame, in the same session.
+    func beginMoment() {
+        captureQueue.async { self.recorder?.beginMoment() }
+    }
+
+    /// Finishes the moment's files. `completion` runs on an arbitrary queue.
+    func finishMoment(completion: @escaping (Result<CaptureRecorder.MomentResult, Error>) -> Void) {
+        captureQueue.async {
+            guard let recorder = self.recorder else {
+                completion(.failure(RecorderError.noFrames))
+                return
+            }
+            recorder.finishMoment(completion: completion)
         }
     }
 
@@ -69,6 +97,8 @@ final class CaptureEngine: NSObject, ARSessionDelegate {
         captureQueue.async {
             self.token = nil
             self.isAccumulating = false
+            self.recorder?.cancel()
+            self.recorder = nil
         }
     }
 
@@ -80,7 +110,24 @@ final class CaptureEngine: NSObject, ARSessionDelegate {
     // MARK: ARSessionDelegate
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
-        guard token != nil, isAccumulating, let accumulator else { return }
+        guard token != nil else { return }
+        if let recorder {
+            switch recorder.handle(frame) {
+            case .ok: break
+            case .reachedTimeLimit: emit(.momentTimeLimitReached)
+            case .failed(let message): emit(.failed(message))
+            }
+        }
+        accumulate(frame)
+    }
+
+    func session(_ session: ARSession, didOutputAudioSampleBuffer audioSampleBuffer: CMSampleBuffer) {
+        guard token != nil else { return }
+        recorder?.handleAudio(audioSampleBuffer)
+    }
+
+    private func accumulate(_ frame: ARFrame) {
+        guard isAccumulating, let accumulator else { return }
 
         // Limited tracking means the pose is unreliable; points would land in
         // the wrong place and never come out again.
@@ -126,6 +173,8 @@ final class CaptureEngine: NSObject, ARSessionDelegate {
         let message: String
         if let arError = error as? ARError, arError.code == .cameraUnauthorized {
             message = "Braindance needs camera access. Turn it on in Settings > Braindance, then try again."
+        } else if let arError = error as? ARError, arError.code == .microphoneUnauthorized {
+            message = "Braindance needs microphone access to record the visit. Turn it on in Settings > Braindance, then try again."
         } else {
             message = "The capture stopped: \(error.localizedDescription)"
         }

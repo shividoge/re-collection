@@ -12,6 +12,7 @@ struct ScanView: View {
                     session: model.engine.session,
                     accumulator: accumulator,
                     showsCameraFeed: model.showsCameraFeed,
+                    dimsCloud: model.isRecordingMoment,
                     onFPS: { fps in Task { @MainActor in model.previewFPS = fps } },
                     onFailure: { message in Task { @MainActor in model.fail(message) } })
                     .ignoresSafeArea()
@@ -57,23 +58,75 @@ struct ScanView: View {
             .background(.ultraThinMaterial, in: Capsule())
 
         case .roomSaved(let export):
-            VStack(spacing: 12) {
+            panel {
                 Text("Room saved: \(Self.formatPoints(export.pointCount)) at 1 cm")
                     .font(.callout.weight(.medium))
+                Button {
+                    model.recordMoment()
+                } label: {
+                    Label("Record the visit", systemImage: "record.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .controlSize(.large)
                 HStack(spacing: 16) {
                     ShareLink(items: [export.plyURL, export.binURL]) {
-                        Label("Share room files", systemImage: "square.and.arrow.up")
+                        Label("Share room", systemImage: "square.and.arrow.up")
+                    }
+                    Button("Done") { model.stopScan() }
+                }
+                .buttonStyle(.bordered)
+            }
+
+        case .recordingMoment(let startedAt):
+            VStack(spacing: 12) {
+                TimelineView(.periodic(from: startedAt, by: 1)) { context in
+                    let elapsed = max(0, Int(context.date.timeIntervalSince(startedAt)))
+                    Label("\(Self.formatTime(elapsed)) / 3:00", systemImage: "record.circle.fill")
+                        .font(.title3.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.red)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+                Button {
+                    model.stopMoment()
+                } label: {
+                    Label("Stop recording", systemImage: "stop.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .controlSize(.large)
+            }
+
+        case .savingMoment:
+            HStack(spacing: 12) {
+                ProgressView()
+                Text("Saving the visit…")
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(.ultraThinMaterial, in: Capsule())
+
+        case .momentSaved(let capture):
+            panel {
+                Text("Visit saved: \(Self.formatTime(Int(capture.durationSec.rounded()))), \(capture.frameCount) frames, \(capture.depthCount) depth frames")
+                    .font(.callout.weight(.medium))
+                    .multilineTextAlignment(.center)
+                ForEach(capture.warnings, id: \.self) { warning in
+                    Text(warning).font(.footnote).foregroundStyle(.orange)
+                }
+                HStack(spacing: 16) {
+                    ShareLink(item: capture.zipURL) {
+                        Label("Share capture", systemImage: "square.and.arrow.up")
                     }
                     .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-
                     Button("Done") { model.stopScan() }
                         .buttonStyle(.bordered)
-                        .controlSize(.large)
                 }
+                .controlSize(.large)
             }
-            .padding()
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
 
         default:
             HStack(spacing: 12) {
@@ -93,6 +146,17 @@ struct ScanView: View {
         }
     }
 
+    private func panel<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(spacing: 12, content: content)
+            .padding()
+            .frame(maxWidth: 420)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+    }
+
+    private static func formatTime(_ seconds: Int) -> String {
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
     private var statusMessage: String? {
         model.roomCaptured ? "Room captured" : model.trackingMessage
     }
@@ -110,6 +174,7 @@ struct CameraMetalView: UIViewRepresentable {
     let session: ARSession
     let accumulator: PointAccumulator
     let showsCameraFeed: Bool
+    let dimsCloud: Bool
     let onFPS: (Double) -> Void
     let onFailure: (String) -> Void
 
@@ -133,6 +198,7 @@ struct CameraMetalView: UIViewRepresentable {
             let renderer = try Renderer(view: view, session: session, accumulator: accumulator)
             renderer.onFPS = onFPS
             renderer.showsCameraFeed = showsCameraFeed
+            renderer.dimsCloud = dimsCloud
             context.coordinator.renderer = renderer
             view.delegate = renderer
         } catch {
@@ -143,5 +209,6 @@ struct CameraMetalView: UIViewRepresentable {
 
     func updateUIView(_ view: MTKView, context: Context) {
         context.coordinator.renderer?.showsCameraFeed = showsCameraFeed
+        context.coordinator.renderer?.dimsCloud = dimsCloud
     }
 }
