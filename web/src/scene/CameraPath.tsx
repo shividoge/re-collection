@@ -1,66 +1,74 @@
-import { Line } from '@react-three/drei';
-import { useFrame } from '@react-three/fiber';
-import { useMemo, useRef } from 'react';
-import * as THREE from 'three';
+import { useFrame, useThree } from '@react-three/fiber'
+import { useMemo, useRef, type MutableRefObject } from 'react'
+import * as THREE from 'three'
+import type { FrameRecord } from './formats'
+import { dominantQuarterTurns, frameIndexAtTime, rollColumnMajor } from './pose'
 
-import type { Timeline } from '../capture';
-
-const scratch = new THREE.Matrix4();
-
-/** Where the phone went: the scan path faintly, the moment's path brighter. */
-export function CameraPath({ timeline }: { timeline: Timeline }) {
-  const moment = useMemo(() => {
-    const points: [number, number, number][] = [];
-    for (let k = 0; k < timeline.count; k += 2) {
-      const o = k * 16;
-      points.push([timeline.transforms[o + 12], timeline.transforms[o + 13], timeline.transforms[o + 14]]);
-    }
-    return points;
-  }, [timeline]);
-
-  const scan = useMemo(() => {
-    const points: [number, number, number][] = [];
-    for (let k = 0; k < timeline.scanPath.length; k += 3 * 3) {
-      points.push([timeline.scanPath[k], timeline.scanPath[k + 1], timeline.scanPath[k + 2]]);
-    }
-    return points;
-  }, [timeline]);
-
-  return (
-    <group>
-      {scan.length > 1 && <Line points={scan} color="#5b6b7f" lineWidth={1} transparent opacity={0.35} />}
-      {moment.length > 1 && <Line points={moment} color="#ff5c3a" lineWidth={1.5} transparent opacity={0.8} />}
-    </group>
-  );
+function poseMatrix(T: number[], quarterTurns: number): THREE.Matrix4 {
+  return new THREE.Matrix4().fromArray(rollColumnMajor(T, (quarterTurns * Math.PI) / 2))
 }
 
-/** A small frustum showing where the phone was at the current video frame. */
-export function CameraMarker({ timeline, frameRef }: { timeline: Timeline; frameRef: React.RefObject<number> }) {
-  const group = useRef<THREE.Group>(null);
+/** The recorder's path as a faint line, plus a small frustum at the current playhead. */
+export function CameraPath({ frames, timeRef, color = '#6ee7ff' }: { frames: FrameRecord[]; timeRef: MutableRefObject<number>; color?: string }) {
+  const line = useMemo(() => {
+    const pts = new Float32Array(frames.length * 3)
+    frames.forEach((f, i) => pts.set([f.T[12], f.T[13], f.T[14]], i * 3))
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(pts, 3))
+    return new THREE.Line(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.35 }))
+  }, [frames, color])
+
+  const marker = useRef<THREE.Group>(null)
+  const k = useMemo(() => dominantQuarterTurns(frames), [frames])
 
   useFrame(() => {
-    const frame = frameRef.current;
-    if (!group.current || frame < 0) return;
-    scratch.fromArray(timeline.transforms, frame * 16);
-    group.current.matrix.copy(scratch);
-    group.current.matrixWorldNeedsUpdate = true;
-  });
-
-  // A 4:3 pyramid looking down -z, like the ARKit camera.
-  const s = 0.08;
-  const corners: [number, number, number][] = [
-    [-s, -0.75 * s, -1.5 * s],
-    [s, -0.75 * s, -1.5 * s],
-    [s, 0.75 * s, -1.5 * s],
-    [-s, 0.75 * s, -1.5 * s],
-  ];
-  const lines: [number, number, number][] = [];
-  for (const c of corners) lines.push([0, 0, 0], c);
-  lines.push(...corners, corners[0]);
+    const m = marker.current
+    if (!m || frames.length === 0) return
+    const f = frames[frameIndexAtTime(frames, timeRef.current)]
+    poseMatrix(f.T, k).decompose(m.position, m.quaternion, m.scale)
+  })
 
   return (
-    <group ref={group} matrixAutoUpdate={false}>
-      <Line points={lines} segments={false} color="#ffb347" lineWidth={2} />
-    </group>
-  );
+    <>
+      <primitive object={line} />
+      <group ref={marker}>
+        {/* Frustum: apex at the camera, opening down −z like the camera it marks. */}
+        <mesh position={[0, 0, -0.06]} rotation={[Math.PI / 2, 0, 0]}>
+          <coneGeometry args={[0.05, 0.12, 4, 1, true]} />
+          <meshBasicMaterial color={color} wireframe />
+        </mesh>
+      </group>
+    </>
+  )
+}
+
+/** Drives the viewer camera along the recorded poses, smoothed, upright. */
+export function FollowCamera({ frames, timeRef, videoW, videoH, smoothing = 6 }: { frames: FrameRecord[]; timeRef: MutableRefObject<number>; videoW: number; videoH: number; smoothing?: number }) {
+  const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
+  const k = useMemo(() => dominantQuarterTurns(frames), [frames])
+  const target = useMemo(() => ({ pos: new THREE.Vector3(), quat: new THREE.Quaternion(), scale: new THREE.Vector3(), first: true }), [])
+
+  useFrame((_, delta) => {
+    if (frames.length === 0) return
+    const f = frames[frameIndexAtTime(frames, timeRef.current)]
+    poseMatrix(f.T, k).decompose(target.pos, target.quat, target.scale)
+    // Vertical field of view of the upright image.
+    const [fx, fy] = f.K
+    const fov = k % 2 === 1 ? 2 * Math.atan(videoW / 2 / fx) : 2 * Math.atan(videoH / 2 / fy)
+    const fovDeg = THREE.MathUtils.radToDeg(fov)
+    if (Math.abs(camera.fov - fovDeg) > 0.01) {
+      camera.fov = fovDeg
+      camera.updateProjectionMatrix()
+    }
+    if (target.first) {
+      camera.position.copy(target.pos)
+      camera.quaternion.copy(target.quat)
+      target.first = false
+      return
+    }
+    const a = 1 - Math.exp(-smoothing * delta)
+    camera.position.lerp(target.pos, a)
+    camera.quaternion.slerp(target.quat, a)
+  })
+  return null
 }

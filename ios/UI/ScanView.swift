@@ -18,22 +18,13 @@ struct ScanView: View {
                     .ignoresSafeArea()
             }
 
-            VStack {
-                HStack(spacing: 12) {
-                    Text(Self.formatPoints(model.pointCount))
-                        .monospacedDigit()
-                    if let message = statusMessage {
-                        Text(message)
-                    }
-                    Spacer()
-                    Text("\(Int(model.previewFPS.rounded())) fps")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+            VStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 12) {
+                    StepBar(step: model.isRecordingMoment ? 2 : (isRoomDone ? 2 : 1))
+                    coach
                 }
-                .font(.callout.weight(.medium))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(.ultraThinMaterial, in: Capsule())
+                .padding(14)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
                 Spacer()
 
@@ -43,6 +34,51 @@ struct ScanView: View {
         }
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+    }
+
+    /// Done scanning: from here on the step is "film the visit".
+    private var isRoomDone: Bool {
+        if case .roomSaved = model.phase { return true }
+        return false
+    }
+
+    /// What to do right now, in plain words, and a warning when tracking is weak.
+    @ViewBuilder
+    private var coach: some View {
+        switch model.phase {
+        case .scanningRoom:
+            if let message = model.trackingMessage {
+                CoachCard(icon: "exclamationmark.triangle.fill", text: "\(message) Slow down and aim at a wall or furniture.", warning: true)
+            } else if model.pointCount < 20_000 {
+                CoachCard(icon: "figure.walk", text: "Sweep slowly. Aim at the walls, floor and furniture. Dots appear where the sensor sees a surface.")
+            } else if model.pointCount < 250_000 {
+                CoachCard(icon: "arrow.triangle.2.circlepath", text: "Good start. Walk around the edges and point at anything you want in the room.")
+            } else {
+                CoachCard(icon: "checkmark.circle.fill", text: "That's plenty of room. Tap Save room when you've covered it.")
+            }
+            pointMeter
+        case .savingRoom:
+            CoachCard(icon: "externaldrive.fill", text: "Saving the room. One moment.")
+        case .roomSaved(let export):
+            CoachCard(icon: "person.2.fill", text: "Room saved (\(Self.formatPoints(export.pointCount))). Now let people in, then press record and let them talk.")
+        case .recordingMoment:
+            CoachCard(icon: "video.fill", text: "Filming. Hold the phone steady in landscape and move slowly. Speech is written down on this phone.")
+        default:
+            EmptyView()
+        }
+    }
+
+    /// How much room has been captured so far, against a typical full room.
+    private var pointMeter: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Room captured").font(.footnote.weight(.semibold))
+                Spacer()
+                Text(Self.formatPoints(model.pointCount)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            ProgressView(value: min(1, Double(model.pointCount) / 400_000))
+                .tint(Brand.accent)
+        }
     }
 
     @ViewBuilder
@@ -59,17 +95,13 @@ struct ScanView: View {
 
         case .roomSaved(let export):
             panel {
-                Text("Room saved: \(Self.formatPoints(export.pointCount)) at 1 cm")
-                    .font(.callout.weight(.medium))
                 Button {
+                    Haptics.tap()
                     model.recordMoment()
                 } label: {
                     Label("Record the visit", systemImage: "record.circle")
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .controlSize(.large)
+                .buttonStyle(BigButtonStyle(tint: .red))
                 HStack(spacing: 16) {
                     ShareLink(items: [export.plyURL, export.binURL]) {
                         Label("Share room", systemImage: "square.and.arrow.up")
@@ -77,44 +109,54 @@ struct ScanView: View {
                     Button("Done") { model.stopScan() }
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.regular)
             }
 
         case .recordingMoment(let startedAt):
-            VStack(spacing: 12) {
+            panel {
                 TimelineView(.periodic(from: startedAt, by: 1)) { context in
                     let elapsed = max(0, Int(context.date.timeIntervalSince(startedAt)))
-                    Label("\(Self.formatTime(elapsed)) / 3:00", systemImage: "record.circle.fill")
-                        .font(.title3.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(.red)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
+                    VStack(spacing: 8) {
+                        HStack(spacing: 10) {
+                            RecordingDot()
+                            Text(Self.formatTime(elapsed))
+                                .font(.system(size: 40, weight: .bold).monospacedDigit())
+                            Text("of 3:00").font(.callout).foregroundStyle(.secondary)
+                        }
+                        ProgressView(value: min(1, Double(elapsed) / 180)).tint(.red)
+                    }
                 }
                 Button {
+                    Haptics.success()
                     model.stopMoment()
                 } label: {
                     Label("Stop recording", systemImage: "stop.fill")
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .controlSize(.large)
+                .buttonStyle(BigButtonStyle(tint: .red))
             }
 
         default:
-            HStack(spacing: 12) {
-                Button(model.showsCameraFeed ? "Cloud only" : "Show camera") {
-                    model.showsCameraFeed.toggle()
+            panel {
+                Button {
+                    Haptics.success()
+                    model.finishScan()
+                } label: {
+                    Label("Save room", systemImage: "checkmark")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(BigButtonStyle())
+                .disabled(model.pointCount < 2_000)
+                .opacity(model.pointCount < 2_000 ? 0.45 : 1)
 
-                Button("Save room") { model.finishScan() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.pointCount == 0)
-
-                Button("Cancel", role: .destructive) { model.stopScan() }
+                HStack(spacing: 12) {
+                    Button(model.showsCameraFeed ? "Show dots only" : "Show camera") {
+                        model.showsCameraFeed.toggle()
+                    }
                     .buttonStyle(.bordered)
+                    Button("Cancel", role: .destructive) { model.stopScan() }
+                        .buttonStyle(.bordered)
+                }
+                .controlSize(.regular)
             }
-            .controlSize(.large)
         }
     }
 

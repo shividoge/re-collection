@@ -190,7 +190,7 @@ export function narrationContent({ address, facts, chapter, said }) {
   ].join('\n');
 }
 
-export function turnContent({ address, facts, history, latest }) {
+export function turnContent({ address, facts, history, latest, focus }) {
   const lines = [
     `You're speaking to: ${address || 'them'}.`,
     '',
@@ -201,9 +201,23 @@ export function turnContent({ address, facts, history, latest }) {
     ...history.map((t) => `${t.speaker === 'patient' ? 'Them' : 'You'}: ${t.text}`),
     `Them: ${latest}`,
     '',
+    ...focusLines(focus),
     'Reply to what they just said.',
   ];
   return lines.join('\n');
+}
+
+/**
+ * What they're pointing at in the 3D room while they speak. The label is a plain size
+ * description from the app, not a name, so never treat it as one.
+ */
+function focusLines(focus) {
+  if (!focus) return [];
+  const what = `They're pointing at something in the room${focus.label ? ` (${focus.label})` : ''}.`;
+  if (focus.factIds.length) {
+    return [`${what} It was on camera during these facts: ${focus.factIds.join(', ')}. If they ask about it, answer from those facts.`, ''];
+  }
+  return [`${what} None of the approved facts are about it. If they ask what it is, gently say you're not sure; don't guess.`, ''];
 }
 
 /** Recall scoring (CLAUDE.md 6.6), run once after the session with the offline model. */
