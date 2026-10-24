@@ -91,7 +91,7 @@ Already built in `web/` (read `web/README.md` first): gallery with zip drop uplo
 |---|---|
 | 12:00 | Run it (`web/README.md`), check the viewer on the sample capture and a fresh one; fix anything that looks wrong (point size, colors, framing) and make it demo-ready on a projector and an iPad |
 | 14:00 | Captures list polish (7.1): status badges, warnings, delete/hide test captures; viewer polish: chapter markers on the scrubber once facts exist |
-| 17:00 | Family fact review screen (7.3): facts next to keyframes/quotes, click to seek, approve/edit/reject/don't bring up (guide routes land ~16:00; mock mode before that) |
+| 17:00 | Family fact review screen (7.3): **built by Shivin** (`web/src/views/FactsPanel.tsx`): facts with keyframe/quote evidence, click to seek, approve/edit/reject/don't bring up, chapters, grounding log, re-extract. Polish it (keyboard shortcuts, "approve all checked", nicer empty states) |
 | 19:00 | Revisit screen (7.4): welcome, replay with chapter narration, push-to-talk, goodbye, caregiver end button; speech via `speechSynthesis` |
 | 21:00 | Dashboard (7.5) from `/api/progress` with real session times, branches, distress alerts |
 | 01:00–04:00 | Run 3+ real revisit sessions with the demo moment, spaced a few hours apart |
