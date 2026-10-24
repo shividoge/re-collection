@@ -6,7 +6,7 @@ import { createApp } from '../src/server.mjs';
 import { parseRange } from '../src/http.mjs';
 import { CAPTURE_ID, tempDataDir, tinyCapture } from './helpers.mjs';
 
-async function startGuide(overrides = {}) {
+export async function startGuide(overrides = {}) {
   const dataDir = await tempDataDir();
   const config = {
     port: 0,
@@ -18,7 +18,8 @@ async function startGuide(overrides = {}) {
     models: { offline: 'o', live: 'l' },
     ...overrides,
   };
-  const server = createServer(createApp(config));
+  const silent = { log() {}, error() {} };
+  const server = createServer(createApp(config, { log: silent, ...(overrides.deps ?? {}) }));
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   return { server, base, config };

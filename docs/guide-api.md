@@ -97,8 +97,11 @@ type Moment = {
   moment: { title: string; place: string; occasion: string; summary: string };
   facts: Fact[];
   chapters: { tStart: number; tEnd: number; label: string }[];
+  /** Facts the grounding check threw out (evidence Claude wasn't shown, or words nobody said). */
+  dropped: { text: string; reason: string }[];
+  inputs: { keyframes: number; transcriptSegments: number | null };   // null = no transcript
   extractedAt: string;      // ISO time
-  model: string;
+  model: string;            // the model that actually answered (a fallback model if Opus declined)
 };
 
 type Fact = {
@@ -122,6 +125,10 @@ type Evidence =
 |---|---|---|---|
 | PATCH | `/api/moments/:id/facts/:factId` | any of `{ status, editedText, doNotRaise }` | the updated `Fact` |
 | POST | `/api/moments/:id/extract` | – | `{ ok: true }`, re-runs extraction (replaces pending facts, keeps reviewed ones) |
+
+`GET /api/moments/:id` returns 404 with `{ error, status }` until facts exist; `error` says whether they're queued, running, or failed and why. Extraction starts by itself when an upload completes (or an import is picked up, within 15 s), runs one capture at a time, and costs roughly $0.15 per capture with 30 keyframes.
+
+**How a fact stays grounded:** Claude must cite evidence for every fact. The guide keeps a frame citation only if it names a keyframe Claude was actually sent, and a quote only if those words appear in the transcript (ignoring case and punctuation). A fact with no surviving evidence is dropped and listed in `dropped`.
 
 Nothing reaches the patient until a family member approves it. Only facts with `status: "approved"` and `doNotRaise: false` are ever given to Claude in a session.
 

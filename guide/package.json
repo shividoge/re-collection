@@ -11,5 +11,8 @@
     "start": "node src/server.mjs",
     "test": "node --test test/*.test.mjs",
     "import": "node scripts/import.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0"
   }
 }
