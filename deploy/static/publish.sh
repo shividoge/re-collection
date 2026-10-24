@@ -35,12 +35,16 @@ if [ "$MODE" != "--publish" ]; then
   exit 0
 fi
 
-WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
-gh repo clone "$REPO" "$WORK/repo" -- --quiet
-cd "$WORK/repo"
-find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-cp -R "$SITE"/. .
+# Keep one local copy of the repo, so each publish only sends what changed
+# instead of downloading hundreds of MB again.
+WORK="${PUBLISH_DIR:-$ROOT/.static-publish}"
+if [ -d "$WORK/.git" ]; then
+  git -C "$WORK" pull --quiet --ff-only
+else
+  gh repo clone "$REPO" "$WORK" -- --quiet
+fi
+rsync -a --delete --exclude .git "$SITE"/ "$WORK"/
+cd "$WORK"
 git add -A
 if git diff --cached --quiet; then
   echo "Nothing changed since the last publish."

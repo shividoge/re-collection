@@ -12,3 +12,4 @@ xcuserdata/
 ios/*.xcodeproj/
 
 .static-site/
+.static-publish/
