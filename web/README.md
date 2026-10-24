@@ -6,6 +6,7 @@ The family-facing viewer: drop a capture zip from the phone, see it in the galle
 - **People:** the Braindance effect. Each 10 Hz depth frame is unprojected with that frame's own camera pose and colored from the video, so whoever was in the visit replays in 3D, in place, in sync with sound (`src/scene/DepthReplay.tsx`).
 - **Path:** where the phone went during the scan (grey) and the moment (orange), plus a marker at the current frame.
 - **Phone's view:** the camera rides the recorded pose, so the 3D lines up with the video.
+- **Facts (family review):** what Claude extracted, each next to its keyframes or quoted words. Click evidence or a chapter to jump there. Approve, reject, reword, or mark "don't bring this up"; only approved facts ever reach the patient. The panel also shows what the grounding check removed and can ask Claude again (keeping what's been reviewed).
 
 The math and file formats are in `../docs/capture-format.md`; the API is `../docs/guide-api.md`.
 
@@ -36,5 +37,6 @@ src/capture.ts            room.bin and frames.jsonl parsing, frame lookup by tim
 src/upload.ts             unzip in the browser (fflate), upload file by file, then validate
 src/views/Gallery.tsx     drop zone + capture cards
 src/views/Viewer.tsx      3D stage, video panel, transport, view modes, layer toggles
+src/views/FactsPanel.tsx  family fact review beside the video
 src/scene/                RoomCloud, CameraPath/CameraMarker, DepthReplay, point material
 ```

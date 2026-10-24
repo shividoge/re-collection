@@ -10,6 +10,7 @@ import { frameAt, parseFrames, parseRoomBin } from '../capture';
 import type { RoomCloud as Room, Timeline } from '../capture';
 import { CameraMarker, CameraPath } from '../scene/CameraPath';
 import { DepthReplay } from '../scene/DepthReplay';
+import { FactsPanel } from './FactsPanel';
 import { RoomCloud } from '../scene/RoomCloud';
 
 type Loaded = { detail: CaptureDetail; room: Room | null; timeline: Timeline };
@@ -57,6 +58,15 @@ function Stage({ detail, room, timeline }: Loaded) {
 
   const duration = manifest.video.durationSec;
   const hasPeople = manifest.depth.count > 0 && timeline.count > 0;
+
+  /** Jump the whole stage (video, 3D replay, camera) to `t` seconds. */
+  const seek = (t: number, play = false) => {
+    if (!video) return;
+    video.currentTime = Math.min(Math.max(0, t), duration);
+    setTime(video.currentTime);
+    if (play) void video.play();
+    else video.pause();
+  };
 
   const togglePlay = () => {
     if (!video) return;
@@ -106,7 +116,8 @@ function Stage({ detail, room, timeline }: Loaded) {
         </div>
       </header>
 
-      <aside className="video-panel">
+      <aside className="side">
+        <div className="video-panel">
         <video
           ref={setVideo}
           src={captureFileUrl(detail.id, manifest.video.file)}
@@ -121,6 +132,8 @@ function Stage({ detail, room, timeline }: Loaded) {
           }
         />
         {videoError && <p className="error small">{videoError}</p>}
+        </div>
+        <FactsPanel captureId={detail.id} onSeek={seek} />
       </aside>
 
       <footer className="transport">

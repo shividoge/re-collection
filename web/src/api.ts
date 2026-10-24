@@ -41,6 +41,35 @@ export type CaptureDetail = {
   files: Record<string, string>;
 };
 
+export type Evidence =
+  | { type: 'frame'; t: number; keyframe: string }
+  | { type: 'transcript'; tStart: number; tEnd: number; quote: string };
+
+export type Fact = {
+  id: string;
+  text: string;
+  kind: 'person' | 'object' | 'action' | 'speech' | 'place' | 'feeling';
+  salience: 1 | 2 | 3;
+  evidence: Evidence[];
+  cue: string;
+  status: 'pending' | 'approved' | 'rejected';
+  editedText: string | null;
+  doNotRaise: boolean;
+};
+
+export type Moment = {
+  captureId: string;
+  moment: { title: string; place: string; occasion: string; summary: string };
+  facts: Fact[];
+  chapters: { tStart: number; tEnd: number; label: string }[];
+  dropped: { text: string; reason: string }[];
+  inputs: { keyframes: number; transcriptSegments: number | null };
+  extractedAt: string;
+  model: string;
+};
+
+export type FactChange = Partial<Pick<Fact, 'status' | 'editedText' | 'doNotRaise'>>;
+
 export class GuideError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -93,6 +122,14 @@ export const guide = {
       headers: { 'Content-Type': 'application/octet-stream' },
     }),
   complete: (id: string) => request<{ ok: true }>(`/api/captures/${id}/complete`, { method: 'POST' }),
+  moment: (id: string) => request<Moment>(`/api/moments/${id}`),
+  updateFact: (id: string, factId: string, change: FactChange) =>
+    request<Fact>(`/api/moments/${id}/facts/${factId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(change),
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  reextract: (id: string) => request<{ ok: true }>(`/api/moments/${id}/extract`, { method: 'POST' }),
 };
 
 /** URL for a capture file. <video> and <img> can't send headers, so the key rides as ?key=. */

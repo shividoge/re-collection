@@ -268,7 +268,7 @@ Never cut: real capture, grounded facts with family approval, grounding enforcem
 
 ## Status
 
-**Last updated:** Sat Oct 24, 09:15 PT, by Shivin's Claude session
+**Last updated:** Sat Oct 24, 09:45 PT, by Shivin's Claude session
 
 **Done:**
 - iPhone app checkpoints 1–5: live camera, GPU point cloud, `room.ply`/`room.bin` export, visit recording (video, audio, poses, 10 Hz depth) in one session. Built, installed and tested on Shivin's iPhone 16 Pro Max. Two real captures checked: files consistent, scale correct, 30 fps, 10 Hz depth. 25 unit tests pass.
@@ -281,11 +281,13 @@ Never cut: real capture, grounded facts with family approval, grounding enforcem
 - Anthropic API key in `guide/.env` (not committed), verified against the API.
 - Guide step 3, fact extraction (branch `guide/facts`): Opus 5.5 with structured outputs, effort high, server-side fallbacks; grounding check keeps only evidence Claude was shown; background worker; review routes (`GET /api/moments/:id`, `PATCH .../facts/:factId`, `POST .../extract`). 30 tests. Real run on the sample capture: 10 facts, all citing real keyframes, none dropped.
 
+- Family fact review screen (branch `web/review`): facts panel beside the video in the viewer; approve/reject/edit/don't bring up, evidence thumbnails and quotes that seek the video, chapters, grounding log, re-extract, live status while Claude works. Checked in the browser on the real capture (review state reset afterwards).
+
 **In progress:** nothing running.
 
-**Not done yet:** guide step 4 (reply grounding, sessions, scoring), fact review / revisit / dashboard screens, a public URL for judges (cloudflared; Shivin runs it himself), the web app polish (nothing in `web/`), phone transcript/keyframes/review/upload, the clap test (hands weren't in frame).
+**Not done yet:** guide step 4 (reply grounding, sessions, scoring), revisit / dashboard screens, a public URL for judges (cloudflared; Shivin runs it himself), the web app polish (nothing in `web/`), phone transcript/keyframes/review/upload, the clap test (hands weren't in frame).
 
-**Next step:** see `TASKS.md`. Shivin: guide step 4 (grounding check on replies, sessions, scoring). Firdavs: viewer polish, then the fact review screen against the real `/api/moments/:id`. Firdavs: web scaffold + StaticCloud on the sample capture.
+**Next step:** see `TASKS.md`. Shivin: guide step 4 (grounding check on replies, sessions, scoring). Firdavs: viewer and review-panel polish, then the revisit session screen (needs guide step 4). Firdavs: web scaffold + StaticCloud on the sample capture.
 
 **Open questions:**
 - IBS27's new role (see TASKS.md); he hasn't accepted the GitHub invite yet.
@@ -302,6 +304,7 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 - 2026-10-24 07:30 | Shivin + Claude | guide server step 1 on branch guide/server (uploads, validation, Range, import, 18 tests) | phone step 2, guide step 3
 - 2026-10-24 08:30 | Shivin + Claude | phone step 2 (PR #4); web viewer with people replay, served by the guide (branch web/viewer) | guide step 3 (facts); Firdavs: viewer polish + review screen
 - 2026-10-24 09:15 | Shivin + Claude | guide step 3: Claude fact extraction with grounding, worker, review routes; real run OK | guide step 4 (sessions, grounding, scoring)
+- 2026-10-24 09:45 | Shivin + Claude | family fact review panel in the viewer (branch web/review) | guide step 4; revisit screen
 
 ---
 
