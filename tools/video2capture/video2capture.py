@@ -12,7 +12,7 @@ Output follows docs/capture-format.md (same files a phone capture has), so the g
 fact extraction, review, revisit sessions, the viewer and the Memory Window all work unchanged:
 
     .venv/bin/python video2capture.py ~/Movies/birthday-2015.mov --title "Mom's 70th birthday"
-    npm --prefix ../../guide run import -- "$PWD/out/capture-<id>"
+    node ../../guide/scripts/import.mjs out/capture-<id>   # or add --import above
 
 Coordinates: DA3 returns OpenCV-style world-to-camera poses (x right, y down, z forward) in the
 first camera's frame. We convert to the capture convention (ARKit: x right, y up, camera looks
@@ -25,6 +25,7 @@ import argparse
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -45,6 +46,9 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 _LOCAL = Path(__file__).resolve().parent / "models" / "DA3-BASE"
 MODEL = str(_LOCAL) if (_LOCAL / "model.safetensors").exists() else "depth-anything/DA3-BASE"
 FLIP = np.diag([1.0, -1.0, -1.0, 1.0])  # OpenCV <-> ARKit axes, for camera and world frames
+# Fedora's stock ffmpeg-free has no libx264 and no HEVC decoder (iPhone videos); point these at a full build.
+FFMPEG = os.environ.get("FFMPEG", "ffmpeg")
+FFPROBE = os.environ.get("FFPROBE", "ffprobe")
 
 
 # ---------- video in/out (ffmpeg) ----------
@@ -58,13 +62,14 @@ def run(cmd: list[str]) -> str:
 
 def probe(path: Path) -> dict:
     """Duration, fps, frame size (after rotation), creation time, and whether there's audio."""
-    info = json.loads(run(["ffprobe", "-v", "error", "-print_format", "json", "-show_streams", "-show_format", str(path)]))
+    info = json.loads(run([FFPROBE, "-v", "error", "-print_format", "json", "-show_streams", "-show_format", str(path)]))
     video = next((s for s in info["streams"] if s["codec_type"] == "video"), None)
     if video is None:
         raise SystemExit(f"{path} has no video stream.")
     num, den = (int(x) for x in video.get("avg_frame_rate", "30/1").split("/"))
     fps = num / den if den else 30.0
     tags = info.get("format", {}).get("tags", {})
+    check_ffmpeg(video.get("codec_name", ""))
     return {
         "duration": float(info["format"]["duration"]),
         "fps": fps,
@@ -73,9 +78,21 @@ def probe(path: Path) -> dict:
     }
 
 
+def check_ffmpeg(codec: str) -> None:
+    """Fail before writing anything if this ffmpeg can't decode the input or encode H.264 with libx264."""
+    encoders = run([FFMPEG, "-hide_banner", "-encoders"])
+    decoders = run([FFMPEG, "-hide_banner", "-decoders"])
+    missing = [] if " libx264 " in encoders else ["the libx264 encoder"]
+    if codec and not re.search(rf"^ \S+ {re.escape(codec)}\b", decoders, re.M):
+        missing.append(f"a {codec} decoder")
+    if missing:
+        raise SystemExit(f"{FFMPEG} lacks {' and '.join(missing)}. Install a full ffmpeg, or set FFMPEG and FFPROBE "
+                         "to one (README: 'ffmpeg on Linux').")
+
+
 def transcode(src: Path, dst: Path, has_audio: bool) -> None:
     """H.264 + AAC mp4, upright (ffmpeg applies rotation metadata), at most 1920 wide, even sizes."""
-    cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(src),
+    cmd = [FFMPEG, "-v", "error", "-y", "-i", str(src),
            "-vf", "scale='min(1920,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
            "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
     cmd += ["-c:a", "aac", "-b:a", "128k", "-ac", "1"] if has_audio else ["-an"]
@@ -83,7 +100,7 @@ def transcode(src: Path, dst: Path, has_audio: bool) -> None:
 
 
 def frame_count_and_size(path: Path) -> tuple[int, int, int, float]:
-    out = run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_frames",
+    out = run([FFPROBE, "-v", "error", "-select_streams", "v:0", "-count_frames",
                "-show_entries", "stream=nb_read_frames,width,height,avg_frame_rate", "-of", "json", str(path)])
     s = json.loads(out)["streams"][0]
     num, den = (int(x) for x in s["avg_frame_rate"].split("/"))
@@ -97,7 +114,7 @@ def extract_frames(video: Path, times: list[float], folder: Path, width: int | N
         vf = ["-vf", f"scale={width}:-2"] if width else []
         # Some phone videos end a little before their stated duration; step back until a frame comes out.
         for back in (0.0, 0.25, 0.5, 1.0):
-            run(["ffmpeg", "-v", "error", "-y", "-ss", f"{max(0.0, t - back):.3f}", "-i", str(video), "-frames:v", "1",
+            run([FFMPEG, "-v", "error", "-y", "-ss", f"{max(0.0, t - back):.3f}", "-i", str(video), "-frames:v", "1",
                  *vf, "-pix_fmt", "yuvj420p", "-q:v", "2", str(p)])
             if p.exists():
                 break
@@ -218,6 +235,8 @@ def main() -> None:
                     help="the model's depth has no true scale; scale it so the typical depth is this many meters")
     ap.add_argument("--model", default=MODEL)
     ap.add_argument("--device", default=None, help="mps, cuda or cpu (default: best available)")
+    ap.add_argument("--import", dest="import_to_guide", action="store_true",
+                    help="then import the capture into the guide (node guide/scripts/import.mjs; honors DATA_DIR)")
     args = ap.parse_args()
 
     import torch
@@ -318,7 +337,7 @@ def main() -> None:
     (out / "keyframes").mkdir()
     for s in range(int(math.floor(duration - 1e-3)) + 1):
         # Seek a little before the end for the last second: a seek past the final frame writes nothing.
-        run(["ffmpeg", "-v", "error", "-y", "-ss", f"{min(s, max(0.0, duration - 0.3)):.3f}", "-i", str(video), "-frames:v", "1",
+        run([FFMPEG, "-v", "error", "-y", "-ss", f"{min(s, max(0.0, duration - 0.3)):.3f}", "-i", str(video), "-frames:v", "1",
              "-vf", "scale='if(gt(iw,ih),1024,-2)':'if(gt(iw,ih),-2,1024)'", "-pix_fmt", "yuvj420p", "-q:v", "3", str(out / f"keyframes/k{s:04d}.jpg")])
     shutil.copy(out / f"keyframes/k{min(2, int(duration - 1e-3)):04d}.jpg", out / "thumb.jpg")
 
@@ -351,7 +370,11 @@ def main() -> None:
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
     print(f"Done: {out}\n  {len(points):,} room points, {n} depth frames, {frame_count} video frames.\n"
-          f"  Import it: npm --prefix guide run import -- {out}")
+          f"  Import it (from the repo root): node guide/scripts/import.mjs {out}")
+    if args.import_to_guide:
+        importer = Path(__file__).resolve().parents[2] / "guide" / "scripts" / "import.mjs"
+        sys.stdout.flush()
+        return subprocess.run(["node", str(importer), str(out)]).returncode
 
 
 if __name__ == "__main__":
