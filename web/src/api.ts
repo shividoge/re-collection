@@ -70,6 +70,31 @@ export type Moment = {
 
 export type FactChange = Partial<Pick<Fact, 'status' | 'editedText' | 'doNotRaise'>>;
 
+export type Sentence = { sentence: string; factIds: string[]; free?: boolean };
+export type Reply = { sentences: Sentence[]; dropped: { sentence: string; reason: string }[] };
+export type Score = { factId: string; result: 'unprompted' | 'after_cue' | 'not_mentioned'; line?: number };
+export type Branch = { t: string; quote: string; note: string };
+export type Alert = { t: string; kind: 'distress'; note: string };
+export type EndReason = 'complete' | 'caregiver' | 'distress' | 'timeout';
+export type SessionEnd = { scores: Score[]; branches: Branch[]; note: string; alerts: Alert[] };
+export type Progress = {
+  momentId: string;
+  facts: { id: string; text: string }[];
+  sessions: {
+    sessionId: string;
+    startedAt: string;
+    endedAt: string;
+    endReason: string;
+    unprompted: number;
+    afterCue: number;
+    notMentioned: number;
+    scores: Score[];
+    branches: Branch[];
+    note: string;
+  }[];
+  nextRevisit: string[];
+};
+
 export class GuideError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -111,6 +136,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
+const post = (body: unknown): RequestInit => ({
+  method: 'POST',
+  body: JSON.stringify(body),
+  headers: { 'Content-Type': 'application/json' },
+});
+
 export const guide = {
   health: () => request<{ ok: boolean; mock: boolean; keyRequired?: boolean }>('/health'),
   captures: () => request<CaptureSummary[]>('/api/captures'),
@@ -129,6 +160,16 @@ export const guide = {
       body: JSON.stringify(change),
       headers: { 'Content-Type': 'application/json' },
     }),
+  person: () => request<{ displayName: string; preferredAddress: string }>('/api/person'),
+  startSession: (momentId: string) =>
+    request<{ sessionId: string; welcome: Reply }>('/api/sessions', post({ momentId })),
+  narrate: (sid: string, chapterIndex: number) =>
+    request<{ reply: Reply }>(`/api/sessions/${sid}/narrate`, post({ chapterIndex })),
+  turn: (sid: string, text: string) =>
+    request<{ reply: Reply; branch: string | null; distress: boolean }>(`/api/sessions/${sid}/turn`, post({ text })),
+  endSession: (sid: string, reason: EndReason) => request<SessionEnd>(`/api/sessions/${sid}/end`, post({ reason })),
+  session: (sid: string) => request<{ turns: unknown[]; dropped?: unknown[] }>(`/api/sessions/${sid}`),
+  progress: (momentId: string) => request<Progress>(`/api/progress?momentId=${encodeURIComponent(momentId)}`),
   reextract: (id: string) => request<{ ok: true }>(`/api/moments/${id}/extract`, { method: 'POST' }),
 };
 

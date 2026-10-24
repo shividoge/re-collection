@@ -13,8 +13,8 @@ import { DepthReplay } from '../scene/DepthReplay';
 import { FactsPanel } from './FactsPanel';
 import { RoomCloud } from '../scene/RoomCloud';
 
-type Loaded = { detail: CaptureDetail; room: Room | null; timeline: Timeline };
-type ViewMode = 'orbit' | 'phone';
+export type Loaded = { detail: CaptureDetail; room: Room | null; timeline: Timeline };
+export type ViewMode = 'orbit' | 'phone';
 
 export function Viewer({ id }: { id: string }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -106,6 +106,10 @@ function Stage({ detail, room, timeline }: Loaded) {
 
       <header className="stage-header">
         <a href="#/" className="back">← Captures</a>
+        <nav className="stage-links">
+          <a href={`#/revisit/${detail.id}`}>Revisit</a>
+          <a href={`#/dashboard/${detail.id}`}>Dashboard</a>
+        </nav>
         <div>
           <h1>{manifest.title || 'Untitled visit'}</h1>
           <p className="meta">
@@ -180,7 +184,7 @@ function Toggle({ label, on, set, disabled }: { label: string; on: boolean; set:
 }
 
 /** Maps the video's current time to a frame index every render frame. */
-function Clock({ video, timeline, frameRef }: { video: HTMLVideoElement | null; timeline: Timeline; frameRef: React.RefObject<number> }) {
+export function Clock({ video, timeline, frameRef }: { video: HTMLVideoElement | null; timeline: Timeline; frameRef: React.RefObject<number> }) {
   useFrame(() => {
     frameRef.current = frameAt(timeline, video?.currentTime ?? 0);
   });
@@ -197,7 +201,7 @@ const scale = new THREE.Vector3();
  * recorded pose (smoothed), with the phone's vertical field of view, so the
  * replay lines up with the video.
  */
-function CameraRig({ timeline, room, mode, frameRef }: { timeline: Timeline; room: Room | null; mode: ViewMode; frameRef: React.RefObject<number> }) {
+export function CameraRig({ timeline, room, mode, frameRef }: { timeline: Timeline; room: Room | null; mode: ViewMode; frameRef: React.RefObject<number> }) {
   const camera = useThree((state) => state.camera) as THREE.PerspectiveCamera;
   const controls = useRef<OrbitControlsImpl>(null);
 
