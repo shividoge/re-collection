@@ -62,17 +62,15 @@ export function MemoryWindow({ id, from }: { id: string; from?: string }) {
 /**
  * Visit together: opened from the museum, the window stays in the iPad's room, so a helper
  * pressing "Back to the museum" (or stepping into another moment) on their phone moves it too.
- * It only follows once it has seen the room agree that this moment is open.
  */
 function useFollowRoom(id: string, fromMuseum: boolean): MuseumRoom {
   const room = useMuseumRoom('patient', { enabled: fromMuseum })
-  const seen = useRef(false)
+  const { fresh, followed } = room
   useEffect(() => {
-    const s = room.state
-    if (!s) return
-    if (s.window === id) seen.current = true
-    else if (seen.current) location.hash = s.window ? `#/window/${s.window}?from=museum` : '#/museum'
-  }, [room.state, id])
+    if (!fresh || fresh.window === id) return
+    followed(fresh.rev)
+    location.hash = fresh.window ? `#/window/${fresh.window}?from=museum` : '#/museum'
+  }, [fresh, followed, id])
   return room
 }
 
@@ -237,7 +235,11 @@ function WindowStage({ id, capture, back, room }: { id: string; capture: LoadedC
             if (!room.code) return
             // Tell the helper's phone first, so the museum doesn't open this moment again.
             e.preventDefault()
-            void room.leave().then(() => (location.hash = back))
+            const here = location.hash
+            void room.leave().then(() => {
+              // Unless the helper already moved the iPad somewhere else while we waited.
+              if (location.hash === here) location.hash = back
+            })
           }}
         >
           {back === '#/museum' ? '← Back to the museum' : '← Back'}

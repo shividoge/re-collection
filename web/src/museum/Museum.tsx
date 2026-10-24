@@ -1,6 +1,6 @@
 import { Html } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
 import { fileUrl, guide, type CaptureSummary } from '../api'
 import { HelperTogether, PatientTogether } from './Together'
@@ -60,30 +60,29 @@ export function Museum({ join }: { join?: string } = {}) {
     }
   }, [at])
 
-  // Both screens follow the shared walk.
-  const sharedAt = room.state?.at
+  // Both screens follow the shared walk: by the frame's capture id when this list has it.
+  const shared = room.state
+  const sharedAt = shared ? (moments?.findIndex((m) => m.id === shared.atId) ?? -1) : -1
+  const followAt = shared ? (shared.atId && sharedAt >= 0 ? sharedAt : shared.at) : null
   useEffect(() => {
-    if (sharedAt !== undefined) setAt(sharedAt)
-  }, [sharedAt])
+    if (followAt !== null) setAt(followAt)
+  }, [followAt])
 
-  // On the iPad, the helper stepping into a moment opens it here. The first state after joining
-  // is only where things stand, not a request.
-  const seen = useRef<{ code: string; rev: number } | null>(null)
+  // On the iPad, the helper stepping into a moment opens it here.
+  const fresh = room.fresh
+  const { followed } = room
   useEffect(() => {
-    const s = room.state
-    if (helper || !s || !room.code) return
-    if (seen.current?.code !== room.code) {
-      seen.current = { code: room.code, rev: s.rev }
-      return
-    }
-    if (s.rev > seen.current.rev && s.by === 'helper' && s.window) location.hash = `#/window/${s.window}?from=museum`
-  }, [room.state, room.code, helper])
+    if (!fresh?.window) return
+    followed(fresh.rev)
+    location.hash = `#/window/${fresh.window}?from=museum`
+  }, [fresh, followed])
 
   const enter = async (m: Moment) => {
     const i = moments?.findIndex((x) => x.id === m.id) ?? -1
     if (helper) return void room.enter(m.id, i)
     await room.enter(m.id, i)
-    location.hash = `#/window/${m.id}?from=museum`
+    // Unless the helper already moved the iPad somewhere else while we waited.
+    if (/^#\/museum$/i.test(location.hash)) location.hash = `#/window/${m.id}?from=museum`
   }
 
   if (error) return <div className="museum-message">{error}</div>
@@ -94,7 +93,7 @@ export function Museum({ join }: { join?: string } = {}) {
   const go = (i: number) => {
     const next = Math.max(-1, Math.min(moments.length - 1, i))
     setAt(next)
-    room.setAt(next)
+    room.setAt(next, next >= 0 ? moments[next].id : null)
   }
   const openTitle = room.state?.window ? (moments.find((m) => m.id === room.state?.window)?.title || 'A visit') : null
 

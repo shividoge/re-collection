@@ -96,7 +96,7 @@ describe('museum rooms: pure parts', () => {
   test('parseStateBody checks every field', () => {
     assert.deepEqual(parseStateBody({ at: 2, window: null, by: 'helper', name: '  Priya ' }), {
       ok: true,
-      value: { at: 2, window: null, by: 'helper', name: 'Priya' },
+      value: { at: 2, atId: null, window: null, by: 'helper', name: 'Priya' },
     });
     assert.equal(parseStateBody({ at: -1, window: CAPTURE_ID.toUpperCase(), by: 'patient' }).value.window, CAPTURE_ID);
     for (const bad of [
@@ -111,6 +111,7 @@ describe('museum rooms: pure parts', () => {
       { at: 0, window: null, by: 'nurse' },
       { at: 0, window: null, by: 'helper', name: 7 },
       { at: 0, window: null, by: 'helper', name: 'x'.repeat(41) },
+      { at: 0, atId: 'cake', window: null, by: 'helper' },
     ]) {
       assert.equal(parseStateBody(bad).ok, false, JSON.stringify(bad));
     }
@@ -151,11 +152,14 @@ describe('museum rooms: routes', () => {
     assert.equal((await phone.next('state')).at, 1);
     assert.deepEqual(await ipad.next('peers'), { patient: 1, helpers: ['Priya'] }, 'the iPad sees who joined');
 
-    const posted = await postJson(`${guide.base}/api/museum/rooms/${code}/state`, { at: 0, window: CAPTURE_ID, by: 'helper', name: 'Priya' });
+    const posted = await postJson(`${guide.base}/api/museum/rooms/${code}/state`, { at: 0, atId: CAPTURE_ID, window: CAPTURE_ID, by: 'helper', name: 'Priya' });
     assert.equal(posted.status, 200, await posted.clone().text());
     const [onIpad, onPhone] = await Promise.all([ipad.next('state'), phone.next('state')]);
     for (const s of [onIpad, onPhone]) {
-      assert.deepEqual({ at: s.at, window: s.window, by: s.by, name: s.name, rev: s.rev }, { at: 0, window: CAPTURE_ID, by: 'helper', name: 'Priya', rev: 1 });
+      assert.deepEqual(
+        { at: s.at, atId: s.atId, window: s.window, by: s.by, name: s.name, rev: s.rev },
+        { at: 0, atId: CAPTURE_ID, window: CAPTURE_ID, by: 'helper', name: 'Priya', rev: 1 },
+      );
     }
 
     phone.close();
@@ -166,7 +170,7 @@ describe('museum rooms: routes', () => {
   });
 
   test('a bad or unknown code answers 404', async () => {
-    for (const code of ['KATB', 'AB', 'ZZZZZ']) {
+    for (const code of ['KATB', 'AB', 'ZZZZZ', '%E0%A4%A']) {
       assert.equal((await fetch(`${guide.base}/api/museum/rooms/${code}`)).status, 404, code);
       assert.equal((await fetch(`${guide.base}/api/museum/rooms/${code}/events`)).status, 404, code);
     }
@@ -185,6 +189,8 @@ describe('museum rooms: routes', () => {
     assert.equal(unknown.status, 400);
     assert.match((await unknown.json()).error, /No capture/);
     assert.equal((await postJson(`${guide.base}/api/museum/rooms`, { at: -5 })).status, 400);
+    assert.equal((await postJson(`${guide.base}/api/museum/rooms`, null)).status, 200, 'an empty create body is fine');
+    assert.equal((await postJson(`${guide.base}/api/museum/rooms`, 3)).status, 400);
   });
 
   test('an expired room is gone', async () => {

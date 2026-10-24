@@ -46,13 +46,13 @@ export function PatientTogether({ room, at }: { room: MuseumRoom; at: number }) 
     <>
       <div className="together-corner">
         <WithYou room={room} />
-        {!showing && (
+        {!(showing && (busy || room.code)) && (
           <button className="together-button" onClick={() => void start()}>
             Visit together
           </button>
         )}
       </div>
-      {showing && (
+      {showing && (busy || room.code) && (
         <div className="together-panel" role="dialog" aria-label="Visit together">
           {busy || !room.code ? (
             <p>Getting a code…</p>

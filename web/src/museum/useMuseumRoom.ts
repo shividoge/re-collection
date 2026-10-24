@@ -3,6 +3,8 @@ import { GuideError, museumRooms, type RoomChange, type RoomPeers, type RoomRole
 
 const ROOM_KEY = 'braindance.museum.room'
 const NAME_KEY = 'braindance.museum.helperName'
+/** The newest change any iPad screen has acted on: { code, rev }. Survives the museum ↔ window switch. */
+const FOLLOWED_KEY = 'braindance.museum.followed'
 const RETRY_MS = 3000
 /** How long stepping in or out waits for the guide before going anyway. */
 const NAVIGATE_WAIT_MS = 1500
@@ -39,6 +41,19 @@ function writeStorage(storage: () => Storage, key: string, value: string | null)
 const session = () => sessionStorage
 const local = () => localStorage
 
+function followedRev(code: string): number {
+  try {
+    const mark = JSON.parse(readStorage(session, FOLLOWED_KEY) ?? 'null') as { code?: unknown; rev?: unknown } | null
+    return mark?.code === code && typeof mark.rev === 'number' ? mark.rev : -1
+  } catch {
+    return -1
+  }
+}
+
+function markFollowed(code: string, rev: number) {
+  writeStorage(session, FOLLOWED_KEY, JSON.stringify({ code, rev: Math.max(rev, followedRev(code)) }))
+}
+
 export type MuseumRoom = {
   role: RoomRole
   code: string | null
@@ -52,11 +67,19 @@ export type MuseumRoom = {
   open: (at: number) => Promise<void>
   /** Patient: stop visiting together. */
   close: () => void
-  setAt: (at: number) => void
+  /** Walk to a frame (`atId`: its capture id, null at the entrance). */
+  setAt: (at: number, atId: string | null) => void
   /** Opens a moment in the Memory Window on the iPad. Resolves once the guide has it (or after a short wait). */
   enter: (id: string, at: number) => Promise<void>
   /** Back to the museum on both screens. */
   leave: () => Promise<void>
+  /**
+   * iPad only: the helper's newest change that no iPad screen has acted on yet (stepping in or
+   * out). Kept across the museum ↔ window switch, so a quick in-and-out by the helper isn't lost.
+   */
+  fresh: RoomState | null
+  /** iPad only: call before acting on `fresh`. */
+  followed: (rev: number) => void
 }
 
 const NO_PEERS: RoomPeers = { patient: 0, helpers: [] }
@@ -160,10 +183,13 @@ export function useMuseumRoom(role: RoomRole, { join = null, enabled = true }: {
       const optimistic: RoomState | null = base ? { ...base, ...full, name: full.name ?? null } : null
       if (optimistic) setState(optimistic)
       pending.current += 1
+      // Answers that arrive after switching rooms belong to the old room.
+      const sameRoom = () => stateCode.current === code
       try {
         const { state: confirmed } = await museumRooms.setState(code, full)
-        if (!latest.current || confirmed.rev > latest.current.rev) latest.current = confirmed
+        if (sameRoom() && (!latest.current || confirmed.rev > latest.current.rev)) latest.current = confirmed
       } catch (error) {
+        if (!sameRoom()) return
         if (error instanceof GuideError && error.status === 404) {
           setStatus('gone')
           forget()
@@ -171,8 +197,10 @@ export function useMuseumRoom(role: RoomRole, { join = null, enabled = true }: {
         // The iPad keeps what was tapped even if the guide missed it: it just walks alone.
         if (role === 'patient' && optimistic) latest.current = optimistic
       } finally {
-        pending.current -= 1
-        if (pending.current === 0 && latest.current) setState(latest.current)
+        if (sameRoom()) {
+          pending.current = Math.max(0, pending.current - 1)
+          if (pending.current === 0 && latest.current) setState(latest.current)
+        }
       }
     },
     [code, connectable, role, name, forget],
@@ -192,15 +220,34 @@ export function useMuseumRoom(role: RoomRole, { join = null, enabled = true }: {
   }, [])
 
   const setAt = useCallback(
-    (at: number) => {
-      void send({ at, window: latest.current?.window ?? null })
+    (at: number, atId: string | null) => {
+      // The iPad's hall has nothing open; the helper's phone keeps whatever the iPad has open.
+      void send({ at, atId, window: role === 'patient' ? null : (latest.current?.window ?? null) })
     },
-    [send],
+    [send, role],
   )
 
-  const waitBriefly = (p: Promise<void>) => Promise.race([p, new Promise<void>((done) => window.setTimeout(done, NAVIGATE_WAIT_MS))])
-  const enter = useCallback((id: string, at: number) => waitBriefly(send({ at, window: id })), [send])
-  const leave = useCallback(() => waitBriefly(send({ at: latest.current?.at ?? -1, window: null })), [send])
+  /**
+   * The iPad switches screens after its own step in or out; whatever the room says by then is
+   * where it already is, so the next screen only acts on newer changes.
+   */
+  const navigate = useCallback(
+    async (change: Omit<RoomChange, 'by' | 'name'>) => {
+      await Promise.race([send(change), new Promise<void>((done) => window.setTimeout(done, NAVIGATE_WAIT_MS))])
+      if (role === 'patient' && code && latest.current) markFollowed(code, latest.current.rev)
+    },
+    [send, role, code],
+  )
+  const enter = useCallback((id: string, at: number) => navigate({ at, atId: id, window: id }), [navigate])
+  const leave = useCallback(
+    () => navigate({ at: latest.current?.at ?? -1, atId: latest.current?.atId ?? null, window: null }),
+    [navigate],
+  )
 
-  return { role, code, state, peers, status, name, setName, open, close: forget, setAt, enter, leave }
+  const fresh = role === 'patient' && code && state && state.by === 'helper' && state.rev > followedRev(code) ? state : null
+  const followed = useCallback((rev: number) => {
+    if (code) markFollowed(code, rev)
+  }, [code])
+
+  return { role, code, state, peers, status, name, setName, open, close: forget, setAt, enter, leave, fresh, followed }
 }

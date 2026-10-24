@@ -57,9 +57,14 @@ export function parseStateBody(body) {
     return { ok: false, error: 'window must be null or a capture id.' };
   }
   if (body.by !== 'patient' && body.by !== 'helper') return { ok: false, error: 'by must be "patient" or "helper".' };
+  const atId = body.atId ?? null;
+  if (atId !== null && !(typeof atId === 'string' && isCaptureId(atId))) return { ok: false, error: 'atId must be null or a capture id.' };
   const name = cleanName(body.name);
   if (!name.ok) return name;
-  return { ok: true, value: { at: body.at, window: body.window?.toLowerCase() ?? null, by: body.by, name: name.value } };
+  return {
+    ok: true,
+    value: { at: body.at, atId: atId?.toLowerCase() ?? null, window: body.window?.toLowerCase() ?? null, by: body.by, name: name.value },
+  };
 }
 
 /** A room with no listeners and no change for 3 hours is gone. */
@@ -99,7 +104,12 @@ export function createMuseumRooms({ store, now = Date.now, random = randomInt, k
 
   /** The room for a code in the URL, or null (bad format, unknown or expired). */
   function find(rawCode) {
-    const code = normalizeCode(decodeURIComponent(rawCode));
+    let code;
+    try {
+      code = normalizeCode(decodeURIComponent(rawCode));
+    } catch {
+      return null;   // a broken %-escape is just a wrong code
+    }
     if (!code) return null;
     const room = rooms.get(code);
     if (!room) return null;
@@ -113,15 +123,15 @@ export function createMuseumRooms({ store, now = Date.now, random = randomInt, k
 
   async function create(req, res) {
     sweep();
-    const body = await readJsonBody(req);
-    const at = body.at ?? -1;
+    const body = (await readJsonBody(req)) ?? {};
+    const at = typeof body === 'object' ? (body.at ?? -1) : null;
     if (!isFrameIndex(at)) return sendError(res, 400, `at must be a whole number from -1 to ${MAX_AT}.`);
     const code = makeCode(new Set(rooms.keys()), random);
     if (!code) return sendError(res, 503, 'Couldn\'t find a free code. Try again.');
     const t = now();
     const room = {
       code,
-      state: { at, window: null, by: 'patient', name: null, rev: 0, updatedAt: new Date(t).toISOString() },
+      state: { at, atId: null, window: null, by: 'patient', name: null, rev: 0, updatedAt: new Date(t).toISOString() },
       changedAt: t,
       clients: new Set(),
     };

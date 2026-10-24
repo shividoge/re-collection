@@ -301,8 +301,8 @@ export async function fetchText(id: string, name: string): Promise<string> {
 
 /** "Visit together" (docs/guide-api.md "Visit together (museum rooms)"). */
 export type RoomRole = 'patient' | 'helper'
-export type RoomState = { at: number; window: string | null; by: RoomRole; name: string | null; rev: number; updatedAt: string }
-export type RoomChange = { at: number; window: string | null; by: RoomRole; name?: string | null }
+export type RoomState = { at: number; atId: string | null; window: string | null; by: RoomRole; name: string | null; rev: number; updatedAt: string }
+export type RoomChange = { at: number; atId: string | null; window: string | null; by: RoomRole; name?: string | null }
 export type RoomPeers = { patient: number; helpers: string[] }
 export type Room = { code: string; state: RoomState; peers: RoomPeers }
 
