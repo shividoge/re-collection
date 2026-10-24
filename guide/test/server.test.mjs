@@ -168,3 +168,37 @@ test('parseRange handles open, suffix and bad ranges', () => {
   assert.equal(parseRange('bytes=0-1,4-5', 10), null);
   assert.equal(parseRange(undefined, 10), null);
 });
+
+describe('serving the web app', () => {
+  let guide;
+  before(async () => {
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const webDir = join(await tempDataDir(), 'dist');
+    await mkdir(join(webDir, 'assets'), { recursive: true });
+    await writeFile(join(webDir, 'index.html'), '<!doctype html><title>Braindance</title>');
+    await writeFile(join(webDir, 'assets', 'app.js'), 'console.log(1)');
+    guide = await startGuide({ key: 'secret', webDir });
+  });
+  after(() => guide.server.close());
+
+  test('the app loads without the key, the API still needs it', async () => {
+    const page = await fetch(`${guide.base}/`);
+    assert.equal(page.status, 200);
+    assert.match(page.headers.get('content-type'), /text\/html/);
+    const script = await fetch(`${guide.base}/assets/app.js`);
+    assert.match(script.headers.get('content-type'), /javascript/);
+    assert.equal((await fetch(`${guide.base}/api/captures`)).status, 401);
+    assert.equal((await (await fetch(`${guide.base}/health`)).json()).keyRequired, true);
+  });
+
+  test('paths outside the app folder are refused', async () => {
+    // "../" collapses inside the app folder, so these get index.html, never a file from outside.
+    for (const path of ['/..%2f..%2fpackage.json', '/../../package.json', '/%2e%2e/%2e%2e/src/server.mjs']) {
+      const status = await rawGet(guide.base, path);
+      assert.ok([200, 400, 404].includes(status), `${path} returned ${status}`);
+      const body = await (await fetch(guide.base + path)).text();
+      assert.doesNotMatch(body, /braindance-guide|createApp/, `${path} leaked a file`);
+    }
+  });
+});

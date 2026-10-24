@@ -2,6 +2,8 @@
 
 Read `CLAUDE.md` first. The contracts are `docs/capture-format.md` (the phone's files) and `docs/guide-api.md` (the guide server's routes). Build against them, and ask the owner before changing one.
 
+**Update 08:30 Sat:** the web viewer exists (`web/`, built by Shivin's Claude while the team slept): drop a capture zip on the page, see it in the gallery, orbit the 3D room, play the visit with people replayed in 3D from depth, and switch to the phone's view. The guide serves it at `/`. The main path for demo captures is **phone → AirDrop zip → drop on the website**; phone-to-guide upload also works but is optional.
+
 **What changed at 07:00 Sat:** the Python pipeline on the ASUS GX10 is cut. Shivin now owns a small Node guide server that makes every Claude call, so the product is built by two people: Shivin (phone + guide) and Firdavs (web). IBS27's role is proposed below.
 
 | Person | GitHub | Owns | Folders |
@@ -32,7 +34,7 @@ Work on a branch named for your area (`ios/...`, `guide/...`, `web/...`), push o
 - Tests: validation catches a wrong `depth.bin` size; Range returns 206 with the right bytes; path traversal (`../`) is rejected.
 - Done when the sample capture is imported and `curl -r 0-3 http://127.0.0.1:8787/files/<id>/room.bin` returns 4 bytes. Then start the tunnel and post the URL for Firdavs.
 
-**2. iPhone app: transcript, keyframes, review, upload.** Branch `ios/upload`.
+**2. iPhone app: transcript, keyframes, review, upload.** Branch `ios/upload` (built, PR #4; on-device checks in `ios/VERIFY.md` checkpoint 6 still to do). Demo captures go phone → AirDrop zip → drop on the website.
 - Video becomes `video.mp4` (H.264 + AAC) so Chrome plays it.
 - After recording: `transcript.json` from `SFSpeechRecognizer` on the recorded audio (`requiresOnDeviceRecognition`, word timings; add `NSSpeechRecognitionUsageDescription`), and `keyframes/kNNNN.jpg` once per second, 1024 wide. Formats are in `docs/capture-format.md`. If on-device recognition isn't available, skip the file and add a manifest warning.
 - Review screen: title, attendees (free text), play back the clip. These go in `manifest.json`.
@@ -83,27 +85,27 @@ You build everything the family and the patient see. You don't write any Claude 
 
 **Until the guide server is up**, work from the sample capture on disk: download it with `gh release download sample-capture-1 --repo shividoge/braindance`, unzip it into `web/public/sample/` (gitignored), and load files from there. When the guide is up, switch to `VITE_GUIDE_URL` and `/files/:id/:name`. For screens that need Claude (review, session, dashboard) before the real routes exist, run the guide with `MOCK_CLAUDE=1`; the UI must show the red MOCK MODE banner whenever `/health` says `mock: true`.
 
+Already built in `web/` (read `web/README.md` first): gallery with zip drop upload, 3D room cloud, camera path, synced video panel, Orbit and Phone's view, and DepthReplay (people in 3D). Build on it; don't restart it.
+
 | By | Deliverable |
 |---|---|
-| 12:00 | Vite + React + TS + R3F scaffold in `web/`; StaticCloud renders the sample `room.bin` with soft round points, in the right orientation (y up, floor flat) |
-| 13:30 | Camera path from `frames.jsonl` as a faint line; synced video fallback panel with a playhead on the path |
-| 15:00 | Captures list (7.1) against the guide server; CameraPath playback mode |
-| 17:00 | Family fact review screen (7.3): facts next to keyframes/quotes, click to seek, approve/edit/reject/don't bring up |
+| 12:00 | Run it (`web/README.md`), check the viewer on the sample capture and a fresh one; fix anything that looks wrong (point size, colors, framing) and make it demo-ready on a projector and an iPad |
+| 14:00 | Captures list polish (7.1): status badges, warnings, delete/hide test captures; viewer polish: chapter markers on the scrubber once facts exist |
+| 17:00 | Family fact review screen (7.3): facts next to keyframes/quotes, click to seek, approve/edit/reject/don't bring up (guide routes land ~16:00; mock mode before that) |
 | 19:00 | Revisit screen (7.4): welcome, replay with chapter narration, push-to-talk, goodbye, caregiver end button; speech via `speechSynthesis` |
 | 21:00 | Dashboard (7.5) from `/api/progress` with real session times, branches, distress alerts |
-| 23:00 | DepthReplay shader (people in 3D) if everything above works |
 | 01:00–04:00 | Run 3+ real revisit sessions with the demo moment, spaced a few hours apart |
 
-Note: the sample's video is `video.mov` (HEVC). Safari plays it; Chrome on Windows may not. The next phone build writes `video.mp4` (H.264). Read the name from `manifest.video.file`.
+Note: the sample's video is `video.mov` (HEVC). Safari and Chrome on a Mac play it; Chrome on Windows may not. Newer captures are `video.mp4` (H.264). Always read the name from `manifest.video.file`.
 
 **Starting prompt for Claude Code:**
 ```
-Read CLAUDE.md, TASKS.md, docs/capture-format.md and docs/guide-api.md. I'm Firdavs.
-Build web/ (Vite + React + TypeScript + React Three Fiber) following CLAUDE.md Section 7.
-Start with the StaticCloud viewer loading room.bin from the sample capture (GitHub release
-sample-capture-1, unzipped into web/public/sample/, gitignored), then the camera path and
-the synced video fallback. Work on branch web/viewer, commit small, open a PR. Then the
-captures list, fact review, revisit session and dashboard against the guide server API.
+Read CLAUDE.md, TASKS.md, web/README.md, docs/capture-format.md and docs/guide-api.md.
+I'm Firdavs. The web viewer in web/ already works (gallery, zip upload, 3D room, people
+replay, phone's view). Run it against the guide with the sample capture, then continue
+TASKS.md "Firdavs" from the 12:00 row: polish the viewer for the demo, then the fact
+review screen, revisit session and dashboard. Work on branch web/<feature>, commit small,
+open PRs.
 ```
 
 ---
@@ -142,7 +144,7 @@ docs/devpost and open a PR.
 
 ## Handoffs to watch
 
-- **Now** Shivin → Firdavs: `room.bin` and the sample capture (release `sample-capture-1`).
+- **Now** Shivin → Firdavs: the sample capture (release `sample-capture-1`) and the working viewer in `web/`.
 - **11:00** Shivin → Firdavs: guide server tunnel URL serving the sample capture. If late, Firdavs keeps loading from `web/public/sample/`.
 - **16:00** Shivin → Firdavs: real facts in `/api/moments/:id`. Until then, mock mode with the banner.
 - **18:00** Shivin → Firdavs: session routes with grounding. Until then, mock mode with the banner.
