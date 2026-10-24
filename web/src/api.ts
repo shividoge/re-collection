@@ -15,6 +15,8 @@ export type CaptureStatus = {
 }
 
 export type CaptureSummary = {
+  /** \"video\" for scenes rebuilt from an ordinary video (estimated). */
+  source?: string | null
   id: string
   title: string
   createdAt: string | null
@@ -29,7 +31,9 @@ export type Manifest = {
   title: string
   attendees: string[]
   video: { file: string; width: number; height: number; fps: number; durationSec: number; frameCount: number }
-  depth: { file: string; confidenceFile: string; width: number; height: number; rateHz: number; count: number }
+  depth: { file: string; confidenceFile: string; width: number; height: number; rateHz: number; count: number; estimated?: boolean; model?: string }
+  /** "video" when rebuilt from an ordinary video (estimated); absent for LiDAR scans. */
+  source?: string
   room?: { bin: string; ply: string; points: number; voxelMeters: number }
   transcript?: { file: string; locale: string }
   keyframes?: { dir: string; everySec: number; count: number }

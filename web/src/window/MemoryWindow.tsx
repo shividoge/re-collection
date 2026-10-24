@@ -7,6 +7,7 @@ import type { NavMode } from '../scene/SceneViewer'
 import { StaticCloud } from '../scene/StaticCloud'
 import { usePlayback } from '../scene/usePlayback'
 import { useSplatSizes } from '../scene/useSplatSizes'
+import { EstimatedBadge } from '../views/EstimatedBadge'
 import { VisitDock } from '../views/VisitDock'
 import { useHeadTracker } from './useHeadTracker'
 import { WindowCamera } from './WindowCamera'
@@ -168,7 +169,9 @@ function WindowStage({ id, capture }: { id: string; capture: LoadedCapture }) {
         <a href={`#/capture/${id}`} className="window-exit">
           ← Back
         </a>
-        <div className="window-title">{capture.label}</div>
+        <div className="window-title">
+          {capture.label} <EstimatedBadge manifest={manifest} />
+        </div>
         <div className="window-actions">
           <HeadButton tracker={tracker} />
           {canTilt && !tracking && (

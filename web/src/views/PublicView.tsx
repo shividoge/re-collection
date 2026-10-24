@@ -1,3 +1,4 @@
+import { EstimatedBadge } from './EstimatedBadge'
 import { useEffect, useState } from 'react'
 import { publicGuide } from '../api'
 import type { Fact, Moment } from '../api'
@@ -42,7 +43,7 @@ export function PublicView({ id }: { id: string }) {
           ← Braindance
         </a>
         <div className="bar-title">
-          <strong>{moment?.moment.title || capture.label}</strong>
+          <strong>{moment?.moment.title || capture.label}</strong> <EstimatedBadge manifest={capture.manifest} />
           {manifest && (
             <span className="meta">
               {new Date(manifest.createdAt).toLocaleString()} · {Math.round(manifest.video.durationSec)} s

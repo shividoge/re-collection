@@ -93,6 +93,7 @@ export function createApp(config, { claude = createClaude(config), log = console
       title: manifest.title ?? '',
       createdAt: manifest.createdAt ?? null,
       durationSec: manifest.video?.durationSec ?? null,
+      source: manifest.source ?? null,
       thumb: files.includes('thumb.jpg') ? `/files/${id}/thumb.jpg` : null,
       status: await store.status(id),
     };

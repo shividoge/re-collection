@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { SceneViewer } from '../scene/SceneViewer'
 import { loadGuideCapture, type LoadedCapture } from '../scene/loadCapture'
 import { PublicSwitch } from './PublicSwitch'
+import { EstimatedBadge } from './EstimatedBadge'
 import { VisitDock } from './VisitDock'
 
 /**
@@ -33,7 +34,7 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
           ← Captures
         </a>
         <div className="bar-title">
-          <strong>{capture.label}</strong>
+          <strong>{capture.label}</strong> <EstimatedBadge manifest={manifest} />
           {manifest && (
             <span className="meta">
               {new Date(manifest.createdAt).toLocaleString()} · {Math.round(manifest.video.durationSec)} s
