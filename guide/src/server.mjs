@@ -6,9 +6,12 @@ import { pipeline } from 'node:stream/promises';
 import { pathToFileURL } from 'node:url';
 
 import { guideRoot, loadConfig } from './config.mjs';
-import { CORS_HEADERS, sendError, sendFile, sendJson } from './http.mjs';
+import { CORS_HEADERS, readJsonBody, sendError, sendFile, sendJson } from './http.mjs';
+import { createClaude } from './claude.mjs';
+import { extractFacts } from './facts.mjs';
 import { Store, StoreError } from './store.mjs';
 import { validateCapture } from './validate.mjs';
+import { createFactsWorker } from './worker.mjs';
 
 /** Largest single upload accepted. A 3-minute video is about 200 MB. */
 const MAX_UPLOAD_BYTES = 2 * 1024 ** 3;
@@ -17,9 +20,14 @@ const MAX_UPLOAD_BYTES = 2 * 1024 ** 3;
  * Builds the request handler. Routes and JSON shapes are the contract in
  * docs/guide-api.md; change that doc first if a route changes.
  */
-export function createApp(config) {
+export function createApp(config, { claude = createClaude(config), log = console } = {}) {
   const store = new Store(config.dataDir);
   const started = Date.now();
+  const worker = createFactsWorker({
+    store,
+    log,
+    extract: (id) => extractFacts({ store, claude, model: config.models.offline }, id),
+  });
   /** The built web app (web/dist), served at / so judges need one URL. */
   const webDir = config.webDir ?? join(guideRoot, '..', 'web', 'dist');
 
@@ -29,6 +37,9 @@ export function createApp(config) {
     ['GET', /^\/api\/captures\/([^/]+)$/, getCapture],
     ['PUT', /^\/api\/captures\/([^/]+)\/files\/(.+)$/, putFile],
     ['POST', /^\/api\/captures\/([^/]+)\/complete$/, complete],
+    ['GET', /^\/api\/moments\/([^/]+)$/, getMoment],
+    ['PATCH', /^\/api\/moments\/([^/]+)\/facts\/([^/]+)$/, patchFact],
+    ['POST', /^\/api\/moments\/([^/]+)\/extract$/, reextract],
     ['GET', /^\/files\/([^/]+)\/(.+)$/, getFile],
     ['HEAD', /^\/files\/([^/]+)\/(.+)$/, getFile],
   ];
@@ -119,7 +130,51 @@ export function createApp(config) {
       facts: 'queued',
       factsError: null,
     });
+    worker.kick();
     sendJson(res, 200, { ok: true, status });
+  }
+
+  async function getMoment(req, res, id) {
+    if (!(await store.exists(id))) return sendError(res, 404, `No capture with id ${id}.`);
+    const moment = await store.readJson(id, 'moment.json');
+    if (!moment) {
+      const status = await store.status(id);
+      const why = status.facts === 'failed' ? `Fact extraction failed: ${status.factsError}` : `Facts aren't ready yet (${status.facts}).`;
+      return sendJson(res, 404, { error: why, status });
+    }
+    sendJson(res, 200, moment);
+  }
+
+  /** The family's review: approve, reject, reword, or mark "don't bring this up". */
+  async function patchFact(req, res, id, factId) {
+    const body = await readJsonBody(req);
+    const moment = await store.readJson(id, 'moment.json');
+    const fact = moment?.facts.find((f) => f.id === factId);
+    if (!fact) return sendError(res, 404, `No fact ${factId} in capture ${id}.`);
+
+    if ('status' in body) {
+      if (!['pending', 'approved', 'rejected'].includes(body.status)) {
+        return sendError(res, 400, 'status must be pending, approved or rejected.');
+      }
+      fact.status = body.status;
+    }
+    if ('editedText' in body) {
+      const edited = body.editedText === null ? null : String(body.editedText).trim();
+      fact.editedText = edited || null;
+    }
+    if ('doNotRaise' in body) fact.doNotRaise = Boolean(body.doNotRaise);
+    fact.reviewedAt = new Date().toISOString();
+    await store.writeJson(id, 'moment.json', moment);
+    sendJson(res, 200, fact);
+  }
+
+  async function reextract(req, res, id) {
+    const status = await store.status(id);
+    if (status.upload !== 'done') return sendError(res, 409, 'The capture isn\'t completely uploaded yet.');
+    if (status.facts === 'running') return sendError(res, 409, 'Facts are already being extracted.');
+    await store.setStatus(id, { facts: 'queued', factsError: null });
+    worker.kick();
+    sendJson(res, 200, { ok: true });
   }
 
   async function getFile(req, res, id, name) {
@@ -156,7 +211,10 @@ export function createApp(config) {
     return url.pathname.startsWith('/files/') && url.searchParams.get('key') === config.key;
   }
 
-  return async function handle(req, res) {
+  // Pick up anything queued before a restart.
+  worker.kick();
+
+  async function handle(req, res) {
     const url = new URL(req.url, 'http://guide.local');
     try {
       if (req.method === 'OPTIONS') {
@@ -182,11 +240,17 @@ export function createApp(config) {
       console.error(error);
       sendError(res, 500, `The guide hit an error: ${error.message}`);
     }
-  };
+  }
+
+  /** Captures imported with `npm run import` while the guide runs are found by this. */
+  handle.kickFacts = () => worker.kick();
+  return handle;
 }
 
 export function startServer(config = loadConfig()) {
-  const server = createServer(createApp(config));
+  const app = createApp(config);
+  const server = createServer(app);
+  setInterval(app.kickFacts, 15_000).unref();
   server.requestTimeout = 0;   // large uploads over a slow tunnel
   server.listen(config.port, () => {
     const claude = config.mockClaude ? 'MOCK MODE' : config.anthropicKey ? 'key set' : 'no key yet';

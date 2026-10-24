@@ -1,6 +1,6 @@
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 export const CAPTURE_ID = '11111111-2222-4333-8444-555555555555';
 
@@ -65,6 +65,9 @@ export async function tempDataDir() {
 export async function writeCapture(dataDir, files, id = CAPTURE_ID) {
   const dir = join(dataDir, 'captures', id);
   await mkdir(dir, { recursive: true });
-  for (const [name, data] of Object.entries(files)) await writeFile(join(dir, name), data);
+  for (const [name, data] of Object.entries(files)) {
+    await mkdir(dirname(join(dir, name)), { recursive: true });
+    await writeFile(join(dir, name), data);
+  }
   return dir;
 }

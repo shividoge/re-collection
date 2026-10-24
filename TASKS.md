@@ -42,7 +42,7 @@ Work on a branch named for your area (`ios/...`, `guide/...`, `web/...`), push o
 - Clap test: phone propped up, clap with both hands in the middle of the frame, check sync (Claude can check it from the files).
 - Update `ios/VERIFY.md` and unit tests (manifest additions, keyframe naming, transcript encoding).
 
-**3. Guide server, part 2: facts.** Branch `guide/facts`.
+**3. Guide server, part 2: facts.** Branch `guide/facts` (built: worked on the real sample capture, 10 grounded facts from 29 keyframes).
 - `src/claude.mjs` (one wrapper; mock switch), `src/prompts.mjs`, `src/facts.mjs` per `CLAUDE.md` 6.2: up to 30 keyframes + transcript + title/attendees go to Opus, with tool `record_facts`; drop facts without evidence; write `moment.json`; status queued → running → done/failed.
 - Routes: `GET /api/moments/:id`, `PATCH /api/moments/:id/facts/:factId`, `POST /api/moments/:id/extract`.
 - Done when the real capture has facts in `moment.json`, each linked to a keyframe or quote.
@@ -146,6 +146,6 @@ docs/devpost and open a PR.
 
 - **Now** Shivin → Firdavs: the sample capture (release `sample-capture-1`) and the working viewer in `web/`.
 - **11:00** Shivin → Firdavs: guide server tunnel URL serving the sample capture. If late, Firdavs keeps loading from `web/public/sample/`.
-- **16:00** Shivin → Firdavs: real facts in `/api/moments/:id`. Until then, mock mode with the banner.
+- **Done (09:15)** Shivin → Firdavs: real facts in `/api/moments/:id` (the sample capture has them), plus `PATCH .../facts/:factId` and `POST .../extract`.
 - **18:00** Shivin → Firdavs: session routes with grounding. Until then, mock mode with the banner.
 - **20:00** Shivin → everyone: the demo capture. Everything after depends on this one, so protect it (keep the zip, upload it twice).
