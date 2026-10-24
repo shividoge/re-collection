@@ -4,26 +4,8 @@ import { after, before, describe, test } from 'node:test';
 
 import { createApp } from '../src/server.mjs';
 import { parseRange } from '../src/http.mjs';
-import { CAPTURE_ID, tempDataDir, tinyCapture } from './helpers.mjs';
+import { CAPTURE_ID, startGuide, tempDataDir, tinyCapture } from './helpers.mjs';
 
-export async function startGuide(overrides = {}) {
-  const dataDir = await tempDataDir();
-  const config = {
-    port: 0,
-    dataDir,
-    webDir: `${dataDir}/no-web-build`,   // independent of whether web/dist exists
-    key: '',
-    mockClaude: false,
-    anthropicKey: '',
-    models: { offline: 'o', live: 'l' },
-    ...overrides,
-  };
-  const silent = { log() {}, error() {} };
-  const server = createServer(createApp(config, { log: silent, ...(overrides.deps ?? {}) }));
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const base = `http://127.0.0.1:${server.address().port}`;
-  return { server, base, config };
-}
 
 /** fetch() normalizes "../" in URLs, so raw paths go through http.request. */
 function rawGet(base, path) {

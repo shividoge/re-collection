@@ -10,6 +10,7 @@ import { CORS_HEADERS, readJsonBody, sendError, sendFile, sendJson } from './htt
 import { ClaudeError, createClaude } from './claude.mjs';
 import { extractFacts } from './facts.mjs';
 import { createPublic } from './public.mjs';
+import { readRegions, writeRegions } from './hidden.mjs';
 import { createSessions, SessionError } from './session.mjs';
 import { Store, StoreError } from './store.mjs';
 import { validateCapture } from './validate.mjs';
@@ -44,6 +45,7 @@ export function createApp(config, { claude = createClaude(config), log = console
 
   const routes = [
     ['PUT', /^\/api\/captures\/([^/]+)\/public$/, setPublic],
+    ['PUT', /^\/api\/captures\/([^/]+)\/hidden$/, setHidden],
     ['GET', /^\/health$/, health],
     ['GET', /^\/api\/captures$/, listCaptures],
     ['GET', /^\/api\/captures\/([^/]+)$/, getCapture],
@@ -63,6 +65,14 @@ export function createApp(config, { claude = createClaude(config), log = console
     ['GET', /^\/files\/([^/]+)\/(.+)$/, getFile],
     ['HEAD', /^\/files\/([^/]+)\/(.+)$/, getFile],
   ];
+
+  /** "Hide from her": replaces the capture's hidden regions (see hidden.mjs). */
+  async function setHidden(req, res, id) {
+    if (!(await store.exists(id))) return sendError(res, 404, `No capture with id ${id}.`);
+    const body = await readJsonBody(req);
+    const regions = await writeRegions(store, id, body.regions);
+    sendJson(res, 200, { ok: true, regions });
+  }
 
   /** The family's switch: only a public capture is visible at /public/*. */
   async function setPublic(req, res, id) {
@@ -109,7 +119,7 @@ export function createApp(config, { claude = createClaude(config), log = console
     const manifest = await store.readJson(id, 'manifest.json');
     const files = {};
     for (const name of await store.listFiles(id)) files[name] = `/files/${id}/${name}`;
-    sendJson(res, 200, { id, manifest, status: await store.status(id), files });
+    sendJson(res, 200, { id, manifest, status: await store.status(id), files, hidden: await readRegions(store, id) });
   }
 
   /** Streams the body to <name>.part, then renames, so a dropped upload never leaves a short file. */

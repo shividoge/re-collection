@@ -3,8 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 
-import { startGuide } from './server.test.mjs';
-import { CAPTURE_ID, tinyCapture, writeCapture } from './helpers.mjs';
+import { CAPTURE_ID, startGuide, tinyCapture, writeCapture } from './helpers.mjs';
 
 const KEY = 'team-secret';
 const OTHER_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';

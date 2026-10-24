@@ -9,7 +9,7 @@ const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 const NAME_PATTERN = /^(?:keyframes\/)?[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /** Files the guide writes itself; the phone can't upload over them. */
-const GUIDE_FILES = new Set(['status.json', 'moment.json']);
+const GUIDE_FILES = new Set(['status.json', 'moment.json', 'hidden.json']);
 
 export class StoreError extends Error {
   constructor(status, message) {

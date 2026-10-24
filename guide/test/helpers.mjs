@@ -1,4 +1,7 @@
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
+
+import { createApp } from '../src/server.mjs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -70,4 +73,24 @@ export async function writeCapture(dataDir, files, id = CAPTURE_ID) {
     await writeFile(join(dir, name), data);
   }
   return dir;
+}
+
+/** A guide on a random port with a fresh data folder. */
+export async function startGuide(overrides = {}) {
+  const dataDir = await tempDataDir();
+  const config = {
+    port: 0,
+    dataDir,
+    webDir: `${dataDir}/no-web-build`,   // independent of whether web/dist exists
+    key: '',
+    mockClaude: false,
+    anthropicKey: '',
+    models: { offline: 'o', live: 'l' },
+    ...overrides,
+  };
+  const silent = { log() {}, error() {} };
+  const server = createServer(createApp(config, { log: silent, ...(overrides.deps ?? {}) }));
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  return { server, base, config };
 }

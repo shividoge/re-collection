@@ -1,3 +1,4 @@
+import { readRegions } from './hidden.mjs';
 import { allowedFacts } from './grounding.mjs';
 import { isCaptureId } from './store.mjs';
 
@@ -62,6 +63,8 @@ export function createPublicViews({ store, sessions }) {
       manifest: manifest && { ...manifest, title: manifest.title || moment?.moment?.title || '' },
       status: { upload: status.upload, facts: status.facts, factsError: null },
       files,
+      // What the family hid stays hidden from visitors too.
+      hidden: await readRegions(store, id),
     };
   }
 
