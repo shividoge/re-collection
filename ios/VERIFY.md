@@ -71,3 +71,16 @@ Not built yet.
 ## Checkpoint 7 (15:00): coverage hints, thermal and lifecycle edge cases
 
 Not built yet.
+
+## Guided UI (home, scan, review)
+
+- [ ] Home shows the tagline, the three steps, the tips card, one big "Start scanning" button, and the upload status line
+- [ ] Scanning shows "Step 1 of 3" and a coach line that changes as the room fills (sweep slowly, good start, plenty of room)
+- [ ] Moving too fast or covering the camera turns the coach line amber with the tracking message
+- [ ] "Save room" stays dimmed until there are about 2,000 points, then saves with a buzz
+- [ ] After saving, the coach says to let people in, and "Record the visit" is a big red button
+- [ ] Recording shows a breathing red dot, a large timer, a 3:00 progress bar and "Stop recording"
+- [ ] The wait screen says "Putting your visit together" and keeps the app open
+- [ ] Review shows "Step 3 of 3", three stat tiles, a "Send to your family's guide" button, and a buzz when the upload succeeds
+- [ ] A normal capture still works end to end and the zip still imports into the guide
+

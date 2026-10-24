@@ -21,9 +21,13 @@ struct ReviewView: View {
                     VideoPlayer(player: player)
                         .aspectRatio(4.0 / 3.0, contentMode: .fit)
                         .listRowInsets(EdgeInsets())
-                    LabeledContent("Length", value: Self.formatTime(capture.manifest.video.durationSec))
-                    LabeledContent("Room points", value: capture.manifest.room.map { "\($0.points.formatted())" } ?? "none")
-                    LabeledContent("Keyframes", value: "\(capture.manifest.keyframes?.count ?? 0)")
+                    HStack(spacing: 10) {
+                        statTile("Length", Self.formatTime(capture.manifest.video.durationSec), "clock")
+                        statTile("Room points", capture.manifest.room.map { Self.compact($0.points) } ?? "none", "cube.transparent")
+                        statTile("Stills", "\(capture.manifest.keyframes?.count ?? 0)", "photo.stack")
+                    }
+                    .listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
+                    .listRowBackground(Color.clear)
                 }
 
                 Section {
@@ -33,9 +37,9 @@ struct ReviewView: View {
                         .focused($editing)
                         .textInputAutocapitalization(.words)
                 } header: {
-                    Text("About this moment")
+                    Text("Name this moment")
                 } footer: {
-                    Text("Names come from you, never from faces. Separate them with commas.")
+                    Text("Names come from you, never from faces. Separate them with commas. The title and names help Claude describe the visit.")
                 }
 
                 Section("What the phone heard") {
@@ -76,16 +80,26 @@ struct ReviewView: View {
                     Text("The capture also stays on this phone: Files > On My iPhone > Braindance > captures.")
                 }
             }
-            .navigationTitle(title.isEmpty ? "Review the visit" : title)
+            .navigationTitle(title.isEmpty ? "Your visit" : title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { confirmsLeaving = true }
+                    Button("Finish") { confirmsLeaving = true }
                         .disabled(isUploading)
                 }
                 ToolbarItem(placement: .keyboard) {
                     Button("Save") { editing = false }
                 }
+            }
+            .safeAreaInset(edge: .top) {
+                StepBar(step: 3)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.bar)
+            }
+            .onChange(of: model.upload) { _, state in
+                if state == .done { Haptics.success() }
             }
             .confirmationDialog("Leave the review?", isPresented: $confirmsLeaving, titleVisibility: .visible) {
                 Button("Leave") { model.finishReview() }
@@ -119,10 +133,14 @@ struct ReviewView: View {
         switch model.upload {
         case .idle:
             Button {
+                Haptics.tap()
                 startUpload()
             } label: {
-                Label("Upload to the guide", systemImage: "icloud.and.arrow.up")
+                Label("Send to your family's guide", systemImage: "icloud.and.arrow.up")
             }
+            .buttonStyle(BigButtonStyle())
+            .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+            .listRowBackground(Color.clear)
         case .uploading(let progress):
             VStack(alignment: .leading, spacing: 6) {
                 ProgressView(value: progress.fraction)
@@ -130,8 +148,8 @@ struct ReviewView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
         case .done:
-            Label("Uploaded. The guide checked every file.", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+            Label("Sent. The guide checked every file.", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(Brand.good)
         case .failed(let message):
             VStack(alignment: .leading, spacing: 8) {
                 Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
@@ -160,6 +178,23 @@ struct ReviewView: View {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         model.saveDetails(title: title, attendees: names)
+    }
+
+    private func statTile(_ title: String, _ value: String, _ icon: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon).foregroundStyle(Brand.accent)
+            Text(value).font(.headline.monospacedDigit())
+            Text(title).font(.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(Brand.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private static func compact(_ count: Int) -> String {
+        if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
+        if count >= 1_000 { return "\(count / 1_000)k" }
+        return "\(count)"
     }
 
     private static func formatTime(_ seconds: Double) -> String {

@@ -1,0 +1,63 @@
+{
+  "attendees" : [
+
+  ],
+  "audio" : {
+    "channels" : 1,
+    "inVideo" : true,
+    "sampleRate" : 48000
+  },
+  "coordinates" : "arkit-world-meters-y-up",
+  "createdAt" : "2026-10-24T13:34:58Z",
+  "depth" : {
+    "confidenceFile" : "confidence.bin",
+    "count" : 741,
+    "file" : "depth.bin",
+    "height" : 192,
+    "rateHz" : 10,
+    "unit" : "mm",
+    "width" : 256
+  },
+  "device" : "iPhone17,2",
+  "format" : "braindance.capture",
+  "id" : "aa8ba104-6d9c-462f-ab5c-a172b1e0b95e",
+  "imageOrientation" : "landscapeRight",
+  "keyframes" : {
+    "count" : 29,
+    "dir" : "keyframes",
+    "everySec" : 1
+  },
+  "mesh" : {
+    "present" : false
+  },
+  "phases" : {
+    "moment" : {
+      "tEnd" : 28.434000000000001,
+      "tStart" : 0
+    },
+    "scan" : {
+      "tEnd" : -4.1334591490000321,
+      "tStart" : -49.867972115000043
+    }
+  },
+  "room" : {
+    "bin" : "room.bin",
+    "ply" : "room.ply",
+    "points" : 1064340,
+    "source" : "on-device",
+    "voxelMeters" : 0.009999999776482582
+  },
+  "title" : "",
+  "version" : 1,
+  "video" : {
+    "durationSec" : 28.434000000000001,
+    "file" : "video.mov",
+    "fps" : 30,
+    "frameCount" : 853,
+    "height" : 1440,
+    "width" : 1920
+  },
+  "warnings" : [
+
+  ]
+}
