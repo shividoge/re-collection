@@ -165,7 +165,7 @@ function headers(extra: Record<string, string> = {}): Record<string, string> {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(url(path), { ...init, headers: headers(init.headers as Record<string, string>) });
+    response = await fetch(url(path), { ...init, ...(STATIC ? { cache: 'no-cache' as const } : {}), headers: headers(init.headers as Record<string, string>) });
   } catch {
     throw new GuideError(0, "Can't reach the guide server. Is it running (npm start in guide/)?");
   }
@@ -206,7 +206,8 @@ export type PublicSession = {
 async function publicGet<T>(path: string): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(url(path));
+    // A static host lets browsers reuse files for minutes; always ask whether the data changed.
+    response = await fetch(url(path), STATIC ? { cache: 'no-cache' } : undefined);
   } catch {
     throw new GuideError(0, "Can't reach the site's server right now.");
   }
