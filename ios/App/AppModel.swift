@@ -99,8 +99,8 @@ final class AppModel: ObservableObject {
               let accumulator = engine.accumulator
         else { return }
         phase = .savingRoom
-        engine.pauseAccumulation {
-            Task.detached(priority: .userInitiated) { [weak self] in
+        engine.pauseAccumulation { [weak self] in
+            Task.detached(priority: .userInitiated) {
                 let result = Result { try accumulator.exportRoom(to: folder) }
                 await self?.roomSaved(result, token: token)
             }
@@ -116,8 +116,8 @@ final class AppModel: ObservableObject {
     func stopMoment() {
         guard isRecordingMoment, let token = activeToken else { return }
         phase = .savingMoment
-        engine.finishMoment { result in
-            Task { @MainActor [weak self] in await self?.momentFinished(result, token: token) }
+        engine.finishMoment { [weak self] result in
+            Task { @MainActor in await self?.momentFinished(result, token: token) }
         }
     }
 
