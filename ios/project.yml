@@ -8,7 +8,7 @@ settings:
     SWIFT_VERSION: "5.0"
     # Paste your Personal Team ID here (Xcode > Settings > Accounts) so
     # re-running `xcodegen generate` keeps signing. It isn't a secret.
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: AK3HPCD97G
     CODE_SIGN_STYLE: Automatic
 targets:
   BraindanceCapture:
