@@ -4,6 +4,7 @@ import { Dashboard } from './views/Dashboard'
 import { FactsPage } from './views/FactsPage'
 import { Gallery } from './views/Gallery'
 import { RoomFile } from './views/RoomFile'
+import { MemoryWindow } from './window/MemoryWindow'
 import './views/views.css'
 
 /** Hash routes, so the guide can serve this app as plain static files. */
@@ -14,6 +15,8 @@ const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
   // Revisiting happens in the playground now; old links still land there.
   [/^#\/revisit\/([0-9a-f-]{36})$/i, (id) => <CaptureView key={id} id={id} />],
   [/^#\/dashboard\/([0-9a-f-]{36})$/i, (id) => <Dashboard key={id} id={id} />],
+  // The Memory Window: the visit full screen, looked into with head tracking (TV, laptop, iPad).
+  [/^#\/window\/([0-9a-f-]{36})$/i, (id) => <MemoryWindow key={id} id={id} />],
 ]
 
 export default function App() {

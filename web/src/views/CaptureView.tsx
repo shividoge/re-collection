@@ -41,6 +41,7 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
           )}
         </div>
         <nav className="bar-links">
+          <a href={`#/window/${id}`}>Memory Window</a>
           <a href={`#/facts/${id}`}>Facts</a>
           <a href={`#/dashboard/${id}`}>Dashboard</a>
         </nav>
