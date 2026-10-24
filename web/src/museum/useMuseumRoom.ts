@@ -10,6 +10,8 @@ const CLIENT_KEY = 'braindance.museum.client'
 /** How long the event stream gets to deliver its first state before the hook polls instead. */
 const STREAM_GRACE_MS = 3000
 const POLL_MS = 1000
+/** A poll stuck in the tunnel longer than this is given up and tried again. */
+const POLL_TIMEOUT_MS = 5000
 /** How long stepping in or out waits for the guide before going anyway. */
 const NAVIGATE_WAIT_MS = 1500
 const CODE_PATTERN = /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/
@@ -150,7 +152,7 @@ export function useMuseumRoom(role: RoomRole, { join = null, enabled = true }: {
     let pollTimer = 0
     let graceTimer = 0
     let version: number | null = null
-    const aborter = new AbortController()
+    let inflight: AbortController | null = null
     const who = { as: role, name, client }
     setStatus((s) => (s === 'live' || s === 'reconnecting' ? 'reconnecting' : 'connecting'))
     const events = new EventSource(museumRooms.eventsUrl(code, who))
@@ -164,6 +166,9 @@ export function useMuseumRoom(role: RoomRole, { join = null, enabled = true }: {
     }
 
     const poll = async () => {
+      const aborter = new AbortController()
+      inflight = aborter
+      const timeout = window.setTimeout(() => aborter.abort(), POLL_TIMEOUT_MS)
       try {
         const room = await museumRooms.poll(code, who, version, aborter.signal)
         if (stopped) return
@@ -182,6 +187,8 @@ export function useMuseumRoom(role: RoomRole, { join = null, enabled = true }: {
           return
         }
         setStatus((s) => (s === 'connecting' ? s : 'reconnecting'))
+      } finally {
+        window.clearTimeout(timeout)
       }
       pollTimer = window.setTimeout(() => void poll(), POLL_MS)
     }
@@ -211,7 +218,7 @@ export function useMuseumRoom(role: RoomRole, { join = null, enabled = true }: {
       stopped = true
       window.clearTimeout(graceTimer)
       window.clearTimeout(pollTimer)
-      aborter.abort()
+      inflight?.abort()
       events.close()
     }
   }, [code, connectable, role, name, client, forget])
