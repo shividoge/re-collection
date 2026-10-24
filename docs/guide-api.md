@@ -48,6 +48,8 @@ guide/data/
 
 The capture id is the manifest's `id`.
 
+Museum rooms ("Visit together") live in memory only and are never written to disk.
+
 ## Conventions
 
 - JSON in and out, `Content-Type: application/json`, except file uploads and downloads.
@@ -179,6 +181,34 @@ type Progress = {
   nextRevisit: string[];                          // ISO dates: visit +1, +3, +7, +14 days
 };
 ```
+
+### Visit together (museum rooms)
+
+A family member joins the patient's Memory Museum from their phone and leads the walk. The iPad opens a room and shows its code; the helper opens `…/#/museum?join=CODE`. Both screens follow one shared state.
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| POST | `/api/museum/rooms` | optional `{ at }` (the iPad's current frame) | `{ code, state, peers }` |
+| GET | `/api/museum/rooms/:code` | – | `{ code, state, peers }`. Lets the helper check a typed code |
+| GET | `/api/museum/rooms/:code/events?as=patient\|helper&name=` | – | server-sent events (`text/event-stream`), below |
+| POST | `/api/museum/rooms/:code/state` | `{ at, window, by, name? }` | `{ ok: true, state }`, and the new state goes to every listener |
+
+```ts
+type RoomState = {
+  at: number;               // frame index in the museum's oldest-first list; -1 = the entrance
+  window: string | null;    // capture id open in the Memory Window on the iPad, or null (in the hall)
+  by: "patient" | "helper"; // who made this change
+  name: string | null;      // the helper's name, when by = "helper"
+  rev: number;              // goes up by one on every change
+  updatedAt: string;        // ISO time
+};
+type Peers = { patient: number; helpers: string[] };   // open event streams; helpers by name
+```
+
+- **Codes** are 4 consonants with no vowels and no Y (e.g. `KTRB`), so they never spell a word. A new code skips codes in use. Codes are case-insensitive. No auth beyond the code (hackathon only).
+- **Events:** `event: state` with a `RoomState` (sent on connect, then on every change) and `event: peers` with `Peers` (on connect and whenever someone joins or leaves). A comment line (`: keepalive`) every 15 s keeps the cloudflared tunnel open. `as` and `name` only label the listener in `peers`. `EventSource` can't send headers, so when `BRAINDANCE_KEY` is set this route also accepts `?key=`.
+- **Validation:** `at` is an integer from -1 to 9999; `window` is null or the id of a capture on this guide; `by` is `patient` or `helper`; `name` is at most 40 characters. A bad body → 400. A badly formed or unknown code → 404.
+- **Storage:** in memory only (a `Map`); a guide restart forgets every room. A room expires 3 hours after its last change once no one is listening; its code can then be reused.
 
 ## Public routes (visitors, no key)
 
