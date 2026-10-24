@@ -1,6 +1,6 @@
-# Braindance: who builds what (plan v2)
+# Braindance: who builds what (plan v2, plus the plan v3 editor)
 
-Read `CLAUDE.md` first. The contracts are `docs/capture-format.md` (the phone's files) and `docs/guide-api.md` (the guide server's routes). Build against them, and ask the owner before changing one.
+Read `CLAUDE.md` first. The contracts are `docs/capture-format.md` (the phone's files), `docs/guide-api.md` (the guide server's routes) and `docs/scene-model.md` (the editor's shared data). Build against them, and ask the owner before changing one.
 
 **Update ~07:45 Sat:** the web viewer exists (`web/`, built by Shivin's Claude while the team slept): drop a capture zip on the page, see it in the gallery, orbit the 3D room, play the visit with people replayed in 3D from depth, and switch to the phone's view. The guide serves it at `/`. The main path for demo captures is **phone → AirDrop zip → drop on the website**; phone-to-guide upload also works but is optional.
 
@@ -15,6 +15,65 @@ Read `CLAUDE.md` first. The contracts are `docs/capture-format.md` (the phone's 
 Work on a branch named for your area (`ios/...`, `guide/...`, `web/...`), push often, and open a PR into `main`. Don't push to `main` directly.
 
 ---
+
+## Plan v3: the family's editor (proposal; Shivin to confirm)
+
+The family's side becomes a spatial editor for the visit (`CLAUDE.md` Sections 1 and 7.6). The patient loop, the product and the audience don't change, and the patient loop still comes first (ground rule 4). Build order and priorities are in `CLAUDE.md` Section 10 (P0, then P1, then P2). Data shapes are in `docs/scene-model.md`; routes are in `docs/guide-api.md` under "Editor".
+
+| Person | Builds | Folders |
+|---|---|---|
+| Shivin | Guide: SQLite store, editor routes, job queue, Claude `objects`/`text`/`events_visual`, lifting boxes to 3D, best views, rectify, stabilize, measurements, sites and alignment, search, auth. Phone: site picker and file hashes | `guide/`, `ios/` |
+| Firdavs | Editor UI (`CLAUDE.md` 7.6): layered timeline, playback controls, inspection panel, transcript panel, search, notes, saved views, measure, compare, trace, provenance styling and Measured only | `web/` |
+| IBS27 | Proposed: the audio worker (`worker/`), on top of story, demo and testing | `worker/`, `docs/` |
+
+### Shivin (plan v3)
+1. **Store and routes (P0).** `src/db.mjs` with `node:sqlite` and the `docs/scene-model.md` tables; entities (save from a selection, label, hide), appearances (computed from bounds and poses), notes, saved views, and FTS5 search over transcript, labels, read text, facts, events and notes. Admin-key auth for now. Every stored item gets `Provenance`. Tests: provenance can only weaken; a note never appears in any narrator, companion or scoring request.
+2. **Best views and read text (P0).** `best_views` (size on screen × sharpness × facing the camera × depth confidence) and the Claude `text` job on crops of those views, with editor grounding (`CLAUDE.md` 6.7): a read that cites a crop Claude wasn't shown is dropped and logged.
+3. **Claude objects (P1).** The `objects` job and `src/lift.mjs` (2D box → 3D bounds with depth and pose; pure math with tests), merging into existing entities.
+4. **Measurements (P1).** `src/measure.mjs` with uncertainty and `needsCheck`.
+5. **Worker routes (P1).** Claim, heartbeat, result, artifact upload, with `WORKER_TOKEN`.
+6. **P2:** Clerk, site roles and device tokens; sites, `align` (yaw + shift ICP) and `changes`; `rectify` and `stabilize`; on the phone, a site picker on the review screen and SHA-256 hashes in the manifest, checked on `complete`.
+
+### Firdavs (plan v3)
+In P0 order: layered timeline (visual, audio, geometry, activity tracks) and playback controls; "Save" on the selection panel and an editable label; transcript panel; inspection panel with best views and read text; provenance tags, estimated styling and the Measured only toggle (hides hole fill from PR #16); notes and "Copy link" saved views (`#/v/<viewId>`); search. Then measure, compare visits and trace. Use the Relive palette (`docs/THEME.md`), one hue per layer. Leave the patient's Revisit view as it is.
+
+### IBS27 (plan v3, proposed)
+The audio worker, `CLAUDE.md` 6.8. Python with `uv` in `worker/`, runs on the laptop next to the guide, pulls jobs over HTTP with `WORKER_TOKEN`. P1: `audio_clean` (DeepFilterNet3) and `diarize` (pyannote 3.1; needs a Hugging Face token for the gated model, kept in `worker/.env`). P2: `isolate` (SepFormer, guided by the diarization) and `sound_events` (PANNs CNN14). Every result is an `Artifact` or `SceneEvent` with `Provenance` marked `estimated`, and the original audio is never overwritten. Tests run without network or models (stub the model calls). The story, demo and testing role below still applies.
+
+### Starting prompts (plan v3)
+
+Guide (Shivin):
+```
+Read CLAUDE.md, TASKS.md, docs/scene-model.md, docs/guide-api.md and
+docs/capture-format.md. I'm Shivin. Build TASKS.md "Shivin (plan v3)" step 1: the
+SQLite store with node:sqlite, the editor routes for entities, notes, saved views
+and search, with Provenance on everything and node:test tests (including: no note
+ever reaches a narrator, companion or scoring request). Then step 2. Work on branch
+guide/editor and open a PR.
+```
+
+Web (Firdavs):
+```
+Read CLAUDE.md (Sections 7 and 7.6), TASKS.md, docs/scene-model.md, docs/guide-api.md
+and docs/THEME.md. I'm Firdavs. Build the editor in web/ in TASKS.md "Firdavs
+(plan v3)" order, starting with the layered timeline and playback controls on the
+existing SceneViewer. Don't change the patient's Revisit view. Work on branch
+web/editor, commit small, open PRs.
+```
+
+Audio worker (IBS27):
+```
+Read CLAUDE.md (Sections 2, 6.8 and 9), TASKS.md, docs/scene-model.md and the
+worker routes in docs/guide-api.md. I'm IBS27. Build the audio worker in worker/
+with uv: claim jobs from the guide with WORKER_TOKEN, run audio_clean
+(DeepFilterNet3) and diarize (pyannote 3.1), post back Artifacts and SceneEvents
+with estimated Provenance. Tests must run without network or models. Work on
+branch worker/audio and open a PR.
+```
+
+---
+
+> **Plan v2 slices below.** These built the patient loop (capture → facts → review → Revisit → dashboard). Most of it is done (see `CLAUDE.md` Status); the parts still open (filming, sessions, demo, Devpost) still apply.
 
 ## Shivin: iPhone app + guide server
 

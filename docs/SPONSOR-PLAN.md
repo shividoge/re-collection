@@ -16,6 +16,8 @@ Prizes are from the Cal Hacks 13.0 Devpost list. **Rule: only claim a sponsor wh
 | **Meta, Bringing People Closer Together with AI** | Families reconnecting with a parent through a shared memory. | Frame the pitch around closeness, not 3D. Round 2 is at Meta's Menlo Park campus. |
 | **MLH, Commit Fellowship** | A real problem and a working prototype with a team. | Opt in on Devpost, then submit MLH's **supplemental form**. Costs nothing. |
 
+**Most Technically Advanced, the plan v3 angle (planned, not built).** If the editor in `docs/scene-model.md` lands, it is the strongest technical story we have: objects and notes anchored in 3D and followed through the video, a provenance trail on everything (measured, computed, estimated by a model, or written by a person) that you can click back to the original frames and audio, visits to the same room lined up so changes show only where both captures saw, and an audio worker for clearer voices and sound events. Claim only the parts that run on the day, and show "Where this came from" live instead of describing it.
+
 ## Tier 2: cheap, real integrations worth doing if there is time
 
 Order by value for the effort. Each is real work, not a sticker.

@@ -15,6 +15,7 @@
 - `manifest.json` gets `"source": "photos"` and `"depth": { "estimated": true, "model": "<name and version>" }`.
 - The viewer and the public site show an **"Estimated from photos, not measured"** badge on these scenes, and they never sit in the same count as measured scans without a label.
 - Don't stitch separate photos into one fake room. Show each photo's view separately, in a gallery.
+- In the scene model (`docs/scene-model.md`, plan v3, proposed) every point and surface made from photos has `source: "estimated"`, with the depth model in its `Provenance`. It uses the estimated style from `docs/THEME.md` §3 (dashed or hatched, with an `estimated` tag) and hides completely under **"Measured only"**. Measurements on it always get "check this in person".
 
 ## Photos and permission
 
