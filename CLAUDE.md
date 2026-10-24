@@ -323,6 +323,7 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 - 2026-10-24 16:00 | Shivin + Claude | pushed web/museum (WIP) and tools/video-to-3d; handed all remaining work to Firdavs and IBS27 for two hours (TASKS.md "Right now") | Firdavs: #25 + #16, museum; IBS27: video-to-3D, Devpost
 - 2026-10-24 16:20 | Shivin + Claude | video2capture fixed and run on three real clips (render in viewer + Memory Window); data release team-data-1; docs/LAST-STEP.md with the shared-museum spec | Firdavs: museum canvas + iPad; IBS27: Visit together
 - 2026-10-24 16:30 | Shivin + Claude | one master list of everything left until submission (TASKS.md top), Status rewritten, data release team-data-1 | team follows the Must list
+- 2026-10-24 16:40 | IBS27 + Claude | PRs open (not merged): #39 Visit together (on web/museum; guide tests 75/75, needs iPad+phone test via tunnel), #37 video2capture on Linux/CUDA (matches Mac output on 3 clips), #35 Devpost draft, #36 demo video plan, #38 sponsor rules checked (repo must be public for judging; all three checked in by 08:00), #34 filming prep | IBS27: fill filming-prep blanks before 20:00, two-device test of #39 after Firdavs's museum fix, M5 when Shivin sends the old video
 
 ---
 
