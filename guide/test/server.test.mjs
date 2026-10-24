@@ -7,9 +7,11 @@ import { parseRange } from '../src/http.mjs';
 import { CAPTURE_ID, tempDataDir, tinyCapture } from './helpers.mjs';
 
 async function startGuide(overrides = {}) {
+  const dataDir = await tempDataDir();
   const config = {
     port: 0,
-    dataDir: await tempDataDir(),
+    dataDir,
+    webDir: `${dataDir}/no-web-build`,   // independent of whether web/dist exists
     key: '',
     mockClaude: false,
     anthropicKey: '',
@@ -117,6 +119,8 @@ describe('guide server', () => {
       const status = await rawGet(guide.base, path);
       assert.ok([400, 404].includes(status), `${path} returned ${status}`);
     }
+    const leaked = await (await fetch(`${guide.base}/files/${CAPTURE_ID}/..%2F..%2Fpackage.json`)).text();
+    assert.doesNotMatch(leaked, /braindance-guide/);
     const res = await fetch(`${guide.base}/api/captures/${CAPTURE_ID}/files/status.json`, { method: 'PUT', body: '{}' });
     assert.equal(res.status, 400, 'the phone must not overwrite status.json');
   });
