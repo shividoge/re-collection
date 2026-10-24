@@ -4,7 +4,8 @@ import CoreImage
 
 /// Writes the capture package: depth.bin and confidence.bin at 10 Hz plus a
 /// frames.jsonl pose line per frame during both the scan and the moment, and
-/// video.mov (HEVC + AAC) during the moment only (IOS_CAPTURE_PLAN.md 6).
+/// video.mp4 (H.264 + AAC, so every browser plays it) during the moment only
+/// (IOS_CAPTURE_PLAN.md 6, docs/capture-format.md).
 ///
 /// Every method runs on the capture queue. Conversions happen right there
 /// (a 256x192 depth map takes microseconds) and the resulting `Data` goes to
@@ -20,6 +21,7 @@ final class CaptureRecorder {
         let durationSec: Double
         let frameCount: Int
         let depthCount: Int
+        let videoFile: String
         let videoSize: CGSize
         let fps: Int
         let audioSampleRate: Int
@@ -28,6 +30,7 @@ final class CaptureRecorder {
     }
 
     static let maxMomentSeconds: Double = 180
+    static let videoFileName = "video.mp4"
 
     private enum Mode { case scan, paused, waitingForMoment, moment, finished }
 
@@ -135,18 +138,19 @@ final class CaptureRecorder {
 
     private func startMoment(with frame: ARFrame) -> String? {
         let size = frame.camera.imageResolution
-        let videoURL = folder.appending(path: "video.mov")
+        let videoURL = folder.appending(path: Self.videoFileName)
         try? FileManager.default.removeItem(at: videoURL)
 
         let writer: AVAssetWriter
         do {
-            writer = try AVAssetWriter(outputURL: videoURL, fileType: .mov)
+            writer = try AVAssetWriter(outputURL: videoURL, fileType: .mp4)
         } catch {
             return "The video file couldn't be created: \(error.localizedDescription)"
         }
 
         let video = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.hevc,
+            // H.264 rather than HEVC: Chrome on Windows can't play HEVC.
+            AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: Int(size.width),
             AVVideoHeightKey: Int(size.height),
         ])
@@ -254,6 +258,7 @@ final class CaptureRecorder {
             durationSec: (lastMomentTimestamp ?? t0) - t0 + 1.0 / Double(max(fps, 1)),
             frameCount: frameCount,
             depthCount: depthCount,
+            videoFile: Self.videoFileName,
             videoSize: videoSize,
             fps: fps,
             audioSampleRate: audioSampleRate,

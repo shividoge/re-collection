@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var showsSettings = false
 
     var body: some View {
         if !model.isDeviceSupported {
@@ -12,8 +13,16 @@ struct HomeView: View {
             switch model.phase {
             case .idle:
                 idle
-            case .scanningRoom, .savingRoom, .roomSaved, .recordingMoment, .savingMoment, .momentSaved:
+            case .scanningRoom, .savingRoom, .roomSaved, .recordingMoment:
                 ScanView()
+            case .savingMoment(let step):
+                VStack(spacing: 16) {
+                    ProgressView().controlSize(.large)
+                    Text(step).font(.title3)
+                    Text("Keep the app open.").foregroundStyle(.secondary)
+                }
+            case .review(let capture):
+                ReviewView(capture: capture)
             case .failed(let message):
                 MessageView(title: "Capture stopped", message: message) {
                     model.dismissFailure()
@@ -31,8 +40,15 @@ struct HomeView: View {
             Button("Scan the room") { model.startScan() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+            Button {
+                showsSettings = true
+            } label: {
+                Label(model.guideURL.isEmpty ? "Set up upload" : "Upload settings", systemImage: "gearshape")
+            }
+            .buttonStyle(.bordered)
         }
         .padding()
+        .sheet(isPresented: $showsSettings) { SettingsView() }
     }
 }
 

@@ -3,15 +3,30 @@ import Foundation
 import Metal
 
 /// Phases from IOS_CAPTURE_PLAN.md Section 3. `roomSaved` is the plan's
-/// readyToRecord; review and upload come in later checkpoints.
+/// readyToRecord; `savingMoment` covers finishing, keyframes and transcription.
 enum CapturePhase: Equatable {
     case idle
     case scanningRoom
     case savingRoom
     case roomSaved(RoomExport)
     case recordingMoment(startedAt: Date)
-    case savingMoment
-    case momentSaved(SavedCapture)
+    case savingMoment(step: String)
+    case review(SavedCapture)
+    case failed(String)
+
+    /// Phases with the camera running, where leaving the app breaks the capture.
+    var isLive: Bool {
+        switch self {
+        case .scanningRoom, .savingRoom, .roomSaved, .recordingMoment: return true
+        default: return false
+        }
+    }
+}
+
+enum UploadState: Equatable {
+    case idle
+    case uploading(Uploader.Progress)
+    case done
     case failed(String)
 }
 
@@ -23,6 +38,15 @@ final class AppModel: ObservableObject {
     @Published var pointCount = 0
     @Published var roomCaptured = false
     @Published var showsCameraFeed = true
+    @Published private(set) var upload: UploadState = .idle
+
+    /// Guide server address and key, typed in Settings.
+    @Published var guideURL: String = UserDefaults.standard.string(forKey: "guideURL") ?? "" {
+        didSet { UserDefaults.standard.set(guideURL, forKey: "guideURL") }
+    }
+    @Published var guideKey: String = UserDefaults.standard.string(forKey: "guideKey") ?? "" {
+        didSet { UserDefaults.standard.set(guideKey, forKey: "guideKey") }
+    }
 
     let isDeviceSupported: Bool
     let engine: CaptureEngine
@@ -80,6 +104,7 @@ final class AppModel: ObservableObject {
             phase = .failed("The capture folder couldn't be created: \(error.localizedDescription)")
             return
         }
+        PostProcessor.requestSpeechPermission()
         activeToken = token
         captureFolder = folder
         captureStartedAt = Date()
@@ -115,7 +140,7 @@ final class AppModel: ObservableObject {
 
     func stopMoment() {
         guard isRecordingMoment, let token = activeToken else { return }
-        phase = .savingMoment
+        phase = .savingMoment(step: "Saving the video…")
         engine.finishMoment { [weak self] result in
             Task { @MainActor in await self?.momentFinished(result, token: token) }
         }
@@ -137,8 +162,52 @@ final class AppModel: ObservableObject {
         if case .failed = phase { phase = .idle }
     }
 
+    /// Only a live capture breaks when the app leaves the foreground. Saving
+    /// and review carry on; the files are already on disk.
     func appLeftForeground() {
+        guard phase.isLive else { return }
         fail("The app left the foreground, so the capture stopped. Start again when you're ready.")
+    }
+
+    /// Saves the title and attendees from the review screen into manifest.json.
+    func saveDetails(title: String, attendees: [String]) {
+        guard case .review(var capture) = phase else { return }
+        capture.manifest.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        capture.manifest.attendees = attendees
+        do {
+            try CaptureStore.writeManifest(capture.manifest, in: capture.folder)
+            phase = .review(capture)
+        } catch {
+            upload = .failed("The details couldn't be saved: \(error.localizedDescription)")
+        }
+    }
+
+    func uploadCapture() {
+        guard case .review(let capture) = phase else { return }
+        if case .uploading = upload { return }
+        guard UploadPlan.url(base: guideURL, path: "/health") != nil else {
+            upload = .failed("Set the guide server address in Settings first.")
+            return
+        }
+        upload = .uploading(.init(sentBytes: 0, totalBytes: 0, currentFile: "manifest.json"))
+        let uploader = Uploader(baseURL: guideURL, key: guideKey)
+        Task {
+            do {
+                try await uploader.upload(capture) { progress in
+                    if case .uploading = self.upload { self.upload = .uploading(progress) }
+                }
+                upload = .done
+            } catch {
+                upload = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Leaves the review screen. The capture stays on the phone (Files app).
+    func finishReview() {
+        if case .uploading = upload { return }
+        upload = .idle
+        phase = .idle
     }
 
     private func endCapture() {
@@ -167,20 +236,41 @@ final class AppModel: ObservableObject {
             fail("The visit couldn't be saved: \(error.localizedDescription)")
             return
         }
+        // The camera isn't needed any more; stopping it saves battery and heat.
+        engine.stop()
 
-        let manifest = CaptureStore.manifest(
-            id: token, createdAt: captureStartedAt, moment: moment, room: room)
-        let saved = await Task.detached(priority: .userInitiated) {
-            Result { try CaptureStore.finalize(folder: folder, manifest: manifest) }
-        }.value
+        let videoURL = folder.appending(path: moment.videoFile)
+        var warnings: [String] = []
+
+        phase = .savingMoment(step: "Making keyframes…")
+        var keyframeCount = 0
+        do {
+            keyframeCount = try await PostProcessor.makeKeyframes(video: videoURL, folder: folder, durationSec: moment.durationSec)
+        } catch {
+            warnings.append("Keyframes failed: \(error.localizedDescription)")
+        }
+
+        phase = .savingMoment(step: "Transcribing on the phone…")
+        var transcript: TranscriptFile?
+        do {
+            transcript = try await PostProcessor.transcribe(video: videoURL, folder: folder)
+        } catch {
+            warnings.append(error.localizedDescription)
+        }
 
         guard token == activeToken else { return }
-        switch saved {
-        case .success(let capture):
-            phase = .momentSaved(capture)
-        case .failure(let error):
+        let manifest = CaptureStore.manifest(
+            id: token, createdAt: captureStartedAt, moment: moment, room: room,
+            keyframeCount: keyframeCount, transcript: transcript, extraWarnings: warnings)
+        do {
+            try CaptureStore.writeManifest(manifest, in: folder)
+        } catch {
             fail("The visit couldn't be saved: \(error.localizedDescription)")
+            return
         }
+        activeToken = nil
+        upload = .idle
+        phase = .review(SavedCapture(id: manifest.id, folder: folder, manifest: manifest, transcript: transcript))
     }
 
     private func handle(_ event: CaptureEngine.Event, token: UUID) {

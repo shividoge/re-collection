@@ -152,3 +152,86 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(room["bin"] as? String, "room.bin")
     }
 }
+
+final class KeyframeAndTranscriptTests: XCTestCase {
+    func testOneKeyframePerWholeSecondWithVideo() {
+        XCTAssertEqual(RecordingFormat.keyframeSeconds(durationSec: 28.434), Array(0...28))
+        XCTAssertEqual(RecordingFormat.keyframeSeconds(durationSec: 3.0), [0, 1, 2])
+        XCTAssertEqual(RecordingFormat.keyframeSeconds(durationSec: 0.4), [0])
+        XCTAssertEqual(RecordingFormat.keyframeSeconds(durationSec: 0), [])
+        XCTAssertEqual(RecordingFormat.keyframeName(second: 12), "keyframes/k0012.jpg")
+    }
+
+    func testTranscriptSplitsOnPausesAndSentenceEnds() {
+        let words = [
+            TranscriptWord(start: 0.0, end: 0.3, word: "Hi"),
+            TranscriptWord(start: 0.35, end: 0.6, word: "Mom."),
+            TranscriptWord(start: 0.7, end: 1.0, word: "I"),
+            TranscriptWord(start: 1.05, end: 1.4, word: "brought"),
+            TranscriptWord(start: 1.45, end: 1.9, word: "cake"),
+            TranscriptWord(start: 3.0, end: 3.3, word: "Lovely"),
+        ]
+        let segments = TranscriptBuilder.segments(from: words)
+        XCTAssertEqual(segments.map(\.text), ["Hi Mom.", "I brought cake", "Lovely"])
+        XCTAssertEqual(segments[1].start, 0.7)
+        XCTAssertEqual(segments[1].end, 1.9)
+        XCTAssertEqual(segments[1].words.count, 3)
+        XCTAssertTrue(TranscriptBuilder.segments(from: []).isEmpty)
+    }
+
+    func testTranscriptFileMatchesTheContract() throws {
+        let file = TranscriptFile(locale: "en-US", segments: TranscriptBuilder.segments(from: [
+            TranscriptWord(start: 3.12, end: 3.3, word: "Mom"),
+        ]))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: try file.encoded()) as? [String: Any])
+        XCTAssertEqual(json["locale"] as? String, "en-US")
+        let segment = try XCTUnwrap((json["segments"] as? [[String: Any]])?.first)
+        XCTAssertEqual(segment["text"] as? String, "Mom")
+        XCTAssertEqual(segment["start"] as? Double, 3.12)
+        let word = try XCTUnwrap((segment["words"] as? [[String: Any]])?.first)
+        XCTAssertEqual(word["word"] as? String, "Mom")
+    }
+
+    func testManifestWritesTranscriptAndKeyframesOnlyWhenPresent() throws {
+        var manifest = CaptureManifest(
+            id: "abc", createdAt: "t", device: "d", title: "", attendees: [],
+            video: .init(width: 1920, height: 1440, fps: 30, durationSec: 1, frameCount: 30),
+            audio: .init(inVideo: true, sampleRate: 48_000, channels: 1),
+            depth: .init(width: 256, height: 192, rateHz: 10, count: 10),
+            phases: .init(moment: .init(tStart: 0, tEnd: 1)), warnings: [])
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: try manifest.encoded()) as? [String: Any])
+        XCTAssertNil(json["transcript"])
+        XCTAssertNil(json["keyframes"])
+        XCTAssertEqual((json["video"] as? [String: Any])?["file"] as? String, "video.mp4")
+
+        manifest.transcript = .init(locale: "en-US")
+        manifest.keyframes = .init(count: 2)
+        json = try XCTUnwrap(JSONSerialization.jsonObject(with: try manifest.encoded()) as? [String: Any])
+        XCTAssertEqual((json["transcript"] as? [String: Any])?["file"] as? String, "transcript.json")
+        XCTAssertEqual((json["keyframes"] as? [String: Any])?["dir"] as? String, "keyframes")
+        XCTAssertEqual((json["keyframes"] as? [String: Any])?["count"] as? Int, 2)
+    }
+}
+
+final class UploadPlanTests: XCTestCase {
+    func testSmallFilesGoFirstAndBigOnesLast() {
+        let order = UploadPlan.order([
+            "depth.bin", "video.mp4", "keyframes/k0001.jpg", "manifest.json", "confidence.bin",
+            "frames.jsonl", "thumb.jpg", "room.bin", "keyframes/k0000.jpg", "transcript.json", "room.ply", ".DS_Store",
+        ])
+        XCTAssertEqual(order, [
+            "manifest.json", "room.bin", "thumb.jpg", "transcript.json", "keyframes/k0000.jpg", "keyframes/k0001.jpg",
+            "frames.jsonl", "room.ply", "video.mp4", "confidence.bin", "depth.bin",
+        ])
+    }
+
+    func testGuideURLsAreBuiltFromWhateverWasTyped() {
+        XCTAssertEqual(UploadPlan.url(base: "https://abc.trycloudflare.com/", path: "/health")?.absoluteString,
+                       "https://abc.trycloudflare.com/health")
+        XCTAssertEqual(UploadPlan.url(base: " abc.trycloudflare.com ", path: "/health")?.absoluteString,
+                       "https://abc.trycloudflare.com/health")
+        XCTAssertEqual(UploadPlan.url(base: "http://192.168.1.20:8787", path: "/api/captures/x/files/keyframes/k0001.jpg")?.absoluteString,
+                       "http://192.168.1.20:8787/api/captures/x/files/keyframes/k0001.jpg")
+        XCTAssertNil(UploadPlan.url(base: "  ", path: "/health"))
+    }
+}

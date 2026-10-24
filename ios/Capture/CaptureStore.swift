@@ -1,4 +1,6 @@
+import CoreTransferable
 import Foundation
+import UniformTypeIdentifiers
 
 /// Capture folders on disk: Documents/captures/capture-<uuid>/. Documents is
 /// shared with the Files app (UIFileSharingEnabled), so a capture can always
@@ -15,49 +17,56 @@ enum CaptureStore {
     }
 }
 
+/// A finished capture on disk, shown on the review screen.
 struct SavedCapture: Equatable {
+    let id: String
     let folder: URL
-    /// The whole folder zipped, for AirDrop.
-    let zipURL: URL
-    let durationSec: Double
-    let frameCount: Int
-    let depthCount: Int
-    let warnings: [String]
+    var manifest: CaptureManifest
+    /// What on-device recognition heard, for the review screen. Nil when there's no transcript.
+    let transcript: TranscriptFile?
+
+    var videoURL: URL { folder.appending(path: manifest.video.file) }
 }
 
 extension CaptureStore {
     static func manifest(
-        id: UUID, createdAt: Date, moment: CaptureRecorder.MomentResult, room: RoomExport?
+        id: UUID, createdAt: Date, moment: CaptureRecorder.MomentResult, room: RoomExport?,
+        keyframeCount: Int, transcript: TranscriptFile?, extraWarnings: [String]
     ) -> CaptureManifest {
-        CaptureManifest(
+        let duration = (moment.durationSec * 1000).rounded() / 1000
+        return CaptureManifest(
             id: id.uuidString.lowercased(),
             createdAt: ISO8601DateFormatter().string(from: createdAt),
             device: deviceModel(),
-            // Named in the review screen (checkpoint 6).
+            // Filled in on the review screen.
             title: "",
             attendees: [],
             video: .init(
+                file: moment.videoFile,
                 width: Int(moment.videoSize.width), height: Int(moment.videoSize.height), fps: moment.fps,
-                durationSec: (moment.durationSec * 1000).rounded() / 1000, frameCount: moment.frameCount),
+                durationSec: duration, frameCount: moment.frameCount),
             audio: .init(inVideo: true, sampleRate: moment.audioSampleRate, channels: 1),
             depth: .init(width: 256, height: 192, rateHz: 10, count: moment.depthCount),
             room: room.map { .init(points: $0.pointCount, voxelMeters: Double(PointCloudExporter.voxelMeters)) },
-            phases: .init(
-                scan: moment.scanSpan,
-                moment: .init(tStart: 0, tEnd: (moment.durationSec * 1000).rounded() / 1000)),
-            warnings: moment.warnings)
+            transcript: transcript.map { .init(locale: $0.locale) },
+            keyframes: keyframeCount > 0 ? .init(count: keyframeCount) : nil,
+            phases: .init(scan: moment.scanSpan, moment: .init(tStart: 0, tEnd: duration)),
+            warnings: moment.warnings + extraWarnings)
     }
 
-    /// Writes manifest.json and zips the folder for sharing.
-    static func finalize(folder: URL, manifest: CaptureManifest) throws -> SavedCapture {
+    static func writeManifest(_ manifest: CaptureManifest, in folder: URL) throws {
         try manifest.encoded().write(to: folder.appending(path: "manifest.json"), options: .atomic)
-        return SavedCapture(
-            folder: folder,
-            zipURL: try zip(folder),
-            durationSec: manifest.video.durationSec,
-            frameCount: manifest.video.frameCount,
-            depthCount: manifest.depth.count,
-            warnings: manifest.warnings)
+    }
+
+    /// Every file in the capture folder, as names relative to it ("keyframes/k0001.jpg").
+    static func files(in folder: URL) throws -> [String] {
+        let base = folder.standardizedFileURL.path + "/"
+        guard let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey]) else { return [] }
+        var names: [String] = []
+        for case let url as URL in walker where (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+            names.append(String(url.standardizedFileURL.path.dropFirst(base.count)))
+        }
+        return names
     }
 
     /// Zips `folder` with the system's built-in archiver (NSFileCoordinator's
@@ -84,6 +93,18 @@ extension CaptureStore {
         uname(&info)
         return withUnsafeBytes(of: &info.machine) { raw in
             String(decoding: raw.prefix(while: { $0 != 0 }), as: UTF8.self)
+        }
+    }
+}
+
+/// Shares a capture folder as a zip. The zip is made only when the person
+/// actually shares, so it always includes the latest manifest.
+struct CaptureArchive: Transferable {
+    let folder: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .zip) { archive in
+            SentTransferredFile(try CaptureStore.zip(archive.folder))
         }
     }
 }

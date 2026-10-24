@@ -104,7 +104,7 @@ enum RecordingFormat {
 
 /// One line of frames.jsonl.
 struct FrameLine {
-    /// Index of the video frame in video.mov; nil for scan-phase lines, which have no video.
+    /// Index of the video frame in the video file; nil for scan-phase lines, which have no video.
     var index: Int?
     /// Seconds relative to the moment's first frame. Negative during the scan.
     var t: Double
@@ -150,11 +150,14 @@ struct CaptureManifest: Codable, Equatable {
     var depth: Depth
     var mesh = Mesh(present: false)
     var room: Room?
+    /// Missing when on-device recognition wasn't available; `warnings` says why.
+    var transcript: Transcript?
+    var keyframes: Keyframes?
     var phases: Phases
     var warnings: [String]
 
     struct Video: Codable, Equatable {
-        var file = "video.mov"
+        var file = "video.mp4"
         var width: Int
         var height: Int
         var fps: Int
@@ -190,6 +193,18 @@ struct CaptureManifest: Codable, Equatable {
         var source = "on-device"
     }
 
+    struct Transcript: Codable, Equatable {
+        var file = "transcript.json"
+        var locale: String
+        var onDevice = true
+    }
+
+    struct Keyframes: Codable, Equatable {
+        var dir = "keyframes"
+        var everySec = 1
+        var count: Int
+    }
+
     struct Phases: Codable, Equatable {
         var scan: Span?
         var moment: Span
@@ -204,5 +219,125 @@ struct CaptureManifest: Codable, Equatable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         return try encoder.encode(self)
+    }
+}
+
+// MARK: Keyframes
+
+extension RecordingFormat {
+    /// Keyframes are taken once per whole second of the moment that has video.
+    static func keyframeSeconds(durationSec: Double) -> [Int] {
+        guard durationSec > 0 else { return [] }
+        let last = Int((durationSec - 0.001).rounded(.down))
+        return Array(0...max(0, last))
+    }
+
+    /// "keyframes/k0012.jpg" for second 12.
+    static func keyframeName(second: Int) -> String {
+        String(format: "keyframes/k%04d.jpg", second)
+    }
+}
+
+// MARK: Transcript
+
+struct TranscriptWord: Codable, Equatable {
+    var start: Double
+    var end: Double
+    var word: String
+}
+
+struct TranscriptSegment: Codable, Equatable {
+    var start: Double
+    var end: Double
+    var text: String
+    var words: [TranscriptWord]
+}
+
+/// transcript.json. Times are moment seconds, the same clock as frames.jsonl `t`.
+struct TranscriptFile: Codable, Equatable {
+    var locale: String
+    var segments: [TranscriptSegment]
+
+    func encoded() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        return try encoder.encode(self)
+    }
+}
+
+enum TranscriptBuilder {
+    /// A silence at least this long starts a new segment.
+    static let pauseSeconds = 0.8
+
+    /// Groups recognized words into sentence-like segments: a new segment
+    /// starts after a long pause or after a word ending in . ? or !
+    static func segments(from words: [TranscriptWord]) -> [TranscriptSegment] {
+        var segments: [TranscriptSegment] = []
+        var current: [TranscriptWord] = []
+
+        func flush() {
+            guard let first = current.first, let last = current.last else { return }
+            segments.append(TranscriptSegment(
+                start: round3(first.start), end: round3(last.end),
+                text: current.map(\.word).joined(separator: " "),
+                words: current.map { TranscriptWord(start: round3($0.start), end: round3($0.end), word: $0.word) }))
+            current = []
+        }
+
+        for word in words where !word.word.trimmingCharacters(in: .whitespaces).isEmpty {
+            if let previous = current.last {
+                let paused = word.start - previous.end >= pauseSeconds
+                let sentenceEnded = previous.word.last.map { ".?!".contains($0) } ?? false
+                if paused || sentenceEnded { flush() }
+            }
+            current.append(word)
+        }
+        flush()
+        return segments
+    }
+
+    private static func round3(_ value: Double) -> Double {
+        (value * 1000).rounded() / 1000
+    }
+}
+
+// MARK: Upload
+
+enum UploadPlan {
+    /// The web shows the room as soon as manifest.json, room.bin and thumb.jpg
+    /// arrive, so those go first; the big files go last.
+    static func order(_ files: [String]) -> [String] {
+        func rank(_ name: String) -> Int {
+            switch name {
+            case "manifest.json": return 0
+            case "room.bin": return 1
+            case "thumb.jpg": return 2
+            case "transcript.json": return 3
+            case _ where name.hasPrefix("keyframes/"): return 4
+            case "frames.jsonl": return 5
+            case "room.ply": return 6
+            case _ where name.hasPrefix("video."): return 7
+            case "confidence.bin": return 8
+            case "depth.bin": return 9
+            default: return 10
+            }
+        }
+        return files
+            .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".zip") && !$0.contains("/.") }
+            .sorted { (rank($0), $0) < (rank($1), $1) }
+    }
+
+    /// Joins the guide's base URL (as typed in Settings) with an API path.
+    /// Adds https:// when no scheme was typed and drops trailing slashes.
+    static func url(base: String, path: String) -> URL? {
+        var trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if !trimmed.contains("://") { trimmed = "https://" + trimmed }
+        while trimmed.hasSuffix("/") { trimmed.removeLast() }
+        let encodedPath = path
+            .split(separator: "/", omittingEmptySubsequences: false)
+            .map { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
+            .joined(separator: "/")
+        return URL(string: trimmed + encodedPath)
     }
 }
