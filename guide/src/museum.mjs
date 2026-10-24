@@ -214,6 +214,13 @@ export function createMuseumRooms({ store, now = Date.now, random = randomInt, k
     if (id !== null) {
       const before = peersOf(room);
       room.pollers.set(id, { as, name, seenAt: now() });
+      // A screen that polls has given up on its stream, but a tunnel can hold the stream open
+      // here for half a minute after the browser closed it. End it, so only the poll's 10 s count.
+      for (const client of room.clients) {
+        if (client.id !== id) continue;
+        room.clients.delete(client);
+        client.res.end();
+      }
       peersChanged(room, before);
     }
     if (since !== null && since === room.version) {

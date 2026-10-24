@@ -59,8 +59,10 @@ function listen(base, path) {
           else queued.push(item);
         }
       });
+      const ended = new Promise((done) => res.on('close', done));
       resolve({
         status: res.statusCode,
+        ended,
         headers: res.headers,
         next(event) {
           const i = queued.findIndex((q) => q.event === event);
@@ -255,16 +257,19 @@ describe('museum rooms: routes', () => {
     assert.deepEqual(joined.peers, { patient: 1, helpers: ['Priya'] });
     assert.deepEqual(await ipad.next('peers'), { patient: 1, helpers: ['Priya'] }, 'the iPad sees a polling helper join');
 
-    // The iPad's stream sits behind a buffering tunnel, so it polls as well: still one iPad.
-    const both = await (await poll(code, 'as=patient&client=ipad-0002')).json();
-    assert.deepEqual(both.peers, { patient: 1, helpers: ['Priya'] });
-
     guide.clock.t += POLL_TTL_MS - 1;
     assert.deepEqual((await (await poll(code)).json()).peers.helpers, ['Priya'], 'still here just under 10 s');
     guide.clock.t += 1;
     assert.deepEqual((await (await poll(code)).json()).peers, { patient: 1, helpers: [] }, 'gone after 10 s');
     assert.deepEqual(await ipad.next('peers'), { patient: 1, helpers: [] }, 'the iPad sees the helper leave');
-    ipad.close();
+
+    // The iPad's stream sits behind a tunnel that holds back its body, so it falls back to polling:
+    // still one iPad, and the guide ends the stream it no longer reads.
+    const polled = await (await poll(code, 'as=patient&client=ipad-0002')).json();
+    assert.deepEqual(polled.peers, { patient: 1, helpers: [] });
+    await ipad.ended;
+    guide.clock.t += POLL_TTL_MS;
+    assert.deepEqual((await (await poll(code)).json()).peers, { patient: 0, helpers: [] }, 'no stream left behind');
   });
 
   test('a room with an active poller does not expire', async () => {
