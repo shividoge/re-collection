@@ -7,6 +7,8 @@ import type { NavMode } from '../scene/SceneViewer'
 import { StaticCloud } from '../scene/StaticCloud'
 import { usePlayback } from '../scene/usePlayback'
 import { useSplatSizes } from '../scene/useSplatSizes'
+import { WithYou } from '../museum/Together'
+import { useMuseumRoom, type MuseumRoom } from '../museum/useMuseumRoom'
 import { EstimatedBadge } from '../views/EstimatedBadge'
 import { VisitDock } from '../views/VisitDock'
 import { useHeadTracker } from './useHeadTracker'
@@ -26,6 +28,7 @@ const canTilt = typeof window !== 'undefined' && 'DeviceOrientationEvent' in win
 export function MemoryWindow({ id, from }: { id: string; from?: string }) {
   const [capture, setCapture] = useState<LoadedCapture | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const room = useFollowRoom(id, from === 'museum')
 
   useEffect(() => {
     let cancelled = false
@@ -53,14 +56,31 @@ export function MemoryWindow({ id, from }: { id: string; from?: string }) {
   }
   if (!capture) return <div className="window-message">Opening the window…</div>
   if (!capture.cloud) return <div className="window-message">This visit has no room scan to look into.</div>
-  return <WindowStage id={id} capture={capture} back={from === 'museum' ? '#/museum' : `#/capture/${id}`} />
+  return <WindowStage id={id} capture={capture} back={from === 'museum' ? '#/museum' : `#/capture/${id}`} room={room} />
+}
+
+/**
+ * Visit together: opened from the museum, the window stays in the iPad's room, so a helper
+ * pressing "Back to the museum" (or stepping into another moment) on their phone moves it too.
+ * It only follows once it has seen the room agree that this moment is open.
+ */
+function useFollowRoom(id: string, fromMuseum: boolean): MuseumRoom {
+  const room = useMuseumRoom('patient', { enabled: fromMuseum })
+  const seen = useRef(false)
+  useEffect(() => {
+    const s = room.state
+    if (!s) return
+    if (s.window === id) seen.current = true
+    else if (seen.current) location.hash = s.window ? `#/window/${s.window}?from=museum` : '#/museum'
+  }, [room.state, id])
+  return room
 }
 
 /** Drag distance, as a fraction of the screen's shorter side, for a full head movement. */
 const DRAG_RANGE = 0.35
 const DRAG_HOLD_MS = 8000
 
-function WindowStage({ id, capture, back }: { id: string; capture: LoadedCapture; back: string }) {
+function WindowStage({ id, capture, back, room }: { id: string; capture: LoadedCapture; back: string; room: MuseumRoom }) {
   const { cloud, manifest } = capture
   const frames = capture.frames?.moment ?? NO_FRAMES
   const sizes = useSplatSizes(cloud)
@@ -210,13 +230,23 @@ function WindowStage({ id, capture, back }: { id: string; capture: LoadedCapture
       )}
 
       <header className="window-top">
-        <a href={back} className="window-exit">
+        <a
+          href={back}
+          className="window-exit"
+          onClick={(e) => {
+            if (!room.code) return
+            // Tell the helper's phone first, so the museum doesn't open this moment again.
+            e.preventDefault()
+            void room.leave().then(() => (location.hash = back))
+          }}
+        >
           {back === '#/museum' ? '← Back to the museum' : '← Back'}
         </a>
         <div className="window-title">
           {capture.label} <EstimatedBadge manifest={manifest} />
         </div>
         <div className="window-actions">
+          <WithYou room={room} />
           <HeadButton tracker={tracker} />
           {canTilt && !tracking && (
             <button onClick={() => void tracker.startTilt()} title="Look around by tilting the tablet">

@@ -298,3 +298,24 @@ export async function fetchText(id: string, name: string): Promise<string> {
   if (!response.ok) throw new GuideError(response.status, `${name}: HTTP ${response.status}`)
   return response.text()
 }
+
+/** "Visit together" (docs/guide-api.md "Visit together (museum rooms)"). */
+export type RoomRole = 'patient' | 'helper'
+export type RoomState = { at: number; window: string | null; by: RoomRole; name: string | null; rev: number; updatedAt: string }
+export type RoomChange = { at: number; window: string | null; by: RoomRole; name?: string | null }
+export type RoomPeers = { patient: number; helpers: string[] }
+export type Room = { code: string; state: RoomState; peers: RoomPeers }
+
+export const museumRooms = {
+  create: (at: number) => request<Room>('/api/museum/rooms', post({ at })),
+  get: (code: string) => request<Room>(`/api/museum/rooms/${encodeURIComponent(code)}`),
+  setState: (code: string, change: RoomChange) =>
+    request<{ ok: true; state: RoomState }>(`/api/museum/rooms/${encodeURIComponent(code)}/state`, post(change)),
+  /** EventSource can't send headers, so the key rides as ?key= here too. */
+  eventsUrl: (code: string, as: RoomRole, name: string | null) => {
+    const query = new URLSearchParams({ as })
+    if (name) query.set('name', name)
+    if (memoryKey) query.set('key', memoryKey)
+    return `${base}/api/museum/rooms/${encodeURIComponent(code)}/events?${query}`
+  },
+}

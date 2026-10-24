@@ -1,8 +1,10 @@
 import { Html } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { fileUrl, guide, type CaptureSummary } from '../api'
+import { HelperTogether, PatientTogether } from './Together'
+import { useMuseumRoom } from './useMuseumRoom'
 import './museum.css'
 
 /** Meters between frames along the hall; frames alternate left and right walls. */
@@ -20,8 +22,13 @@ type Moment = CaptureSummary & { side: 1 | -1; z: number }
  * an old video) hangs as a picture frame in a calm hall, oldest first. There is no free roaming
  * to get lost in: tap a frame and you're walked to it; tap it again, or "Step into this moment",
  * and it opens as a Memory Window you can look into. Made for a tablet in someone's lap.
+ *
+ * Visit together: the iPad can open a room; a helper who opens #/museum?join=CODE on their phone
+ * walks with them. `join` is set only on the helper's phone.
  */
-export function Museum() {
+export function Museum({ join }: { join?: string } = {}) {
+  const helper = join !== undefined
+  const room = useMuseumRoom(helper ? 'helper' : 'patient', { join })
   const [moments, setMoments] = useState<Moment[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [at, setAt] = useState<number>(() => {
@@ -53,7 +60,29 @@ export function Museum() {
     }
   }, [at])
 
-  const enter = (m: Moment) => {
+  // Both screens follow the shared walk.
+  const sharedAt = room.state?.at
+  useEffect(() => {
+    if (sharedAt !== undefined) setAt(sharedAt)
+  }, [sharedAt])
+
+  // On the iPad, the helper stepping into a moment opens it here. The first state after joining
+  // is only where things stand, not a request.
+  const seen = useRef<{ code: string; rev: number } | null>(null)
+  useEffect(() => {
+    const s = room.state
+    if (helper || !s || !room.code) return
+    if (seen.current?.code !== room.code) {
+      seen.current = { code: room.code, rev: s.rev }
+      return
+    }
+    if (s.rev > seen.current.rev && s.by === 'helper' && s.window) location.hash = `#/window/${s.window}?from=museum`
+  }, [room.state, room.code, helper])
+
+  const enter = async (m: Moment) => {
+    const i = moments?.findIndex((x) => x.id === m.id) ?? -1
+    if (helper) return void room.enter(m.id, i)
+    await room.enter(m.id, i)
     location.hash = `#/window/${m.id}?from=museum`
   }
 
@@ -62,7 +91,12 @@ export function Museum() {
   if (moments.length === 0) return <div className="museum-message">No moments yet. Film a visit with the app, or add an old video.</div>
 
   const current = at >= 0 ? moments[at] : null
-  const go = (i: number) => setAt(Math.max(-1, Math.min(moments.length - 1, i)))
+  const go = (i: number) => {
+    const next = Math.max(-1, Math.min(moments.length - 1, i))
+    setAt(next)
+    room.setAt(next)
+  }
+  const openTitle = room.state?.window ? (moments.find((m) => m.id === room.state?.window)?.title || 'A visit') : null
 
   return (
     <div className="museum">
@@ -71,7 +105,7 @@ export function Museum() {
         <fog attach="fog" args={['#1b1512', 8, 26]} />
         <Hall length={(moments.length + 1.5) * SPACING} />
         {moments.map((m, i) => (
-          <Frame key={m.id} moment={m} index={i} active={i === at} onTap={() => (i === at ? enter(m) : setAt(i))} />
+          <Frame key={m.id} moment={m} index={i} active={i === at} onTap={() => (i === at ? void enter(m) : go(i))} />
         ))}
         <Walker moments={moments} at={at} />
       </Canvas>
@@ -98,7 +132,7 @@ export function Museum() {
                 {current.createdAt ? new Date(current.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : ''}
                 {current.source === 'video' && <span className="estimated-badge">Estimated from a video</span>}
               </span>
-              <button className="museum-enter" onClick={() => enter(current)}>
+              <button className="museum-enter" onClick={() => void enter(current)}>
                 Step into this moment
               </button>
             </>
@@ -110,6 +144,8 @@ export function Museum() {
           Next →
         </button>
       </footer>
+
+      {helper ? <HelperTogether room={room} join={join} openTitle={openTitle} /> : <PatientTogether room={room} at={at} />}
     </div>
   )
 }

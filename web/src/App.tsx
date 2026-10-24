@@ -23,7 +23,8 @@ const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
   // #/window/<id>?from=museum comes back to the museum.
   [/^#\/window\/([0-9a-f-]{36})(?:\?from=(museum))?$/i, (id, from) => <MemoryWindow key={id} id={id} from={from} />],
   // The Memory Museum: every moment as a picture frame in a calm hall; tap one to step in.
-  [/^#\/museum$/i, () => <Museum />],
+  // #/museum?join=CODE is a helper's phone joining the iPad's walk ("Visit together").
+  [/^#\/museum(\?join=[A-Za-z]*)?$/i, (join) => <Museum key={join ?? ''} join={join?.slice('?join='.length)} />],
 ]
 
 export default function App() {
