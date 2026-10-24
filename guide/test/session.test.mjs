@@ -128,6 +128,25 @@ describe('sessions through the API', () => {
     return { status: res.status, body: await res.json() };
   };
 
+  test('pointing at an object: only allowed facts reach Claude as its focus, and the turn records it', async () => {
+    const { body } = await post('/api/sessions', { momentId: CAPTURE_ID });
+    nextReply = () => ({ sentences: [{ sentence: 'Dev wore his red sweater.', factIds: ['f4'], free: false }], branch: null, distress: false });
+    const turn = await post(`/api/sessions/${body.sessionId}/turn`, {
+      text: 'What is this?',
+      focus: { label: 'an object about 1.2 m wide', factIds: ['f4', 'f2', 'f3', 'f99'] },
+    });
+    assert.equal(turn.status, 200, JSON.stringify(turn.body));
+    const prompt = calls.at(-1).content[0].text;
+    assert.match(prompt, /pointing at something in the room \(an object about 1\.2 m wide\)\. It was on camera during these facts: f4\./);
+    assert.doesNotMatch(prompt, /during these facts: .*(f2|f3|f99)/, 'do-not-raise, unapproved and unknown facts are dropped from the focus');
+    const session = await (await fetch(`${base}/api/sessions/${body.sessionId}`)).json();
+    assert.deepEqual(session.turns.at(-2).focus, { label: 'an object about 1.2 m wide', factIds: ['f4'] });
+
+    nextReply = () => ({ sentences: [{ sentence: "I'm not sure what that is.", factIds: [], free: true }], branch: null, distress: false });
+    await post(`/api/sessions/${body.sessionId}/turn`, { text: 'And this?', focus: { label: 'a wall patch', factIds: [] } });
+    assert.match(calls.at(-1).content[0].text, /None of the approved facts are about it\. If they ask what it is, gently say you're not sure; don't guess\./);
+  });
+
   test('a full session: welcome, narration, a recalled detail, a branch, scoring', async () => {
     const started = await post('/api/sessions', { momentId: CAPTURE_ID });
     assert.equal(started.status, 200, JSON.stringify(started.body));

@@ -140,7 +140,7 @@ Nothing reaches the patient until a family member approves it. Only facts with `
 |---|---|---|---|
 | POST | `/api/sessions` | `{ momentId }` | `{ sessionId, welcome: Reply }`. 409 if no facts are approved yet. The welcome is a fixed sentence, not Claude |
 | POST | `/api/sessions/:sid/narrate` | `{ chapterIndex }` | `{ reply: Reply }`: 2 or 3 grounded sentences for that chapter |
-| POST | `/api/sessions/:sid/turn` | `{ text }`: what the patient said (browser speech-to-text, or typed by the caregiver) | `{ reply: Reply, branch: string \| null, distress: boolean }` |
+| POST | `/api/sessions/:sid/turn` | `{ text, focus? }`: what the patient said (browser speech-to-text, or typed by the caregiver). Optional `focus: { label, factIds }` says what they're pointing at in the 3D room: a plain size label and the approved facts that were on camera together with it | `{ reply: Reply, branch: string \| null, distress: boolean }` |
 | POST | `/api/sessions/:sid/end` | `{ reason: "complete" \| "caregiver" \| "distress" \| "timeout" }` | `{ scores: Score[], branches: Branch[], note: string, alerts: Alert[] }` (runs Claude scoring; calling it again returns the same result) |
 | GET | `/api/sessions/:sid` | – | the full session: turns, dropped sentences, scores |
 
@@ -156,6 +156,7 @@ type Alert = { t: string; kind: "distress"; note: string };
 - **Scoring:** Claude says which of the person's lines carries each fact; code then decides `unprompted` vs `after_cue` from whether the companion had already said that fact before that line. Facts approved after the session started aren't scored.
 - **`distress: true`** means Claude flagged confusion, fear or grief, or the person's words matched a distress phrase in code (e.g. "I want to go home", "where is everyone", "I'm scared"). The tablet stops the moment, shows the reply (which is reassurance), and ends the session with reason `distress`.
 - **`branch`** is set when the patient linked the moment to an older memory ("this kitchen looks like my mother's"). The dashboard lists these.
+- **`focus`** (optional, from the web playground): the guide keeps only fact ids that are approved and allowed, tells Claude what the person is pointing at, and asks it to say it isn't sure when none of the facts fit. The turn is saved with its focus; scoring still reads only the person's words.
 - **`dropped`** lists sentences the grounding check removed and why. Don't show them to the patient. The caregiver debug panel and the demo can show them.
 - Speak `sentences` in order with the browser's `speechSynthesis` (Cartesia is a stretch goal).
 

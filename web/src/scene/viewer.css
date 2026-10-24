@@ -1,0 +1,315 @@
+.viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bd-bg, #05060a);
+  color: var(--bd-fg, #d7e3ee);
+}
+.viewer-stage {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  gap: 1px;
+  background: var(--bd-line, #1a2230);
+}
+.viewer-canvas {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  background: #05060a;
+}
+.viewer-side {
+  width: min(34%, 440px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bd-panel, #0a0f18);
+}
+.viewer-video {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  padding: 8px;
+}
+.viewer-timeline .layers {
+  display: flex;
+  gap: 12px;
+}
+.viewer-timeline .layer {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--bd-muted, #7d8ea3);
+  cursor: pointer;
+}
+.viewer-timeline .layer input {
+  accent-color: var(--bd-accent, #6ee7ff);
+}
+.viewer-timeline .layer.disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.video-box {
+  position: relative;
+  width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+.video-box video {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  height: auto;
+  transform-origin: center;
+}
+.viewer-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--bd-muted, #7d8ea3);
+  font-size: 14px;
+}
+.viewer-modes {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 4px;
+}
+.viewer-modes button,
+.viewer-timeline button {
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bd-fg, #d7e3ee);
+  background: rgba(10, 16, 26, 0.8);
+  border: 1px solid var(--bd-line, #1a2230);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.viewer-modes button.on {
+  border-color: var(--bd-accent, #6ee7ff);
+  color: var(--bd-accent, #6ee7ff);
+}
+.viewer-modes button:disabled,
+.viewer-timeline button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.viewer-foot {
+  position: absolute;
+  bottom: 10px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 11px;
+  color: var(--bd-muted, #7d8ea3);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.viewer-foot .help {
+  max-width: calc(100% - min(36%, 420px) - 24px);
+}
+.viewer-foot .err {
+  color: var(--bd-error, #ff6b6b);
+}
+.viewer-selection {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 240px;
+  padding: 10px 12px;
+  font-size: 12px;
+  background: rgba(8, 12, 20, 0.88);
+  border: 1px solid var(--bd-accent, #6ee7ff);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.viewer-selection .sel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--bd-accent, #6ee7ff);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.viewer-selection button {
+  font: inherit;
+  color: var(--bd-fg, #d7e3ee);
+  background: transparent;
+  border: 1px solid var(--bd-line, #1a2230);
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.viewer-selection .sel-head button {
+  border: none;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.viewer-selection .muted {
+  color: var(--bd-muted, #7d8ea3);
+}
+.viewer-selection .sel-sub {
+  margin-top: 6px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bd-muted, #7d8ea3);
+}
+.viewer-selection .sel-seen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.viewer-selection .sel-seen button:hover,
+.viewer-selection .sel-go:hover {
+  border-color: var(--bd-accent, #6ee7ff);
+}
+.viewer-selection .sel-go {
+  margin-top: 6px;
+  color: var(--bd-bg, #05060a);
+  background: var(--bd-accent, #6ee7ff);
+  border-color: var(--bd-accent, #6ee7ff);
+}
+.viewer-timeline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--bd-line, #1a2230);
+}
+.viewer-timeline .track {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+.viewer-timeline input[type='range'] {
+  width: 100%;
+  accent-color: var(--bd-accent, #6ee7ff);
+}
+/* When the selected object was on camera. Sits just above the slider. */
+.viewer-timeline .seen {
+  position: absolute;
+  top: -7px;
+  height: 5px;
+  padding: 0;
+  border: none;
+  background: var(--bd-accent, #6ee7ff);
+  opacity: 0.8;
+  cursor: pointer;
+}
+.viewer-timeline .time {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--bd-muted, #7d8ea3);
+  min-width: 110px;
+  text-align: right;
+}
+@media (max-width: 760px) {
+  .viewer-stage {
+    flex-direction: column;
+  }
+  .viewer-side {
+    width: auto;
+    height: 45%;
+  }
+  .video-box {
+    width: auto;
+    height: 100%;
+  }
+}
+.viewer-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--bd-accent, #6ee7ff), var(--bd-accent, #6ee7ff)) center / 2px 18px no-repeat,
+    linear-gradient(var(--bd-accent, #6ee7ff), var(--bd-accent, #6ee7ff)) center / 18px 2px no-repeat;
+  opacity: 0.85;
+}
+/* Fly steering (WASD held): hide the cursor on the whole page, like a game. */
+html.bd-steering,
+html.bd-steering * {
+  cursor: none !important;
+}
+/* The pointer drawn at the crosshair after Fly steering ends (see useVirtualCursor). */
+html.bd-virtual-cursor,
+html.bd-virtual-cursor * {
+  cursor: none !important;
+}
+.virtual-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9999;
+  display: none;
+  width: 20px;
+  height: 26px;
+  /* The arrow's tip sits at (2, 2) in the image; shift so the tip is the hotspot. */
+  margin: -2px 0 0 -2px;
+  pointer-events: none;
+  /* macOS / Linux style: black arrow, white outline, soft shadow. */
+  background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='26' viewBox='0 0 20 26'><path d='M2 2 L2 18.6 L6 14.9 L8.7 21.2 L11.7 19.9 L9.1 13.8 L14.4 13.8 Z' fill='black' stroke='white' stroke-width='3' stroke-linejoin='round' paint-order='stroke'/></svg>") no-repeat;
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.45));
+}
+/* Windows style: white arrow, black outline. */
+.virtual-cursor.win {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='26' viewBox='0 0 20 26'><path d='M2 2 L2 20 L6.5 15.8 L9.6 23 L12.6 21.7 L9.6 14.6 L15.5 14.6 Z' fill='white' stroke='black' stroke-width='1.2' stroke-linejoin='round'/></svg>");
+  filter: none;
+}
+/* The recorded video slides up over the 3D view on demand (Video button or V). It keeps
+   playing while hidden, so sound and the people replay stay in sync. */
+.viewer-video-float {
+  position: absolute;
+  right: 12px;
+  bottom: 40px;
+  width: min(36%, 420px);
+  max-height: calc(100% - 64px);
+  display: flex;
+  border: 1px solid var(--bd-line, #1a2230);
+  background: #000;
+  transition: transform 220ms ease, opacity 220ms ease;
+  transform: translateY(calc(100% + 60px));
+  opacity: 0;
+  pointer-events: none;
+}
+.viewer-video-float.open {
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .viewer-video-float {
+    transition: none;
+  }
+}
+.viewer-video-float .viewer-video {
+  flex: 1;
+}
+.viewer-timeline .video-toggle.on {
+  border-color: var(--bd-accent, #6ee7ff);
+  color: var(--bd-accent, #6ee7ff);
+}
+@media (max-width: 760px) {
+  .viewer-video-float {
+    width: auto;
+    left: 12px;
+  }
+}

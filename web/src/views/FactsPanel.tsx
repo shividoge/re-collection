@@ -1,70 +1,78 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react'
 
-import { captureFileUrl, guide, GuideError } from '../api';
-import type { CaptureStatus, Fact, FactChange, Moment } from '../api';
+import { captureFileUrl, guide, GuideError } from '../api'
+import type { CaptureStatus, Fact, FactChange, Moment } from '../api'
+
+/** Jumps to a moment of the visit; `play` starts playback there. */
+export type Seek = (t: number, play?: boolean) => void
 
 /**
  * Family review (CLAUDE.md 6.3): every fact Claude extracted, next to the
  * evidence that backs it. Nothing reaches the patient until it's approved
  * here. Clicking evidence seeks the video to that moment.
  */
-export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: (t: number, play?: boolean) => void }) {
-  const [moment, setMoment] = useState<Moment | null>(null);
-  const [status, setStatus] = useState<CaptureStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [showDropped, setShowDropped] = useState(false);
+export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: Seek }) {
+  const [moment, setMoment] = useState<Moment | null>(null)
+  const [status, setStatus] = useState<CaptureStatus | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [showDropped, setShowDropped] = useState(false)
 
   const load = useCallback(async () => {
     try {
-      const detail = await guide.capture(captureId);
-      setStatus(detail.status);
+      const detail = await guide.capture(captureId)
+      setStatus(detail.status)
       if (detail.status.facts === 'done') {
-        setMoment(await guide.moment(captureId));
-        setError(null);
+        setMoment(await guide.moment(captureId))
+        setError(null)
       }
     } catch (e) {
-      setError((e as GuideError).message);
+      setError((e as GuideError).message)
     }
-  }, [captureId]);
+  }, [captureId])
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load()
+  }, [load])
 
   // While Claude is working, check back every few seconds.
-  const working = status?.facts === 'queued' || status?.facts === 'running';
+  const working = status?.facts === 'queued' || status?.facts === 'running'
   useEffect(() => {
-    if (!working) return;
-    const timer = setInterval(() => void load(), 3000);
-    return () => clearInterval(timer);
-  }, [working, load]);
+    if (!working) return
+    const timer = setInterval(() => void load(), 3000)
+    return () => clearInterval(timer)
+  }, [working, load])
 
   async function change(fact: Fact, update: FactChange) {
     try {
-      const saved = await guide.updateFact(captureId, fact.id, update);
-      setMoment((m) => m && { ...m, facts: m.facts.map((f) => (f.id === saved.id ? saved : f)) });
+      const saved = await guide.updateFact(captureId, fact.id, update)
+      setMoment((m) => m && { ...m, facts: m.facts.map((f) => (f.id === saved.id ? saved : f)) })
     } catch (e) {
-      setError(`Couldn't save: ${(e as GuideError).message}`);
+      setError(`Couldn't save: ${(e as GuideError).message}`)
     }
   }
 
   async function reextract() {
     try {
-      await guide.reextract(captureId);
-      setStatus((s) => s && { ...s, facts: 'queued', factsError: null });
+      await guide.reextract(captureId)
+      setStatus((s) => s && { ...s, facts: 'queued', factsError: null })
     } catch (e) {
-      setError((e as GuideError).message);
+      setError((e as GuideError).message)
     }
   }
 
-  if (!status) return <section className="facts-panel"><p className="muted">Loading facts…</p></section>;
+  if (!status)
+    return (
+      <section className="facts-panel">
+        <p className="muted">Loading facts…</p>
+      </section>
+    )
 
   if (status.upload !== 'done') {
     return (
       <section className="facts-panel">
         <p className="muted">Facts are extracted once the whole capture has uploaded.</p>
       </section>
-    );
+    )
   }
 
   if (working || status.facts === 'not_started') {
@@ -78,7 +86,7 @@ export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: (
           </div>
         </div>
       </section>
-    );
+    )
   }
 
   if (status.facts === 'failed') {
@@ -87,13 +95,13 @@ export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: (
         <p className="error">Fact extraction failed: {status.factsError}</p>
         <button onClick={() => void reextract()}>Try again</button>
       </section>
-    );
+    )
   }
 
-  if (!moment) return <section className="facts-panel">{error ? <p className="error">{error}</p> : <p className="muted">Loading facts…</p>}</section>;
+  if (!moment) return <section className="facts-panel">{error ? <p className="error">{error}</p> : <p className="muted">Loading facts…</p>}</section>
 
-  const approved = moment.facts.filter((f) => f.status === 'approved').length;
-  const pending = moment.facts.filter((f) => f.status === 'pending').length;
+  const approved = moment.facts.filter((f) => f.status === 'approved').length
+  const pending = moment.facts.filter((f) => f.status === 'pending').length
 
   return (
     <section className="facts-panel">
@@ -108,8 +116,8 @@ export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: (
         {moment.chapters.length > 0 && (
           <div className="chapters">
             {moment.chapters.map((c) => (
-              <button key={c.tStart} className="chip" onClick={() => onSeek(c.tStart, true)}>
-                <span className="mono">{formatTime(c.tStart)}</span> {c.label}
+              <button key={c.tStart} onClick={() => onSeek(c.tStart, true)}>
+                {formatTime(c.tStart)} {c.label}
               </button>
             ))}
           </div>
@@ -151,23 +159,13 @@ export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: (
         </button>
       </footer>
     </section>
-  );
+  )
 }
 
-function FactCard({
-  captureId,
-  fact,
-  onChange,
-  onSeek,
-}: {
-  captureId: string;
-  fact: Fact;
-  onChange: (update: FactChange) => void;
-  onSeek: (t: number, play?: boolean) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(fact.editedText ?? fact.text);
-  const shown = fact.editedText ?? fact.text;
+function FactCard({ captureId, fact, onChange, onSeek }: { captureId: string; fact: Fact; onChange: (update: FactChange) => void; onSeek: Seek }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(fact.editedText ?? fact.text)
+  const shown = fact.editedText ?? fact.text
 
   return (
     <li className={`fact ${fact.status} ${fact.doNotRaise ? 'do-not-raise' : ''}`}>
@@ -184,10 +182,10 @@ function FactCard({
         <form
           className="edit"
           onSubmit={(e) => {
-            e.preventDefault();
-            const text = draft.trim();
-            onChange({ editedText: text && text !== fact.text ? text : null });
-            setEditing(false);
+            e.preventDefault()
+            const text = draft.trim()
+            onChange({ editedText: text && text !== fact.text ? text : null })
+            setEditing(false)
           }}
         >
           <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} autoFocus />
@@ -208,11 +206,11 @@ function FactCard({
           e.type === 'frame' ? (
             <button key={k} className="frame" onClick={() => onSeek(e.t)} title={`Show ${formatTime(e.t)}`}>
               <img src={captureFileUrl(captureId, e.keyframe)} alt={`Keyframe at ${formatTime(e.t)}`} loading="lazy" />
-              <span className="mono">{formatTime(e.t)}</span>
+              <span>{formatTime(e.t)}</span>
             </button>
           ) : (
             <button key={k} className="quote" onClick={() => onSeek(e.tStart, true)} title="Play this moment">
-              “{e.quote}” <span className="mono">{formatTime(e.tStart)}</span>
+              “{e.quote}” <span className="muted">{formatTime(e.tStart)}</span>
             </button>
           ),
         )}
@@ -220,28 +218,41 @@ function FactCard({
       {fact.cue && <p className="cue">Hint: {fact.cue}</p>}
 
       <div className="actions">
-        <button className={fact.status === 'approved' ? 'on approve' : 'approve'} onClick={() => onChange({ status: fact.status === 'approved' ? 'pending' : 'approved' })}>
+        <button
+          className={fact.status === 'approved' ? 'on approve' : 'approve'}
+          onClick={() => onChange({ status: fact.status === 'approved' ? 'pending' : 'approved' })}
+        >
           {fact.status === 'approved' ? '✓ Approved' : 'Approve'}
         </button>
-        <button className={fact.status === 'rejected' ? 'on reject' : 'reject'} onClick={() => onChange({ status: fact.status === 'rejected' ? 'pending' : 'rejected' })}>
+        <button
+          className={fact.status === 'rejected' ? 'on reject' : 'reject'}
+          onClick={() => onChange({ status: fact.status === 'rejected' ? 'pending' : 'rejected' })}
+        >
           {fact.status === 'rejected' ? 'Rejected' : 'Reject'}
         </button>
-        <button onClick={() => { setDraft(shown); setEditing(true); }}>Edit</button>
+        <button
+          onClick={() => {
+            setDraft(shown)
+            setEditing(true)
+          }}
+        >
+          Edit
+        </button>
         <label className="toggle">
           <input type="checkbox" checked={fact.doNotRaise} onChange={(e) => onChange({ doNotRaise: e.target.checked })} />
           Don't bring this up
         </label>
       </div>
     </li>
-  );
+  )
 }
 
 function statusLabel(fact: Fact) {
-  if (fact.doNotRaise) return 'Never mention';
-  return { pending: 'To check', approved: 'Approved', rejected: 'Rejected' }[fact.status];
+  if (fact.doNotRaise) return 'Never mention'
+  return { pending: 'To check', approved: 'Approved', rejected: 'Rejected' }[fact.status]
 }
 
 function formatTime(seconds: number) {
-  const s = Math.max(0, Math.floor(seconds));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const s = Math.max(0, Math.floor(seconds))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
