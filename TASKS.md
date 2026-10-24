@@ -1,6 +1,58 @@
 # Braindance: who builds what
 
-## ⏱ Right now: Sat 16:00–18:00, Firdavs and IBS27 own everything
+## 🎯 Everything left until submission (read this first)
+
+**Deadline: Sunday 9:00 AM PT, submit by 8:30.** This list is the single source of truth for what's left in the whole project. Every Claude session should read `CLAUDE.md`, this section, and `docs/LAST-STEP.md`, then take the next open item for its person. Tick items off here (in a PR) as they land.
+
+**What the finished demo shows:** a phone scan of a real family visit → Claude's grounded facts, approved by the family → a Revisit session on the iPad → the recall dashboard; and an **old video turned into 3D**, explored on the **iPad** (swipe, tilt, head tracking) and in the **Memory Museum**, where a family member **joins from their phone** and walks the patient to a picture frame and into the moment.
+
+### Must do (the demo depends on these)
+
+| # | What | Who | Where / how | Done when |
+|---|---|---|---|---|
+| M1 | Memory Museum draws its 3D hall; tap frame → walk → step into Memory Window → back | Firdavs | `web/museum`, details below (Firdavs 2) | Works in Safari on the real iPad; PR open |
+| M2 | Memory Window on the real iPad: swipe, tilt, head tracking over HTTPS | Firdavs | `docs/LAST-STEP.md` → "On the real iPad" | Results written in the PR |
+| M3 | "Visit together": helper joins the museum from a phone and leads | IBS27 | `docs/LAST-STEP.md` → spec; branch `web/museum-together` | iPad + phone in one room through the tunnel; PR open |
+| M4 | Old videos as 3D moments | done (Shivin's Claude) | `tools/video-to-3d`; three clips on release `team-data-1` | ✅ render in viewer and Memory Window |
+| M5 | A **real old family video** (with consent) converted and in the museum | IBS27 (convert), Shivin (find the video) | `tools/video2capture/README.md` | It's a frame in the museum |
+| M6 | Merge the web stack, in this order: #25 → Firdavs's #16 on top → `web/video-estimated` → `web/museum` → `web/museum-together` → `tools/video-to-3d` | Shivin (merges), each author opens the PR | GitHub | `main` has all of it; the guide serves it |
+| M7 | Demo visit filmed with the phone (scan + visit, real people talking, consent) | Shivin films; IBS27 preps the people and details | 20:00 tonight | Imported, facts extracted |
+| M8 | Facts reviewed and approved for the demo visit; one "don't bring up" | Shivin (family reviewer) | website → Facts | Approved |
+| M9 | 3+ real Revisit sessions on the iPad, a few hours apart | whoever is awake, 01:00–04:00 | website → Begin the visit | Dashboard chart has real points |
+| M10 | Demo video (3:00), song cue per `docs/THEME.md` §7 | IBS27 edits; everyone films their part | shot list in `docs/demo-video.md` | Uploaded (unlisted) |
+| M11 | Devpost write-up + sponsor opt-ins (Anthropic, Cal Hacks tracks, Meta, Microsoft, MLH + its supplemental form) | IBS27 drafts, Shivin submits | `docs/devpost.md`, `docs/SPONSOR-PLAN.md` | Submitted by 08:30 |
+| M12 | Rehearse the 3-minute pitch twice | everyone | 07:30–08:30 | Done |
+
+### Should do (if the Must list is on track)
+
+| # | What | Who |
+|---|---|---|
+| S1 | "Relive With A Smile" rename, user-facing strings only (`docs/THEME.md` §5), after #25 merges | Firdavs (web), Shivin (iPhone app name) |
+| S2 | Republish the public site from `main` after M6 (`docs/TEAM-HANDOFF.md` → "Updating the public site"); only with Shivin's OK | Shivin |
+| S3 | Close the old stacked PRs #9, #11, #12, #14, #17, #23 once #25 is merged | Shivin |
+| S4 | Acceptance checklist, `CLAUDE.md` §12 (clap test, grounding test, distress phrase, tablet layout) | IBS27 runs it, Shivin does the clap test |
+| S5 | Decide on PR #24 (plan v3) | Shivin with IBS27 |
+
+### Nice to have (only with spare time)
+
+"Hide from her" web side (`web/hide-triggers`), Cartesia voice, Vultr hosting, testing PR #10 (iOS medium confidence) on the phone.
+
+### Timeline
+
+| When | Firdavs | IBS27 | Shivin |
+|---|---|---|---|
+| now–18:00 | M1, M2 (lists below) | M3, then video-to-3D setup (M5) | away |
+| 18:00–20:00 | finish M1/M2, PRs; S1 | finish M3; demo-video plan; filming prep | M6 merges, S3, find an old family video |
+| 20:00–22:00 | support filming | run M7 with Shivin | M7, then M8 |
+| 22:00–01:00 | polish what the shots need | M5, Devpost draft | S2, S4 clap test |
+| 01:00–04:00 | M9 sessions (in shifts) | M9 sessions | M9 sessions |
+| 04:00–07:30 | M10 screen recordings | M10 edit, M11 | M11 submit-ready |
+| 07:30–08:30 | M12 | M12 | M12, **submit** |
+
+---
+
+
+## ⏱ Right now: Sat 16:00–18:00, detailed lists for Firdavs and IBS27
 
 Shivin is away for about two hours (back ~18:00). Everything that's left is split evenly between **Firdavs** and **IBS27** so you can work in parallel. Don't wait for Shivin: pick up your list below, top to bottom. Older sections further down are history; this section wins where they disagree.
 
@@ -52,28 +104,39 @@ Shivin is away for about two hours (back ~18:00). Everything that's left is spli
 
 ### Shivin, when he's back (~18:00)
 
-- Review and merge the PRs above; close the old stacked PRs #9, #11, #12, #14.
-- **Revoke the Anthropic API key** that was committed in `guide/.env.example` (commit 77a8da6) and put a new one in `guide/.env`.
-- Film the demo capture at 20:00; real Revisit sessions after.
-- Republish the public site once #25 is merged.
+- M6: merge the web stack in order (#25 → #16 on top → `web/video-estimated` → `web/museum` → `web/museum-together` → `tools/video-to-3d`); S3: close the old stacked PRs.
+- Find an old family video (with consent) for M5 and give it to IBS27.
+- M7/M8: film the demo capture at 20:00, import, review facts. Then M9 sessions.
+- S2: republish the public site from `main` once the stack is merged.
+- ~~Revoke the leaked Anthropic key~~ done 16:00; a new key is in `guide/.env`.
 
 ### Starting prompts for Claude Code
 
+Shivin (when back):
+```
+Read CLAUDE.md, TASKS.md ("Everything left until submission") and docs/LAST-STEP.md.
+I'm Shivin. Check which PRs Firdavs and IBS27 opened, review each against its "Done
+when", and tell me which are ready to merge in the M6 order. Then help with M7.
+```
+
 Firdavs:
 ```
-Read CLAUDE.md and TASKS.md (the "Right now" section at the top). I'm Firdavs.
-Read docs/LAST-STEP.md and get the data from the team-data-1 release. Work through
+Read CLAUDE.md, TASKS.md ("Everything left until submission" and "Right now") and
+docs/LAST-STEP.md. I'm Firdavs.
+Get the data from the team-data-1 release (docs/LAST-STEP.md). Work through
 "Firdavs: the website" in order, starting with task 1 (merge web/app onto web/orange). One branch and one PR per task; don't merge to main. Run the guide and check
-each change in the browser before opening the PR.
+each change in the browser before opening the PR. When your list is done, take the
+next open item for Firdavs in "Everything left until submission".
 ```
 
 IBS27:
 ```
-Read CLAUDE.md and TASKS.md (the "Right now" section at the top). I'm IBS27.
-Read docs/LAST-STEP.md. Work through "IBS27: museum together, video-to-3D, Devpost" in
+Read CLAUDE.md, TASKS.md ("Everything left until submission" and "Right now") and
+docs/LAST-STEP.md. I'm IBS27. Work through "IBS27: museum together, video-to-3D, Devpost" in
 order, starting with task 1: the guide routes and tests for joining the museum together,
 then the web hook, on branch web/museum-together. One branch and one PR per task;
-don't merge to main.
+don't merge to main. When your list is done, take the next open item for IBS27 in
+"Everything left until submission".
 ```
 
 ---

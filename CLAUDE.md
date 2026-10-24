@@ -265,39 +265,33 @@ Never cut: real capture, grounded facts with family approval, grounding enforcem
 
 ## Status
 
-> **Sat 16:00–18:00: Shivin is away. Firdavs and IBS27 own all remaining work.** Your task lists, the open branches and starting prompts are in the "Right now" section at the top of `TASKS.md`. Since the notes below were written: PR #25 (`web/orange`: one orange look, no password, includes #17 and the Memory Window #23) is open; new branches `web/video-estimated`, `web/museum` (Memory Museum, 3D hall renders blank) and `tools/video-to-3d` (old videos to 3D with Depth Anything 3) are pushed without PRs. The website only needs to show the scenes we give it, not take public uploads. The leaked Anthropic key is revoked and replaced (16:00). **Last step for the demo: `docs/LAST-STEP.md`** (old video → 3D → iPad Memory Window and a Memory Museum a helper can join); data on the private release `team-data-1`.
-
-**Last updated:** Sat Oct 24, evening PT, by Shivin's Claude session. Team summary: `docs/TEAM-HANDOFF.md`. Sponsor plan: `docs/SPONSOR-PLAN.md`.
+**Last updated:** Sat Oct 24, 16:30 PT, by Shivin's Claude session. **What's left, who does it and the timeline: the top of `TASKS.md` ("Everything left until submission").** The final feature's plan: `docs/LAST-STEP.md`. Sponsor plan: `docs/SPONSOR-PLAN.md`. Theme: `docs/THEME.md` (public name **Relive With A Smile**; "Braindance" stays the internal code name).
 
 **Done and working** (checked on real hardware or real Claude):
-- **iPhone app** (`ios/`): live room scan, visit recording, on-device transcript, keyframes, review, upload, AirDrop zip, and a **guided UI** (step bar, live coaching, one big button per screen; PR #21 merged, tried on the phone). PR #10 adds an optional medium-confidence depth setting (not yet tested on a device).
-- **Guide server** (`guide/`, 44 tests on `main`, 67 with PR #17): uploads, fact extraction, review, revisit sessions, grounding, distress, scoring, progress. PR #17 adds the read-only `/public` routes and the static exporter.
-- **Website** (`web/`): Firdavs's viewer is on `main` (PR #13): orbit, fly, select, visit dock (the Revisit screen), dashboard, fact review. **PR #17** puts the public front page (scroll-driven walkthrough), the read-only viewer `#/p/<id>` and the "Public" switch on top of it. **PR #16** (Firdavs) improves render quality.
-- **Public site:** live at https://shividoge.github.io/braindance-site/ (repo `shividoge/braindance-site`), four real scans (Anthropic booth, Cal Hacks sign, Hardware Lab table, Cal Hacks bear). It is a snapshot built before #17 and #16; republish after they merge.
-- **Real data** (in `guide/data`, not in git): the four captures with approved facts and one narration-only session each (nobody has talked back, so the recall chart is an empty state).
+- **iPhone app** (`ios/`): live room scan, visit recording, on-device transcript, keyframes, review, upload, AirDrop zip, guided UI (#21 merged, tried on the phone).
+- **Guide server** (`guide/`): uploads, fact extraction, review, revisit sessions, grounding, distress, scoring, progress, read-only `/public` routes and the static exporter (in #17/#25).
+- **Website** (`web/`): Firdavs's viewer on `main` (#13). **PR #25** (`web/orange`) holds the current site: one orange look, **no password anywhere**, the public front page (#17) and the **Memory Window** (#23, head-tracked 3D on any screen).
+- **Old video → 3D** (`tools/video-to-3d`, `tools/video2capture/`): Depth Anything 3 on a Mac; three real clips converted, render in the viewer and the Memory Window (drag-to-look checked).
+- **Data for the team:** private release `team-data-1` (Shivin's four phone scans with approved facts, the three converted clips, the source clips). How to use it: `docs/LAST-STEP.md`.
+- **Public site:** https://shividoge.github.io/braindance-site/ (four real scans; a snapshot from before #25, republish after the web stack merges).
+- **Security:** the Anthropic key that was committed in `guide/.env.example` is deleted in the Console (rejected with 401) and blanked on `main` (#30); a new key is in Shivin's `guide/.env`.
 
-**Not done yet:**
-- **The demo capture** (tonight 20:00) with real people talking, then 3+ real Revisit sessions a few hours apart.
-- Review and merge #17 and #16; close the old stacked PRs #9, #11, #12, #14 after #17 merges.
-- Sponsor work (`docs/SPONSOR-PLAN.md`), clap test, demo video, Devpost, pitch rehearsal.
-- Stretch: photo-to-3D (`docs/PHOTO-TO-3D.md`), re-scan the sign.
-- IBS27's role isn't confirmed (invite was pending).
+**In progress (branches pushed, PRs to open):**
+- `web/video-estimated`: "Estimated from a video, not measured" badge everywhere a video-made scene shows.
+- `web/museum`: the **Memory Museum** (`#/museum`), picture frames per moment that open the Memory Window; UI works, **the 3D hall draws nothing** (Firdavs, M1).
+- `web/museum-together` (to create): a family member joins the museum from their phone (IBS27, M3).
+- `web/hide-triggers`: "Hide from her" (guide side done, web side paused).
+- PR #16 (Firdavs, render quality) needs to go on top of #25. PR #24 (IBS27, plan v3) waits for Shivin.
 
-**Next steps, in order:**
-1. Film the demo capture at 20:00, import it, review facts, run real sessions.
-2. Review and merge #17 and #16, then republish the public site (ask Shivin).
-3. Do the sponsor opt-ins and the cheap integrations.
-4. Demo video, Devpost, rehearse. Submit by 8:30 AM Sunday (hard deadline 9:00).
-
-**Open questions:** which sponsors to chase beyond the opt-ins; where tonight's filming happens and who plays the grandparent; consent from everyone filmed.
+**Next:** follow the Must list in `TASKS.md`. Demo visit filming at 20:00; real Revisit sessions 01:00–04:00; submit by 08:30.
 
 ### Local machine notes (Shivin's MacBook Air)
 
-- **Repo:** `~/Developer/braindance` (GitHub `shividoge/braindance`, private). Teammates: `boliyevfirdavs` (Firdavs, web; accepted), `IBS27` (invite pending).
+- **Repo:** `~/Developer/braindance` (GitHub `shividoge/braindance`, private). Teammates: `boliyevfirdavs` (Firdavs, web; accepted), `IBS27` (accepted).
 - **Run the guide + website:** `npm --prefix guide start` from the repo root → http://127.0.0.1:8787. After changing `web/`, run `npm --prefix web run build` (the guide serves `web/dist`). Dev with hot reload: `npm --prefix web run dev` (port 5173, proxies to the guide).
-- **Secrets:** `guide/.env` (gitignored) holds `ANTHROPIC_API_KEY` (Shivin's Claude Console credits, verified working) and `BRAINDANCE_KEY` (the team password the website asks for once). Never print, commit or paste either. The website stores the password in the browser after the first unlock.
+- **Secrets:** `guide/.env` (gitignored) holds `ANTHROPIC_API_KEY` (Shivin's Claude Console credits, verified working) and `BRAINDANCE_KEY` (empty since #25: no password anywhere). Never print, commit or paste either.
 - **Who the sessions are for:** `guide/data/people.json` = `{"displayName": "Grandma", "preferredAddress": "Mom"}` (placeholder; change with `PUT /api/person`).
-- **Public URL for judges** (Shivin runs this himself; Claude Code is blocked from opening tunnels): `cloudflared tunnel --url http://127.0.0.1:8787`, then share the printed `https://….trycloudflare.com` URL plus the team password. The URL changes every restart.
+- **Public URL for judges** (Shivin runs this himself; Claude Code is blocked from opening tunnels): `cloudflared tunnel --url http://127.0.0.1:8787`, then share the printed `https://….trycloudflare.com` URL (no password needed). The URL changes every restart.
 - **iPhone builds:** Xcode 27.1 at `/Applications/Xcode.app`. Phone UDID `00008140-001825992212801C`, signing team `AK3HPCD97G` (free Personal Team, set in `ios/project.yml`; installs expire after 7 days, so reinstall then). Build + install + launch with the phone plugged in and unlocked:
   ```bash
   cd ios && xcodegen generate
@@ -328,6 +322,7 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 - 2026-10-24 ~19:00 | Shivin + Claude | Firdavs's web/ merged (#13); public site ported onto it (#17); briefs for render quality, photo-to-3D and sponsors; guided phone UI merged (#21) | review #17 and #16; demo capture 20:00; sponsor work
 - 2026-10-24 16:00 | Shivin + Claude | pushed web/museum (WIP) and tools/video-to-3d; handed all remaining work to Firdavs and IBS27 for two hours (TASKS.md "Right now") | Firdavs: #25 + #16, museum; IBS27: video-to-3D, Devpost
 - 2026-10-24 16:20 | Shivin + Claude | video2capture fixed and run on three real clips (render in viewer + Memory Window); data release team-data-1; docs/LAST-STEP.md with the shared-museum spec | Firdavs: museum canvas + iPad; IBS27: Visit together
+- 2026-10-24 16:30 | Shivin + Claude | one master list of everything left until submission (TASKS.md top), Status rewritten, data release team-data-1 | team follows the Must list
 
 ---
 
