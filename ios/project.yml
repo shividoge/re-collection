@@ -1,0 +1,39 @@
+name: BraindanceCapture
+options:
+  bundleIdPrefix: com.shividoge.braindance
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    # Paste your Personal Team ID here (Xcode > Settings > Accounts) so
+    # re-running `xcodegen generate` keeps signing. It isn't a secret.
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+targets:
+  BraindanceCapture:
+    type: application
+    platform: iOS
+    sources:
+      - App
+      - Capture
+      - UI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.shividoge.braindance.capture
+        TARGETED_DEVICE_FAMILY: "1"
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Braindance
+        NSCameraUsageDescription: Braindance uses the camera and LiDAR to capture the room and the visit.
+        NSMicrophoneUsageDescription: Braindance records audio so your family can hear the visit again.
+        UILaunchScreen: {}
+        UIRequiredDeviceCapabilities: [arkit, metal]
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    scheme: {}
