@@ -2,6 +2,13 @@
 // serves this app, so requests are same-origin; in dev, Vite proxies them.
 
 const KEY_STORAGE = 'braindance.guideKey';
+/**
+ * A static build (VITE_STATIC=1) has no server: everything a visitor reads was
+ * exported to plain files under data/ (guide/scripts/export-static.mjs), so
+ * the same /public paths are mapped onto those files. It is always public.
+ */
+export const STATIC = import.meta.env.VITE_STATIC === '1';
+
 const base = (import.meta.env.VITE_GUIDE_URL as string | undefined)?.replace(/\/+$/, '') ?? '';
 
 export type CaptureStatus = {
@@ -126,11 +133,22 @@ let memoryKey = getKey();
  * routes, no key is sent, and nothing can change. The viewer is the same code
  * either way; only the paths differ.
  */
-let publicMode = false;
+let publicMode = STATIC;
 export function setPublicMode(on: boolean) {
   publicMode = on;
 }
 export const isPublicMode = () => publicMode;
+
+/** Where a request really goes: the guide, or an exported file in a static build. */
+function url(path: string): string {
+  const routed = route(path);
+  if (!STATIC) return base + routed;
+  const file = routed
+    .replace(/^\/public\/captures$/, 'data/captures.json')
+    .replace(/^\/public\/(captures|moments|progress|sessions)\/([^/?]+)$/, 'data/$1/$2.json')
+    .replace(/^\/public\/files\//, 'data/files/');
+  return import.meta.env.BASE_URL + file;
+}
 
 function route(path: string): string {
   if (!publicMode) return path;
@@ -147,7 +165,7 @@ function headers(extra: Record<string, string> = {}): Record<string, string> {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(base + route(path), { ...init, headers: headers(init.headers as Record<string, string>) });
+    response = await fetch(url(path), { ...init, headers: headers(init.headers as Record<string, string>) });
   } catch {
     throw new GuideError(0, "Can't reach the guide server. Is it running (npm start in guide/)?");
   }
@@ -188,7 +206,7 @@ export type PublicSession = {
 async function publicGet<T>(path: string): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(base + path);
+    response = await fetch(url(path));
   } catch {
     throw new GuideError(0, "Can't reach the site's server right now.");
   }
@@ -202,7 +220,7 @@ export const publicGuide = {
   moment: (id: string) => publicGet<Moment>(`/public/moments/${id}`),
   progress: (id: string) => publicGet<Progress>(`/public/progress/${id}`),
   session: (sid: string) => publicGet<PublicSession>(`/public/sessions/${sid}`),
-  file: (id: string, name: string) => base + `/public/files/${id}/${name}`,
+  file: (id: string, name: string) => url(`/public/files/${id}/${name}`),
 };
 
 export const guide = {
@@ -244,7 +262,7 @@ export const guide = {
 
 /** URL for a capture file. <video> and <img> can't send headers, so the key rides as ?key=. */
 export function fileUrl(path: string): string {
-  return base + route(path) + (memoryKey && !publicMode ? `?key=${encodeURIComponent(memoryKey)}` : '');
+  return url(path) + (memoryKey && !publicMode ? `?key=${encodeURIComponent(memoryKey)}` : '');
 }
 
 export function captureFileUrl(id: string, name: string): string {
@@ -253,7 +271,7 @@ export function captureFileUrl(id: string, name: string): string {
 
 /** Fetches a byte range of a capture file (used for depth frames). */
 export async function fetchRange(id: string, name: string, start: number, length: number): Promise<ArrayBuffer> {
-  const response = await fetch(base + route(`/files/${id}/${name}`), {
+  const response = await fetch(url(`/files/${id}/${name}`), {
     headers: headers({ Range: `bytes=${start}-${start + length - 1}` }),
   });
   if (!response.ok) throw new GuideError(response.status, `${name}: HTTP ${response.status}`);
@@ -261,13 +279,13 @@ export async function fetchRange(id: string, name: string, start: number, length
 }
 
 export async function fetchBytes(id: string, name: string): Promise<ArrayBuffer> {
-  const response = await fetch(base + route(`/files/${id}/${name}`), { headers: headers() });
+  const response = await fetch(url(`/files/${id}/${name}`), { headers: headers() });
   if (!response.ok) throw new GuideError(response.status, `${name}: HTTP ${response.status}`);
   return response.arrayBuffer();
 }
 
 export async function fetchText(id: string, name: string): Promise<string> {
-  const response = await fetch(base + route(`/files/${id}/${name}`), { headers: headers() });
+  const response = await fetch(url(`/files/${id}/${name}`), { headers: headers() });
   if (!response.ok) throw new GuideError(response.status, `${name}: HTTP ${response.status}`);
   return response.text();
 }

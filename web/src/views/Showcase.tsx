@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { guide, publicGuide } from '../api';
+import { guide, publicGuide, STATIC } from '../api';
 import type { CaptureDetail, Moment, Progress, PublicCapture, PublicSession } from '../api';
 import { RecallChart } from './Dashboard';
 
@@ -137,7 +137,7 @@ export function Showcase() {
 
       <footer className="show-footer">
         <span>Braindance · Cal Hacks 13.0</span>
-        <a href="#/captures">Family tools</a>
+        {!STATIC && <a href="#/captures">Family tools</a>}
       </footer>
     </div>
   );

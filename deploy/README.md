@@ -1,3 +1,5 @@
+> **Not used.** We chose GitHub Pages instead (see `deploy/static/README.md`). These Vultr steps are kept in case a server is wanted later.
+
 # Putting Braindance on Vultr
 
 This gives the public front page a stable URL that stays up when your laptop sleeps. It's the MLH **Best Use of Vultr** track, and the server is a plain Vultr cloud server.

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 
 import './styles.css';
 import { Gallery } from './views/Gallery';
-import { setPublicMode } from './api';
+import { setPublicMode, STATIC } from './api';
 import { Dashboard } from './views/Dashboard';
 import { Revisit } from './views/Revisit';
 import { Showcase } from './views/Showcase';
@@ -21,9 +21,9 @@ function App() {
   // Visitors never need a key: the front page and #/p/<id> read only /public.
   const visitor = /^#\/p\/([0-9a-f-]{36})$/i.exec(hash);
   const front = hash === '' || hash === '#' || hash === '#/' || hash.startsWith('#how') || hash.startsWith('#moments') || hash.startsWith('#research');
-  setPublicMode(Boolean(visitor) || front);
+  if (!STATIC) setPublicMode(Boolean(visitor) || front);
   if (visitor) return <Viewer key={visitor[1]} id={visitor[1]} publicView />;
-  if (front) return <Showcase />;
+  if (front || STATIC) return <Showcase />;   // a static site has no family tools
 
   const capture = /^#\/capture\/([0-9a-f-]{36})$/i.exec(hash);
   const revisit = /^#\/revisit\/([0-9a-f-]{36})$/i.exec(hash);

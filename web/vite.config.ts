@@ -7,6 +7,8 @@ const guide = process.env.GUIDE_URL ?? 'http://127.0.0.1:8787';
 
 export default defineConfig({
   plugins: [react()],
+  // A static build (VITE_STATIC=1) works from any folder or sub-path, e.g. GitHub Pages project sites.
+  base: process.env.VITE_STATIC === '1' ? './' : '/',
   server: {
     port: 5173,
     proxy: {
