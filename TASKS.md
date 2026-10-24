@@ -1,4 +1,74 @@
-# Braindance: who builds what (plan v2)
+# Braindance: who builds what
+
+## ⏱ Right now: Sat 16:00–18:00, Firdavs and IBS27 own everything
+
+Shivin is away for about two hours (back ~18:00). Everything that's left is split evenly between **Firdavs** and **IBS27** so you can work in parallel. Don't wait for Shivin: pick up your list below, top to bottom. Older sections further down are history; this section wins where they disagree.
+
+**Rules for these two hours**
+- Branch per task (`web/...`, `tools/...`, `docs/...`), push often, open a PR. Don't push to `main`, and don't merge; Shivin merges when he's back.
+- The website doesn't need to take uploads from the public. It only has to show the scenes **we** give it (phone scans and converted videos). Don't spend time on upload UX.
+- Nothing fake (CLAUDE.md §0): a scene rebuilt from a video is labelled "Estimated from a video, not measured".
+- Leave a one-line note in the Work log at the bottom of `CLAUDE.md` when you finish a task, and say in the PR what you checked and on which device.
+- Stuck for more than 20 minutes? Write it in the team chat and move to your next task.
+
+**What the open branches are** (all pushed):
+
+| Branch / PR | What it is | State |
+|---|---|---|
+| `web/orange` → PR #25 | The website in one orange look, no password anywhere; includes #17 (public site) and #23 (Memory Window) | Ready for review |
+| `web/app` → PR #16 (Firdavs) | Render quality: room as one surface, selection tint, sharp replay | Needs merging with #25 |
+| `web/video-estimated` (no PR yet) | "Estimated from a video" badge on cards, viewer, public view and Memory Window; guide summary includes `source` | Built on `web/orange`, open a PR |
+| `web/museum` (no PR yet) | **Memory Museum** `#/museum`: a hall of picture frames, one per moment; tap to walk to it, tap again to step into its Memory Window (`#/window/<id>?from=museum`) and back. Also drag-to-look in the Memory Window | UI overlay works; **the 3D hall renders blank** (see Firdavs 2) |
+| `tools/video-to-3d` (no PR yet) | `tools/video2capture/`: any old video → a capture package with Depth Anything 3 (README inside) | Written, not run end to end yet |
+| `web/hide-triggers` | "Hide from her": family picks parts of a scene to hide from the patient. Guide side + tests done, web side not started | Paused, last priority |
+| `docs/spatial-editor` → PR #24 (IBS27) | Plan v3 proposal | Waiting for Shivin; don't build on it in these two hours |
+
+### Firdavs: the website (`web/`)
+
+1. **Review PR #25 and merge your #16 onto it.** Check out `web/orange`, run it (`npm --prefix guide start`, then http://127.0.0.1:8787), look at the front page, gallery, viewer, `#/p/<id>` and `#/window/<id>`. Then make a branch `web/app-on-orange` that merges `web/app` into `web/orange`, fix the conflicts, and open a PR. Keep one orange look (no blue) and no password prompt.
+2. **Fix the Memory Museum** (`web/museum`, `web/src/museum/Museum.tsx`). The UI overlay renders ("Your memories", Previous/Next) but the R3F canvas shows only the background colour. Already ruled out: the bundle is fresh, the canvas has a WebGL context and a size. Suspects, in order: the drei `<Html transform>` plaques, the `Walker` camera quaternion (the helper is a `PerspectiveCamera` so `lookAt` faces −z), the fog range, or a component throwing inside the Canvas. Remove pieces until the hall draws. Then check: tap a frame → walk to it; tap again or "Step into this moment" → Memory Window → "← Back to the museum" returns to the same frame; Next/Previous; works on an iPad (Safari, or Xcode's iPad simulator; touch drag, big buttons). Open a PR from `web/museum`.
+3. **Open a PR for `web/video-estimated`** after checking the badge on a capture whose manifest has `"source": "video"` (IBS27 will have one from task 1; until then, edit a copy's manifest locally).
+4. **"Relive With A Smile" rename** in the website, user-facing strings only, per `docs/THEME.md` §5. Do it on top of `web/orange` (branch `web/relive-rename`).
+5. Only if all of that is done: the "Hide from her" web side (`web/hide-triggers`; routes in its guide changes) plus a short scroll section on the front page explaining it.
+
+### IBS27: video-to-3D, demo story, Devpost
+
+1. **Get video-to-3D working end to end** (`tools/video-to-3d`, `tools/video2capture/README.md`). Your machine with a GPU is ideal (`--device cuda`). Steps: set up the venv, download DA3-BASE, run it on a short clip (any 10–30 s video with a person in a room works to start; Shivin's three clips `IMG_9516.MOV`, `IMG_9518.MOV` and `EEC77133-…MP4` come next), import the output with `npm --prefix guide run import -- out/capture-<id>`, and look at it in the viewer. Check: the room is upright and not mirrored, the camera path follows the video, the people replay lines up. If it's off, `to_capture_pose` in `video2capture.py` is where to look. Zip each good result and put it in the team drive for Shivin. Open a PR from `tools/video-to-3d` with what you checked.
+2. **Devpost draft** in `docs/devpost.md` (branch `docs/devpost`): name and story from `docs/THEME.md`, how it works (CLAUDE.md §1, §6), impact and pilot plan (§8), safety (§9), the research references, credits (Rumi, Déjà View, Apple sample code, Depth Anything 3). Add the new pieces: Memory Window (head-tracked 3D on any screen, no headset), Memory Museum, and old videos turned into 3D.
+3. **Demo video plan** in `docs/demo-video.md`: the 3:00 shot list from `docs/THEME.md` §7, plus shots of the museum and the Memory Window on an iPad, and a "this was an old video" moment. Note which shots need tonight's 20:00 capture.
+4. **Sponsors** (`docs/SPONSOR-PLAN.md`): answer the "Check these before spending any time" list (Devpost opt-ins, MLH supplemental form, Microsoft requirements, Cartesia/Vultr criteria) and write the answers into that file.
+5. **Tonight's filming prep:** consent note, who plays the grandparent, and 4–5 specific details the family should mention (a named dish, a gift, a place, a story).
+
+### Shivin, when he's back (~18:00)
+
+- Review and merge the PRs above; close the old stacked PRs #9, #11, #12, #14.
+- **Revoke the Anthropic API key** that was committed in `guide/.env.example` (commit 77a8da6) and put a new one in `guide/.env`.
+- Film the demo capture at 20:00; real Revisit sessions after.
+- Republish the public site once #25 is merged.
+
+### Starting prompts for Claude Code
+
+Firdavs:
+```
+Read CLAUDE.md and TASKS.md (the "Right now" section at the top). I'm Firdavs.
+Work through "Firdavs: the website" in order, starting with task 1 (merge web/app onto
+web/orange). One branch and one PR per task; don't merge to main. Run the guide and check
+each change in the browser before opening the PR.
+```
+
+IBS27:
+```
+Read CLAUDE.md and TASKS.md (the "Right now" section at the top). I'm IBS27.
+Work through "IBS27: video-to-3D, demo story, Devpost" in order, starting with task 1:
+check out tools/video-to-3d, follow tools/video2capture/README.md, convert a short clip,
+import it into the guide and check it in the viewer. One branch and one PR per task;
+don't merge to main.
+```
+
+---
+
+
+## History: plan v2 (Sat 07:00)
 
 Read `CLAUDE.md` first. The contracts are `docs/capture-format.md` (the phone's files) and `docs/guide-api.md` (the guide server's routes). Build against them, and ask the owner before changing one.
 
