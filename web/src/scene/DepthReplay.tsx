@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { fetchRange } from '../api'
 import type { Manifest } from '../api'
 import type { FrameRecord } from './formats'
-import { depthMeshIndices } from './gaps'
+import { depthMeshIndices, movingPixels } from './gaps'
 import { frameIndexAtTime } from './pose'
 import { SELECTION_GLSL, applySelection, selectionUniforms, type SelectionTint } from './selectionTint'
 import type { VisitTimeline } from './useRoomSurface'
@@ -199,6 +199,23 @@ export function DepthReplay({
   )
 
   const ready = timeline !== null && timeline !== 'building' ? timeline : null
+  const isRoom = useMemo(() => {
+    if (!ready) return () => false
+    const { nx, ny, nz, origin, voxel } = ready.grid
+    const room = ready.room
+    return (x: number, y: number, z: number) => {
+      const ix = Math.floor((x - origin[0]) / voxel)
+      const iy = Math.floor((y - origin[1]) / voxel)
+      const iz = Math.floor((z - origin[2]) / voxel)
+      // Outside the room's extent counts as room: far stray depth is never replayed.
+      if (ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz) return true
+      return room[(iz * ny + iy) * nx + ix] === 1
+    }
+  }, [ready])
+  // A new room mask means the shown frame's blobs must be worked out again.
+  useEffect(() => {
+    shown.current = -1
+  }, [isRoom])
   const room = useMemo(() => (ready ? roomTexture(ready) : null), [ready])
   useEffect(() => {
     const u = material.uniforms
@@ -352,12 +369,15 @@ export function DepthReplay({
     if (shown.current !== k) {
       ;(depthTexture.image.data as Float32Array).set(entry.data)
       depthTexture.needsUpdate = true
-      const index = geometry.getIndex()!
-      geometry.setDrawRange(0, depthMeshIndices(entry.data, width, height, minConfidence, index.array as Uint32Array))
-      index.needsUpdate = true
       const sx = width / manifest.video.width
       const sy = height / manifest.video.height
-      material.uniforms.uK.value.set(f.K[0] * sx, f.K[1] * sy, f.K[2] * sx, f.K[3] * sy)
+      const Kd = [f.K[0] * sx, f.K[1] * sy, f.K[2] * sx, f.K[3] * sy]
+      // Only what the room doesn't explain, as solid blobs (people, things brought in).
+      const keep = ready ? movingPixels(entry.data, width, height, Kd, f.T, minConfidence, isRoom) : null
+      const index = geometry.getIndex()!
+      geometry.setDrawRange(0, depthMeshIndices(entry.data, width, height, minConfidence, index.array as Uint32Array, keep))
+      index.needsUpdate = true
+      material.uniforms.uK.value.set(Kd[0], Kd[1], Kd[2], Kd[3])
       ;(material.uniforms.uT.value as THREE.Matrix4).fromArray(f.T)
       ;(memoryMaterial.uniforms.uTinv.value as THREE.Matrix4).fromArray(f.T).invert()
       shown.current = k

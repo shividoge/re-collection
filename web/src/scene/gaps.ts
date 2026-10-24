@@ -105,6 +105,68 @@ export function splatSizes(positions: Float32Array, cell = 0.03): Float32Array {
   return out
 }
 
+/** Fewest depth pixels a moving thing must cover to be replayed (about 0.6% of the frame). */
+export const MIN_BLOB_PIXELS = 300
+
+/**
+ * The depth pixels that show something the room doesn't explain, kept only as solid blobs: a
+ * connected region (neighbors at nearly the same depth) of at least `minPixels`. People and
+ * things brought in are blobs; depth noise around the room is scattered specks and is dropped.
+ * `depth` holds (meters, confidence) pairs; `K` is on the depth grid; `isRoom` says whether a
+ * world point is already part of the room.
+ */
+export function movingPixels(
+  depth: Float32Array,
+  width: number,
+  height: number,
+  K: ArrayLike<number>,
+  T: ArrayLike<number>,
+  minConfidence: number,
+  isRoom: (x: number, y: number, z: number) => boolean,
+  minPixels = MIN_BLOB_PIXELS,
+): Uint8Array {
+  const n = width * height
+  const moving = new Uint8Array(n)
+  for (let v = 0; v < height; v++)
+    for (let u = 0; u < width; u++) {
+      const k = v * width + u
+      const d = depth[k * 2]
+      if (!(d > 0) || depth[k * 2 + 1] < minConfidence) continue
+      const x = ((u - K[2]) * d) / K[0]
+      const y = -((v - K[3]) * d) / K[1]
+      const z = -d
+      const wx = T[0] * x + T[4] * y + T[8] * z + T[12]
+      const wy = T[1] * x + T[5] * y + T[9] * z + T[13]
+      const wz = T[2] * x + T[6] * y + T[10] * z + T[14]
+      if (!isRoom(wx, wy, wz)) moving[k] = 1
+    }
+  // Connected regions over 4-neighbors on one surface; small ones are dropped.
+  const keep = new Uint8Array(n)
+  const label = new Int32Array(n).fill(-1)
+  const stack: number[] = []
+  const region: number[] = []
+  for (let start = 0; start < n; start++) {
+    if (!moving[start] || label[start] >= 0) continue
+    region.length = 0
+    stack.push(start)
+    label[start] = start
+    while (stack.length) {
+      const k = stack.pop()!
+      region.push(k)
+      const u = k % width
+      const dk = depth[k * 2]
+      for (const j of [u > 0 ? k - 1 : -1, u < width - 1 ? k + 1 : -1, k - width, k + width]) {
+        if (j < 0 || j >= n || !moving[j] || label[j] >= 0) continue
+        if (Math.abs(depth[j * 2] - dk) > 0.02 + 0.03 * dk) continue
+        label[j] = start
+        stack.push(j)
+      }
+    }
+    if (region.length >= minPixels) for (const k of region) keep[k] = 1
+  }
+  return keep
+}
+
 /**
  * Triangles joining neighboring depth pixels into a surface. `depth` holds (meters, confidence)
  * pairs, row-major, `width`×`height`. A triangle is kept only when all three pixels are measured
@@ -112,8 +174,8 @@ export function splatSizes(positions: Float32Array, cell = 0.03): Float32Array {
  * stretched into a sheet reaching back to the wall. Writes vertex indices into `out` (room for
  * (w−1)·(h−1)·6) and returns how many it wrote.
  */
-export function depthMeshIndices(depth: Float32Array, width: number, height: number, minConfidence: number, out: Uint32Array): number {
-  const ok = (k: number) => depth[k * 2] > 0 && depth[k * 2 + 1] >= minConfidence
+export function depthMeshIndices(depth: Float32Array, width: number, height: number, minConfidence: number, out: Uint32Array, keep: Uint8Array | null = null): number {
+  const ok = (k: number) => depth[k * 2] > 0 && depth[k * 2 + 1] >= minConfidence && (!keep || keep[k] === 1)
   const d = (k: number) => depth[k * 2]
   // Neighbors on one surface differ by a little, more when seen at a slant or far away.
   const joined = (a: number, b: number, c: number) => {

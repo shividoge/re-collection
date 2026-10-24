@@ -27,14 +27,8 @@ export interface DepthView {
   confidence: Uint8Array
 }
 
-export interface FuseOptions {
-  /** Room extent to fuse, in world meters. */
-  min: Vec3
-  max: Vec3
-  /** Voxel edge in meters. */
-  voxel?: number
-  /** How far either side of a measured surface a view votes, in meters. */
-  truncation?: number
+/** How the depth frames are read; shared by the room's fusion and the visit timeline. */
+export interface ViewOptions {
   depthW: number
   depthH: number
   videoW: number
@@ -46,6 +40,18 @@ export interface FuseOptions {
   stride?: number
   /** Use every n-th depth pixel for free-space votes (they only need to cover each voxel). */
   freeStride?: number
+  /** Voxels these views may not add surface to (they can still see through them). */
+  blocked?: Uint8Array | null
+}
+
+export interface FuseOptions extends ViewOptions {
+  /** Room extent to fuse, in world meters. */
+  min: Vec3
+  max: Vec3
+  /** Voxel edge in meters. */
+  voxel?: number
+  /** How far either side of a measured surface a view votes, in meters. */
+  truncation?: number
   /**
    * A voxel needs at least this share of the best-supported voxel within one truncation band,
    * so the noise around a well-seen surface can't form a second, ghost surface next to it.
@@ -72,6 +78,20 @@ export interface Volume extends Grid {
   weight: Uint8Array
 }
 
+/** Fusion in progress: more views can be added before the volume is finished. */
+export interface Fusion extends Grid {
+  truncation: number
+  tsdf: Float32Array
+  /** Ray votes, for averaging the distance. */
+  rays: Uint8Array
+  /** Views that measured a surface here, and views that saw straight through (capped at 255). */
+  seen: Uint8Array
+  free: Uint8Array
+  seenBy: Uint16Array
+  freeBy: Uint16Array
+  views: number
+}
+
 /** A depth pixel is on an edge when a neighbor is much nearer or farther (mixed depth). */
 export function edgePixels(depth: Uint16Array, w: number, h: number): Uint8Array {
   const edge = new Uint8Array(w * h)
@@ -92,31 +112,45 @@ export function edgePixels(depth: Uint16Array, w: number, h: number): Uint8Array
   return edge
 }
 
-export function fuseTSDF(views: Iterable<DepthView>, o: FuseOptions): Volume {
-  const voxel = o.voxel ?? 0.02
-  const trunc = o.truncation ?? voxel * 3
+const NO_VIEW = 0xffff
+
+export function createFusion(min: Vec3, max: Vec3, voxel = 0.02, truncation = voxel * 3): Fusion {
+  const nx = Math.ceil((max[0] - min[0]) / voxel) + 1
+  const ny = Math.ceil((max[1] - min[1]) / voxel) + 1
+  const nz = Math.ceil((max[2] - min[2]) / voxel) + 1
+  const n = nx * ny * nz
+  return {
+    nx,
+    ny,
+    nz,
+    origin: [min[0], min[1], min[2]],
+    voxel,
+    truncation,
+    tsdf: new Float32Array(n).fill(1),
+    rays: new Uint8Array(n),
+    seen: new Uint8Array(n),
+    free: new Uint8Array(n),
+    seenBy: new Uint16Array(n).fill(NO_VIEW),
+    freeBy: new Uint16Array(n).fill(NO_VIEW),
+    views: 0,
+  }
+}
+
+/** Adds depth views to the fusion. */
+export function fuseViews(fu: Fusion, views: Iterable<DepthView>, o: ViewOptions) {
+  const { nx, ny, nz, voxel, truncation: trunc, tsdf, rays, seen, free, seenBy, freeBy } = fu
   const minConf = o.minConfidence ?? 1
   const maxDepth = o.maxDepth ?? 4.5
   const stride = o.stride ?? 1
   const freeStride = o.freeStride ?? 4
-  const nx = Math.ceil((o.max[0] - o.min[0]) / voxel) + 1
-  const ny = Math.ceil((o.max[1] - o.min[1]) / voxel) + 1
-  const nz = Math.ceil((o.max[2] - o.min[2]) / voxel) + 1
-  const n = nx * ny * nz
-  const tsdf = new Float32Array(n).fill(1)
-  // Ray votes, for averaging the distance; views, for deciding what's real.
-  const rays = new Uint8Array(n)
-  const seen = new Uint8Array(n)
-  const free = new Uint8Array(n)
-  const seenBy = new Int32Array(n).fill(-1)
-  const freeBy = new Int32Array(n).fill(-1)
-  const [ox, oy, oz] = o.min
+  const blocked = o.blocked ?? null
+  const [ox, oy, oz] = fu.origin
   const sx = o.depthW / o.videoW
   const sy = o.depthH / o.videoH
   const step = voxel * 0.6
 
-  let viewId = 0
   for (const view of views) {
+    const viewId = fu.views++ % NO_VIEW
     const T = view.T
     const fx = view.K[0] * sx
     const fy = view.K[1] * sy
@@ -163,6 +197,7 @@ export function fuseTSDF(views: Iterable<DepthView>, o: FuseOptions): Volume {
           const z = Math.floor((T[14] + wz * t - oz) / voxel)
           if (x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz) continue
           const i = (z * ny + y) * nx + x
+          if (blocked && blocked[i]) continue
           const w = rays[i]
           const value = Math.max(-1, Math.min(1, sdf / trunc))
           tsdf[i] = (tsdf[i] * w + value) / (w + 1)
@@ -174,18 +209,37 @@ export function fuseTSDF(views: Iterable<DepthView>, o: FuseOptions): Volume {
         }
       }
     }
-    viewId++
   }
+}
+
+/**
+ * Space the views so far saw as empty: seen through by at least two views, and by more views
+ * than measured a surface there.
+ */
+export function knownEmpty(fu: Fusion): Uint8Array {
+  const out = new Uint8Array(fu.free.length)
+  for (let i = 0; i < out.length; i++) if (fu.free[i] >= 2 && fu.free[i] > fu.seen[i]) out[i] = 1
+  return out
+}
+
+/** Settles which voxels hold a surface: free space wins, and ghost layers are dropped. */
+export function finishVolume(fu: Fusion, ghostRatio = 0.3): Volume {
+  const { nx, ny, nz, origin, voxel, tsdf, seen, free } = fu
+  const weight = seen.slice()
   // Free space wins over a surface fewer views agree on.
-  const weight = seen
-  for (let i = 0; i < n; i++) if (free[i] > seen[i]) weight[i] = 0
+  for (let i = 0; i < weight.length; i++) if (free[i] > seen[i]) weight[i] = 0
   // Ghosts: much weaker support than the best surface within one truncation band.
-  const ratio = o.ghostRatio ?? 0.3
-  if (ratio > 0) {
-    const best = maxFilter(weight, nx, ny, nz, Math.round(trunc / voxel))
-    for (let i = 0; i < n; i++) if (weight[i] < best[i] * ratio) weight[i] = 0
+  if (ghostRatio > 0) {
+    const best = maxFilter(weight, nx, ny, nz, Math.round(fu.truncation / voxel))
+    for (let i = 0; i < weight.length; i++) if (weight[i] < best[i] * ghostRatio) weight[i] = 0
   }
-  return { nx, ny, nz, origin: [ox, oy, oz], voxel, tsdf, weight }
+  return { nx, ny, nz, origin, voxel, tsdf, weight }
+}
+
+export function fuseTSDF(views: Iterable<DepthView>, o: FuseOptions): Volume {
+  const fu = createFusion(o.min, o.max, o.voxel ?? 0.02, o.truncation)
+  fuseViews(fu, views, o)
+  return finishVolume(fu, o.ghostRatio ?? 0.3)
 }
 
 /** The largest value within `r` voxels along each axis (a separable box max). */
@@ -398,14 +452,163 @@ export function colorFromPoints(
 
 export type ColoredMesh = Mesh & { colors: Uint8Array }
 
+/** A keyframe as the texturing sees it: its exact pose, and the depth frame taken with it. */
+export interface KeyView {
+  /** Camera-to-world and intrinsics (at video resolution) of the video frame the image is. */
+  T: ArrayLike<number>
+  K: ArrayLike<number>
+  /** The depth frame closest in time, to tell what was in front of the surface then. */
+  depth: Uint16Array
+  confidence: Uint8Array
+}
+
+/** Which keyframe each triangle shows (−1: none), and each corner's image coordinates in it. */
+export interface KeyframeAssignment {
+  layer: Int16Array
+  uv: Float32Array
+}
+
 /**
- * Keeps only triangles whose three vertices pass `keep`, then drops connected pieces smaller
- * than `minArea` square meters (specks floating on their own), and packs the vertices.
+ * Picks, for every triangle, the keyframe that sees it best: facing it most directly, from
+ * closest, inside the image, and not blocked by anything (the depth measured with that
+ * keyframe must land on the triangle, so a person standing in front never gets painted on
+ * the wall). Image coordinates are 0–1, rows from the top, as the keyframes are stored.
  */
-export function trimMesh(mesh: ColoredMesh, keep: Uint8Array, minArea: number): ColoredMesh {
+export function assignKeyframes(mesh: Mesh, keys: KeyView[], o: { videoW: number; videoH: number; depthW: number; depthH: number }): KeyframeAssignment {
+  const { positions: P, indices: I } = mesh
+  const tris = I.length / 3
+  const layer = new Int16Array(tris).fill(-1)
+  const uv = new Float32Array(tris * 6)
+  // World-to-camera for each keyframe (the inverse of a rigid T).
+  const inv = keys.map(({ T }) => {
+    const r = [T[0], T[1], T[2], T[4], T[5], T[6], T[8], T[9], T[10]]
+    const t = [T[12], T[13], T[14]]
+    return { r, t }
+  })
+  const toCam = (j: number, x: number, y: number, z: number) => {
+    const { r, t } = inv[j]
+    const dx = x - t[0]
+    const dy = y - t[1]
+    const dz = z - t[2]
+    // Rows of Rᵀ are T's columns.
+    return [r[0] * dx + r[1] * dy + r[2] * dz, r[3] * dx + r[4] * dy + r[5] * dz, r[6] * dx + r[7] * dy + r[8] * dz]
+  }
+  const sx = o.depthW / o.videoW
+  const sy = o.depthH / o.videoH
+  // Every keyframe's score for every triangle (0: can't be used).
+  const nk = keys.length
+  const score = new Float32Array(tris * nk)
+  for (let f = 0; f < tris; f++) {
+    const a = I[f * 3] * 3
+    const b = I[f * 3 + 1] * 3
+    const c = I[f * 3 + 2] * 3
+    const mx = (P[a] + P[b] + P[c]) / 3
+    const my = (P[a + 1] + P[b + 1] + P[c + 1]) / 3
+    const mz = (P[a + 2] + P[b + 2] + P[c + 2]) / 3
+    const ux = P[b] - P[a]
+    const uy = P[b + 1] - P[a + 1]
+    const uz = P[b + 2] - P[a + 2]
+    const vx = P[c] - P[a]
+    const vy = P[c + 1] - P[a + 1]
+    const vz = P[c + 2] - P[a + 2]
+    let nx = uy * vz - uz * vy
+    let ny = uz * vx - ux * vz
+    let nz = ux * vy - uy * vx
+    const nl = Math.hypot(nx, ny, nz) || 1
+    nx /= nl
+    ny /= nl
+    nz /= nl
+    for (let j = 0; j < nk; j++) {
+      const [cx3, cy3, cz3] = toCam(j, mx, my, mz)
+      const d = -cz3
+      if (d < 0.2 || d > 4.5) continue
+      const K = keys[j].K
+      const px = K[2] + (K[0] * cx3) / d
+      const py = K[3] - (K[1] * cy3) / d
+      // Stay off the image border, where a corner could fall outside.
+      if (px < o.videoW * 0.02 || py < o.videoH * 0.02 || px > o.videoW * 0.98 || py > o.videoH * 0.98) continue
+      // Facing: the triangle's normal against the direction to the camera (either side).
+      const T = keys[j].T
+      const tx = T[12] - mx
+      const ty = T[13] - my
+      const tz = T[14] - mz
+      const facing = Math.abs(nx * tx + ny * ty + nz * tz) / (Math.hypot(tx, ty, tz) || 1)
+      if (facing < 0.25) continue
+      // Not blocked: the depth measured at that pixel lands on the triangle.
+      const du = Math.min(o.depthW - 1, Math.floor(px * sx))
+      const dv = Math.min(o.depthH - 1, Math.floor(py * sy))
+      const k = dv * o.depthW + du
+      if (keys[j].confidence[k] < 1) continue
+      const measured = keys[j].depth[k] / 1000
+      if (Math.abs(measured - d) > 0.03 + 0.02 * d) continue
+      score[f * nk + j] = facing / Math.max(d, 0.5)
+    }
+    let best = -1
+    for (let j = 0; j < nk; j++) if (score[f * nk + j] > 0 && (best < 0 || score[f * nk + j] > score[f * nk + best])) best = j
+    layer[f] = best
+  }
+
+  // Neighbors agree: where a keyframe nearly as good as the best is the one most triangles
+  // around use, take it. Fewer, larger patches from one keyframe each mean fewer seams where
+  // two keyframes' slightly different views of the same spot meet.
+  const around: number[][] = Array.from({ length: P.length / 3 }, () => [])
+  for (let f = 0; f < tris; f++) for (let corner = 0; corner < 3; corner++) around[I[f * 3 + corner]].push(f)
+  const votes = new Float32Array(nk)
+  for (let round = 0; round < 4; round++) {
+    const next = layer.slice()
+    for (let f = 0; f < tris; f++) {
+      if (layer[f] < 0) continue
+      votes.fill(0)
+      for (let corner = 0; corner < 3; corner++) for (const g of around[I[f * 3 + corner]]) if (g !== f && layer[g] >= 0) votes[layer[g]]++
+      const top = score[f * nk + layer[f]]
+      let pick = layer[f]
+      for (let j = 0; j < nk; j++) {
+        if (score[f * nk + j] < top * 0.6) continue
+        if (votes[j] > votes[pick] || (votes[j] === votes[pick] && score[f * nk + j] > score[f * nk + pick])) pick = j
+      }
+      next[f] = pick
+    }
+    layer.set(next)
+  }
+
+  for (let f = 0; f < tris; f++) {
+    const best = layer[f]
+    if (best < 0) continue
+    const K = keys[best].K
+    for (let corner = 0; corner < 3; corner++) {
+      const q = I[f * 3 + corner] * 3
+      const [x3, y3, z3] = toCam(best, P[q], P[q + 1], P[q + 2])
+      const d = -z3
+      uv[f * 6 + corner * 2] = (K[2] + (K[0] * x3) / d) / o.videoW
+      uv[f * 6 + corner * 2 + 1] = (K[3] - (K[1] * y3) / d) / o.videoH
+    }
+  }
+  return { layer, uv }
+}
+
+/**
+ * The room surface ready to draw: one vertex per triangle corner (a triangle's texture
+ * coordinates belong to its own keyframe), with the keyframe layer (−1: vertex color only).
+ */
+export interface RoomMesh {
+  positions: Float32Array
+  normals: Float32Array
+  colors: Uint8Array
+  uvs: Float32Array
+  layers: Float32Array
+}
+
+/**
+ * Keeps the triangles that have a measured color: a keyframe that sees them, or scan points
+ * near all three corners. Then drops connected pieces smaller than `minArea` square meters
+ * (specks floating on their own).
+ */
+export function finishSurface(mesh: ColoredMesh, colored: Uint8Array, keys: KeyframeAssignment, minArea: number): RoomMesh {
   const { positions: P, indices: I } = mesh
   const tris: number[] = []
-  for (let k = 0; k < I.length; k += 3) if (keep[I[k]] && keep[I[k + 1]] && keep[I[k + 2]]) tris.push(k)
+  for (let f = 0; f < I.length / 3; f++) {
+    if (keys.layer[f] >= 0 || (colored[I[f * 3]] && colored[I[f * 3 + 1]] && colored[I[f * 3 + 2]])) tris.push(f)
+  }
 
   // Connected pieces over shared vertices (union-find).
   const parent = new Int32Array(P.length / 3).map((_, i) => i)
@@ -413,41 +616,39 @@ export function trimMesh(mesh: ColoredMesh, keep: Uint8Array, minArea: number): 
     while (parent[i] !== i) i = parent[i] = parent[parent[i]]
     return i
   }
-  for (const k of tris) {
-    const a = find(I[k])
-    parent[find(I[k + 1])] = a
-    parent[find(I[k + 2])] = a
+  for (const f of tris) {
+    const a = find(I[f * 3])
+    parent[find(I[f * 3 + 1])] = a
+    parent[find(I[f * 3 + 2])] = a
   }
   const area = new Map<number, number>()
-  for (const k of tris) {
-    const root = find(I[k])
-    area.set(root, (area.get(root) ?? 0) + triangleArea(P, I[k], I[k + 1], I[k + 2]))
+  for (const f of tris) {
+    const root = find(I[f * 3])
+    area.set(root, (area.get(root) ?? 0) + triangleArea(P, I[f * 3], I[f * 3 + 1], I[f * 3 + 2]))
   }
+  const kept = tris.filter((f) => (area.get(find(I[f * 3])) ?? 0) >= minArea)
 
-  const remap = new Int32Array(P.length / 3).fill(-1)
-  const positions: number[] = []
-  const normals: number[] = []
-  const colors: number[] = []
-  const indices: number[] = []
-  for (const k of tris) {
-    if ((area.get(find(I[k])) ?? 0) < minArea) continue
-    for (let c = 0; c < 3; c++) {
-      const v = I[k + c]
-      if (remap[v] < 0) {
-        remap[v] = positions.length / 3
-        positions.push(P[v * 3], P[v * 3 + 1], P[v * 3 + 2])
-        normals.push(mesh.normals[v * 3], mesh.normals[v * 3 + 1], mesh.normals[v * 3 + 2])
-        colors.push(mesh.colors[v * 3], mesh.colors[v * 3 + 1], mesh.colors[v * 3 + 2])
-      }
-      indices.push(remap[v])
+  const n = kept.length * 3
+  const out: RoomMesh = {
+    positions: new Float32Array(n * 3),
+    normals: new Float32Array(n * 3),
+    colors: new Uint8Array(n * 3),
+    uvs: new Float32Array(n * 2),
+    layers: new Float32Array(n),
+  }
+  kept.forEach((f, t) => {
+    for (let corner = 0; corner < 3; corner++) {
+      const v = I[f * 3 + corner]
+      const o = t * 3 + corner
+      out.positions.set(P.subarray(v * 3, v * 3 + 3), o * 3)
+      out.normals.set(mesh.normals.subarray(v * 3, v * 3 + 3), o * 3)
+      out.colors.set(mesh.colors.subarray(v * 3, v * 3 + 3), o * 3)
+      out.uvs[o * 2] = keys.uv[f * 6 + corner * 2]
+      out.uvs[o * 2 + 1] = keys.uv[f * 6 + corner * 2 + 1]
+      out.layers[o] = keys.layer[f]
     }
-  }
-  return {
-    positions: new Float32Array(positions),
-    normals: new Float32Array(normals),
-    colors: new Uint8Array(colors),
-    indices: new Uint32Array(indices),
-  }
+  })
+  return out
 }
 
 function triangleArea(P: Float32Array, a: number, b: number, c: number): number {
@@ -471,17 +672,34 @@ export interface RoomSurfaceInput {
 }
 
 /**
- * The room's surface from its scan, with the same settings for every capture: 2 cm voxels,
- * high-confidence depth only, at least three views agreeing, and only where the phone also
- * kept colored points (so every triangle shown has a measured color), without specks.
+ * The room's surface, with the same settings for every capture: 2 cm voxels, high-confidence
+ * depth only, at least three views agreeing.
+ *
+ * The room scan comes first. The visit's depth frames then add what the scan missed, but only
+ * where the scan didn't see empty space: space the scan saw empty is where people and things
+ * brought in appear later, and those must stay out of the room (the replay shows them). What
+ * the visit adds is textured from its keyframes, as is everything they see well; the rest keeps
+ * the scan points' colors. Triangles with neither are left out, as are specks.
  */
-export function buildRoomSurface(views: DepthView[], o: RoomSurfaceInput): { mesh: ColoredMesh; grid: Grid } {
+export function buildRoomSurface(
+  scan: DepthView[],
+  visit: DepthView[],
+  keys: KeyView[],
+  o: RoomSurfaceInput,
+): { mesh: RoomMesh; grid: Grid; empty: Uint8Array } {
   const voxel = 0.02
-  const volume = fuseTSDF(views, { ...roomExtent(o.points), voxel, depthW: o.depthW, depthH: o.depthH, videoW: o.videoW, videoH: o.videoH, minConfidence: 2 })
+  const fu = createFusion(roomExtent(o.points).min, roomExtent(o.points).max, voxel)
+  const read = { depthW: o.depthW, depthH: o.depthH, videoW: o.videoW, videoH: o.videoH, minConfidence: 2 }
+  fuseViews(fu, scan, read)
+  const empty = knownEmpty(fu)
+  if (visit.length > 0) fuseViews(fu, visit, { ...read, blocked: empty })
+  const volume = finishVolume(fu)
   const mesh = marchingCubes(volume, 3)
-  const { colors, colored } = colorFromPoints(mesh.positions, o.points, o.colors, voxel)
+  // 1 cm cells (the phone's point spacing): colors average over ~3 cm, not 6, so they stay crisper.
+  const { colors, colored } = colorFromPoints(mesh.positions, o.points, o.colors, 0.01)
+  const assignment = assignKeyframes(mesh, keys, o)
   const { nx, ny, nz, origin } = volume
-  return { mesh: trimMesh({ ...mesh, colors }, colored, MIN_PIECE_AREA), grid: { nx, ny, nz, origin, voxel } }
+  return { mesh: finishSurface({ ...mesh, colors }, colored, assignment, MIN_PIECE_AREA), grid: { nx, ny, nz, origin, voxel }, empty }
 }
 
 /** Pieces smaller than this (m²) are dropped: about a 7 × 7 cm patch. */

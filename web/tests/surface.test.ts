@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { colorFromPoints, fuseTSDF, marchingCubes, trimMesh, type DepthView } from '../src/scene/surface'
+import { assignKeyframes, colorFromPoints, createFusion, finishSurface, finishVolume, fuseTSDF, fuseViews, knownEmpty, marchingCubes, type DepthView } from '../src/scene/surface'
 import { lookAtPose } from './fixture'
 
 // The phone's real depth resolution: rays land ~1 cm apart at 2 m, finer than the 2 cm voxels.
@@ -86,8 +86,8 @@ describe('TSDF fusion and marching cubes', () => {
     for (let i = 2; i < mesh.positions.length; i += 3) expect(Math.abs(mesh.positions[i] + 1.5)).toBeGreaterThan(0.2)
   })
 
-  it('trims uncolored triangles and drops small floating pieces', () => {
-    // Two separate triangles: a big one (0.5 m²) and a speck (0.00005 m²), plus one with an uncolored corner.
+  it('keeps triangles with a color and drops small floating pieces', () => {
+    // A big triangle (0.5 m²), a speck (0.00005 m²), and one with an uncolored corner and no keyframe.
     const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 5, 5, 5, 5.01, 5, 5, 5, 5.01, 5, 0, 0, 1])
     const mesh = {
       positions,
@@ -95,9 +95,60 @@ describe('TSDF fusion and marching cubes', () => {
       colors: new Uint8Array(positions.length),
       indices: new Uint32Array([0, 1, 2, 3, 4, 5, 0, 1, 6]),
     }
-    const out = trimMesh(mesh, new Uint8Array([1, 1, 1, 1, 1, 1, 0]), 0.005)
-    expect(Array.from(out.indices)).toEqual([0, 1, 2])
+    const keys = { layer: new Int16Array([-1, -1, -1]), uv: new Float32Array(18) }
+    const out = finishSurface(mesh, new Uint8Array([1, 1, 1, 1, 1, 1, 0]), keys, 0.005)
     expect(Array.from(out.positions)).toEqual([0, 0, 0, 1, 0, 0, 0, 1, 0])
+    expect(Array.from(out.layers)).toEqual([-1, -1, -1])
+  })
+
+  it('keeps a triangle a keyframe sees even without scan colors', () => {
+    const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0])
+    const mesh = { positions, normals: new Float32Array(9), colors: new Uint8Array(9), indices: new Uint32Array([0, 1, 2]) }
+    const keys = { layer: new Int16Array([3]), uv: new Float32Array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]) }
+    const out = finishSurface(mesh, new Uint8Array(3), keys, 0.005)
+    expect(Array.from(out.layers)).toEqual([3, 3, 3])
+    expect(Array.from(out.uvs)).toEqual(Array.from(keys.uv))
+  })
+
+  it('textures the wall from a keyframe that sees it, not one where something stands in front', () => {
+    const views = [wallView([0, 0.8, 0]), wallView([0.3, 0.9, -0.2]), wallView([-0.3, 0.7, 0])]
+    const mesh = marchingCubes(fuseTSDF(views, { ...box, voxel: 0.02, depthW: W, depthH: H, ...VIDEO, minConfidence: 2 }), 3)
+    // Keyframe 0: something 1 m in front of the camera covers the whole view. Keyframe 1: clear.
+    const blocked = wallView([0, 0.8, 0])
+    blocked.depth.fill(1000)
+    const clear = wallView([0, 0.8, -0.5])
+    const a = assignKeyframes(mesh, [blocked, clear], { depthW: W, depthH: H, ...VIDEO })
+    const layers = new Set(a.layer)
+    expect(layers.has(0)).toBe(false)
+    expect(layers.has(1)).toBe(true)
+    // Texture coordinates of a textured triangle are inside the image.
+    const f = a.layer.indexOf(1)
+    for (let c = 0; c < 6; c++) expect(a.uv[f * 6 + c]).toBeGreaterThanOrEqual(0)
+    for (let c = 0; c < 6; c++) expect(a.uv[f * 6 + c]).toBeLessThanOrEqual(1)
+  })
+
+  it('adds what the scan missed from the visit, but nothing in space the scan saw empty', () => {
+    // The scan measured only the left half of the wall (and the empty space in front of it).
+    const scan = [0, 0.05, -0.05].map((dx) => wallView([dx, 0.8, 0], (u) => u < W / 2))
+    // The visit sees the whole wall, and a box 1 m out on the left, where the scan saw empty space.
+    const visit = [0, 0.05, -0.05].map((dx) => {
+      const v = wallView([dx, 0.8, 0])
+      for (let y = 70; y < 120; y++) for (let u = 30; u < 90; u++) v.depth[y * W + u] = 1000
+      return v
+    })
+    const read = { depthW: W, depthH: H, ...VIDEO, minConfidence: 2 }
+    const fu = createFusion(box.min, box.max, 0.02)
+    fuseViews(fu, scan, read)
+    fuseViews(fu, visit, { ...read, blocked: knownEmpty(fu) })
+    const mesh = marchingCubes(finishVolume(fu), 3)
+    let rightHalf = 0
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      // Nothing where the box was: it stood in space the scan saw empty.
+      expect(Math.abs(mesh.positions[i + 2] + 1)).toBeGreaterThan(0.2)
+      if (mesh.positions[i] > 0.2 && Math.abs(mesh.positions[i + 2] + 2) < 0.03) rightHalf++
+    }
+    // The half of the wall the scan missed comes from the visit.
+    expect(rightHalf).toBeGreaterThan(100)
   })
 
   it('colors the surface from nearby scan points, grey where there are none', () => {

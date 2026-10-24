@@ -44,6 +44,9 @@ export interface Timeline {
   end: Float32Array
 }
 
+/** Fewest voxels (2 cm) a remembered thing must have: about a fist. */
+const MIN_THING_VOXELS = 30
+
 /** Never ends (seconds). */
 export const FOREVER = 1e9
 
@@ -94,16 +97,13 @@ export function buildTimeline(views: MomentView[], g: Grid, room: Uint8Array, o:
 
   const active = new Uint8Array(n)
   const things = new Map<number, Thing>()
-  const out = { positions: [] as number[], colors: [] as number[], start: [] as number[], end: [] as number[] }
+  const out = { voxels: [] as number[], colors: [] as number[], start: [] as number[], end: [] as number[] }
 
   const close = (v: number, s: Thing, end: number) => {
     // One sighting, or never seen in a keyframe (no color to show it with): the live replay
     // still shows it while the camera is on it, but it isn't kept.
     if (s.hits >= 2 && s.color) {
-      const x = v % g.nx
-      const y = Math.floor(v / g.nx) % g.ny
-      const z = Math.floor(v / (g.nx * g.ny))
-      out.positions.push(g.origin[0] + (x + 0.5) * voxel, g.origin[1] + (y + 0.5) * voxel, g.origin[2] + (z + 0.5) * voxel)
+      out.voxels.push(v)
       out.colors.push(...s.color)
       out.start.push(s.start)
       out.end.push(end)
@@ -177,10 +177,48 @@ export function buildTimeline(views: MomentView[], g: Grid, room: Uint8Array, o:
   })
   for (const [v, s] of things) close(v, s, FOREVER)
 
+  // Only things that form a solid group: scattered voxels are depth noise around the room.
+  const where = new Map<number, number>()
+  out.voxels.forEach((v) => where.set(v, 1))
+  const group = new Map<number, number>()
+  const sizes: number[] = []
+  for (const v0 of where.keys()) {
+    if (group.has(v0)) continue
+    const id = sizes.length
+    const queue = [v0]
+    group.set(v0, id)
+    for (let q = 0; q < queue.length; q++) {
+      const v = queue[q]
+      const x = v % g.nx
+      const y = Math.floor(v / g.nx) % g.ny
+      const z = Math.floor(v / (g.nx * g.ny))
+      for (let dz = -2; dz <= 2; dz++)
+        for (let dy = -2; dy <= 2; dy++)
+          for (let dx = -2; dx <= 2; dx++) {
+            const xx = x + dx
+            const yy = y + dy
+            const zz = z + dz
+            if (xx < 0 || yy < 0 || zz < 0 || xx >= g.nx || yy >= g.ny || zz >= g.nz) continue
+            const j = (zz * g.ny + yy) * g.nx + xx
+            if (!where.has(j) || group.has(j)) continue
+            group.set(j, id)
+            queue.push(j)
+          }
+    }
+    sizes.push(queue.length)
+  }
+  const kept = out.voxels.map((_, i) => i).filter((i) => sizes[group.get(out.voxels[i])!] >= MIN_THING_VOXELS)
+  const positions = new Float32Array(kept.length * 3)
+  kept.forEach((i, j) => {
+    const v = out.voxels[i]
+    positions[j * 3] = g.origin[0] + ((v % g.nx) + 0.5) * voxel
+    positions[j * 3 + 1] = g.origin[1] + ((Math.floor(v / g.nx) % g.ny) + 0.5) * voxel
+    positions[j * 3 + 2] = g.origin[2] + (Math.floor(v / (g.nx * g.ny)) + 0.5) * voxel
+  })
   return {
-    positions: new Float32Array(out.positions),
-    colors: new Uint8Array(out.colors),
-    start: new Float32Array(out.start),
-    end: new Float32Array(out.end),
+    positions,
+    colors: Uint8Array.from(kept.flatMap((i) => [out.colors[i * 3], out.colors[i * 3 + 1], out.colors[i * 3 + 2]])),
+    start: Float32Array.from(kept, (i) => out.start[i]),
+    end: Float32Array.from(kept, (i) => out.end[i]),
   }
 }
