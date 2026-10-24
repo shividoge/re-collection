@@ -1,5 +1,6 @@
 .venv/
 da3/
-out/
+out*/
 __pycache__/
 models/
+ffmpeg/
