@@ -12,7 +12,7 @@ struct HomeView: View {
             switch model.phase {
             case .idle:
                 idle
-            case .scanningRoom:
+            case .scanningRoom, .savingRoom, .roomSaved:
                 ScanView()
             case .failed(let message):
                 MessageView(title: "Capture stopped", message: message) {

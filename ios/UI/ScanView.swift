@@ -36,23 +36,61 @@ struct ScanView: View {
 
                 Spacer()
 
-                HStack(spacing: 16) {
-                    Button(model.showsCameraFeed ? "Cloud only" : "Show camera") {
-                        model.showsCameraFeed.toggle()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-
-                    Button("Stop") { model.stopScan() }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
-                        .controlSize(.large)
-                }
+                controls
             }
             .padding()
         }
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+    }
+
+    @ViewBuilder
+    private var controls: some View {
+        switch model.phase {
+        case .savingRoom:
+            HStack(spacing: 12) {
+                ProgressView()
+                Text("Saving room…")
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(.ultraThinMaterial, in: Capsule())
+
+        case .roomSaved(let export):
+            VStack(spacing: 12) {
+                Text("Room saved: \(Self.formatPoints(export.pointCount)) at 1 cm")
+                    .font(.callout.weight(.medium))
+                HStack(spacing: 16) {
+                    ShareLink(items: [export.plyURL, export.binURL]) {
+                        Label("Share room files", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+
+                    Button("Done") { model.stopScan() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                }
+            }
+            .padding()
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+
+        default:
+            HStack(spacing: 12) {
+                Button(model.showsCameraFeed ? "Cloud only" : "Show camera") {
+                    model.showsCameraFeed.toggle()
+                }
+                .buttonStyle(.bordered)
+
+                Button("Save room") { model.finishScan() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.pointCount == 0)
+
+                Button("Cancel", role: .destructive) { model.stopScan() }
+                    .buttonStyle(.bordered)
+            }
+            .controlSize(.large)
+        }
     }
 
     private var statusMessage: String? {

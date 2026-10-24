@@ -35,7 +35,14 @@ Everything here needs the iPhone 16 Pro Max. Claude Code can't run the app, so e
 
 ## Checkpoint 3 (09:30): `room.ply` opens on a laptop with correct colors and scale
 
-Not built yet.
+- [ ] After a scan, "Save room" shows "Saving room…" and then "Room saved: N points at 1 cm" within a few seconds
+- [ ] The camera and frozen cloud stay live after saving (the session never resets)
+- [ ] "Share room files" AirDrops `room.ply` and `room.bin` to the Mac
+- [ ] The Files app shows them too: On My iPhone > Braindance > captures > capture-<id>
+- [ ] `room.ply` opens in MeshLab or CloudCompare with natural colors (not green or washed out)
+- [ ] Scale is right: a door measures about 2 m tall, and a desk is about 0.75 m off the floor
+- [ ] The floor is flat and horizontal (ARKit's y is up, so the floor is a plane of constant y)
+- [ ] Walls are thin rather than doubled or smeared
 
 ## Checkpoint 4 (10:00): real `room.bin` sent to the web teammate
 

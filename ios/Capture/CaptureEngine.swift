@@ -55,6 +55,15 @@ final class CaptureEngine: NSObject, ARSessionDelegate {
         session.run(config, options: [.resetTracking, .removeExistingAnchors])
     }
 
+    /// Stops adding points but keeps the session (and its world frame)
+    /// running. `then` runs on the capture queue once no new pass can start.
+    func pauseAccumulation(then: @escaping () -> Void) {
+        captureQueue.async {
+            self.isAccumulating = false
+            then()
+        }
+    }
+
     func stop() {
         session.pause()
         captureQueue.async {

@@ -76,6 +76,14 @@ final class PointAccumulator {
         counterBuffer.contents().storeBytes(of: UInt32(0), as: UInt32.self)
     }
 
+    /// Blocks until every accumulation pass already committed has finished.
+    /// The queue runs command buffers in order, so an empty one marks the end.
+    func waitUntilIdle() {
+        guard let marker = commandQueue.makeCommandBuffer() else { return }
+        marker.commit()
+        marker.waitUntilCompleted()
+    }
+
     /// Encodes one accumulation pass for this frame's depth. Returns false if
     /// the textures couldn't be made, so the caller can retry on the next frame.
     func accumulate(
