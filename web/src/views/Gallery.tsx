@@ -76,6 +76,9 @@ export function Gallery() {
       <header className="gallery-header">
         <h1>BRAINDANCE</h1>
         <p className="tagline">Step back into a visit.</p>
+        <a href="#/dashboard" className="btn ghost gallery-dashboard">
+          Recall dashboard
+        </a>
       </header>
 
       {needsKey && <KeyForm onSaved={refresh} />}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CaptureView } from './views/CaptureView'
-import { Dashboard } from './views/Dashboard'
+import { Dashboard, DashboardOverview } from './views/Dashboard'
 import { FactsPage } from './views/FactsPage'
 import { Gallery } from './views/Gallery'
 import { RoomFile } from './views/RoomFile'
@@ -27,6 +27,7 @@ export default function App() {
 
   let view: React.ReactNode = <Gallery />
   if (hash === '#/room') view = <RoomFile />
+  if (hash === '#/dashboard') view = <DashboardOverview />
   for (const [pattern, render] of ROUTES) {
     const m = pattern.exec(hash)
     if (m) view = render(m[1], m[2])
