@@ -175,24 +175,25 @@ export function createSessions({ store, claude, models, dataDir }) {
     return { reply: grounded };
   }
 
-  async function turn(sessionId, { text }) {
+  async function turn(sessionId, { text, focus: rawFocus }) {
     const said = String(text ?? '').trim();
     if (!said) throw new SessionError(400, 'text is required: what the person said.');
     const session = await load(sessionId);
     requireActive(session);
     const ctx = await context(session.momentId, session.person.preferredAddress);
     const history = session.turns.slice(-16);
-    record(session, 'patient', said);
+    const focus = cleanFocus(rawFocus, ctx.allowed);
+    record(session, 'patient', said, focus ? { focus } : {});
 
     const flagged = soundsDistressed(said);
     const { data } = await claude.json({
       model: models.live,
       system: COMPANION_SYSTEM,
-      content: [{ type: 'text', text: turnContent({ address: session.person.preferredAddress, facts: factsList(ctx.allowed), history, latest: said }) }],
+      content: [{ type: 'text', text: turnContent({ address: session.person.preferredAddress, facts: factsList(ctx.allowed), history, latest: said, focus }) }],
       schema: REPLY_SCHEMA,
       effort: 'low',
       maxTokens: 4000,
-      mock: () => ({ ...mockSentences(ctx.allowed), branch: null, distress: false }),
+      mock: () => ({ ...mockSentences(focusedFacts(ctx.allowed, focus)), branch: null, distress: false }),
     });
 
     const distress = flagged || Boolean(data.distress);
@@ -331,6 +332,24 @@ export function createSessions({ store, claude, models, dataDir }) {
   }
 
   return { start, narrate, turn, end, get, progress, person, setPerson };
+}
+
+/**
+ * What the person is pointing at in the 3D room, from the web app: a short label and the
+ * approved facts that were on camera together with it. Only allowed facts survive, so a
+ * "don't bring this up" fact can never get in this way. Null when absent or malformed.
+ */
+function cleanFocus(focus, allowed) {
+  if (!focus || typeof focus !== 'object') return null;
+  const label = String(focus.label ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  const factIds = Array.isArray(focus.factIds) ? [...new Set(focus.factIds.filter((id) => typeof id === 'string' && allowed.has(id)))] : [];
+  return { label, factIds };
+}
+
+/** The allowed facts, the focused ones first (for mock replies). */
+function focusedFacts(allowed, focus) {
+  if (!focus?.factIds.length) return allowed;
+  return new Map([...focus.factIds.map((id) => [id, allowed.get(id)]), ...allowed]);
 }
 
 /** Canned [mock] narration from the first approved fact, for UI work without a key. */
