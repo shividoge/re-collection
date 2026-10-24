@@ -101,7 +101,7 @@ export function Dashboard({ id }: { id: string }) {
 const fmt = (iso: string) => new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 /** One bar per session, placed by real start time (never relabelled as "day N"). */
-function RecallChart({ sessions, total }: { sessions: Progress['sessions']; total: number }) {
+export function RecallChart({ sessions, total }: { sessions: Progress['sessions']; total: number }) {
   const W = 640, H = 220, pad = 36;
   const times = sessions.map((s) => new Date(s.startedAt).getTime());
   const min = Math.min(...times), max = Math.max(...times);

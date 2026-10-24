@@ -5,6 +5,7 @@ const KEY_STORAGE = 'braindance.guideKey';
 const base = (import.meta.env.VITE_GUIDE_URL as string | undefined)?.replace(/\/+$/, '') ?? '';
 
 export type CaptureStatus = {
+  public?: boolean;
   upload: 'receiving' | 'done' | 'invalid';
   uploadErrors?: string[];
   warnings?: string[];
@@ -120,14 +121,33 @@ export function setKey(key: string) {
 
 let memoryKey = getKey();
 
+/**
+ * Public mode is for visitors: every request goes to the read-only /public
+ * routes, no key is sent, and nothing can change. The viewer is the same code
+ * either way; only the paths differ.
+ */
+let publicMode = false;
+export function setPublicMode(on: boolean) {
+  publicMode = on;
+}
+export const isPublicMode = () => publicMode;
+
+function route(path: string): string {
+  if (!publicMode) return path;
+  return path
+    .replace(/^\/api\/captures\/([^/?]+)$/, '/public/captures/$1')
+    .replace(/^\/api\/moments\/([^/?]+)$/, '/public/moments/$1')
+    .replace(/^\/files\//, '/public/files/');
+}
+
 function headers(extra: Record<string, string> = {}): Record<string, string> {
-  return memoryKey ? { 'X-Braindance-Key': memoryKey, ...extra } : extra;
+  return memoryKey && !publicMode ? { 'X-Braindance-Key': memoryKey, ...extra } : extra;
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(base + path, { ...init, headers: headers(init.headers as Record<string, string>) });
+    response = await fetch(base + route(path), { ...init, headers: headers(init.headers as Record<string, string>) });
   } catch {
     throw new GuideError(0, "Can't reach the guide server. Is it running (npm start in guide/)?");
   }
@@ -142,7 +162,56 @@ const post = (body: unknown): RequestInit => ({
   headers: { 'Content-Type': 'application/json' },
 });
 
+/** What visitors can see (docs/guide-api.md "Public routes"). No key, read-only. */
+export type PublicCapture = {
+  id: string;
+  title: string;
+  summary: string;
+  createdAt: string | null;
+  durationSec: number | null;
+  thumb: string | null;
+  facts: number;
+};
+export type PublicSession = {
+  id: string;
+  momentId: string;
+  startedAt: string;
+  endedAt: string;
+  endReason: string;
+  turns: { t: string; speaker: string; text: string; kind?: string; factIds?: string[] }[];
+  dropped: { t: string; sentence: string; reason: string }[];
+  branches: Branch[];
+  scores: Score[];
+  note: string;
+};
+
+async function publicGet<T>(path: string): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(base + path);
+  } catch {
+    throw new GuideError(0, "Can't reach the site's server right now.");
+  }
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new GuideError(response.status, body.error ?? `HTTP ${response.status}`);
+  return body as T;
+}
+
+export const publicGuide = {
+  captures: () => publicGet<PublicCapture[]>('/public/captures'),
+  moment: (id: string) => publicGet<Moment>(`/public/moments/${id}`),
+  progress: (id: string) => publicGet<Progress>(`/public/progress/${id}`),
+  session: (sid: string) => publicGet<PublicSession>(`/public/sessions/${sid}`),
+  file: (id: string, name: string) => base + `/public/files/${id}/${name}`,
+};
+
 export const guide = {
+  setPublic: (id: string, on: boolean) =>
+    request<{ ok: true; public: boolean }>(`/api/captures/${id}/public`, {
+      method: 'PUT',
+      body: JSON.stringify({ public: on }),
+      headers: { 'Content-Type': 'application/json' },
+    }),
   health: () => request<{ ok: boolean; mock: boolean; keyRequired?: boolean }>('/health'),
   captures: () => request<CaptureSummary[]>('/api/captures'),
   capture: (id: string) => request<CaptureDetail>(`/api/captures/${id}`),
@@ -175,7 +244,7 @@ export const guide = {
 
 /** URL for a capture file. <video> and <img> can't send headers, so the key rides as ?key=. */
 export function fileUrl(path: string): string {
-  return base + path + (memoryKey ? `?key=${encodeURIComponent(memoryKey)}` : '');
+  return base + route(path) + (memoryKey && !publicMode ? `?key=${encodeURIComponent(memoryKey)}` : '');
 }
 
 export function captureFileUrl(id: string, name: string): string {
@@ -184,7 +253,7 @@ export function captureFileUrl(id: string, name: string): string {
 
 /** Fetches a byte range of a capture file (used for depth frames). */
 export async function fetchRange(id: string, name: string, start: number, length: number): Promise<ArrayBuffer> {
-  const response = await fetch(base + `/files/${id}/${name}`, {
+  const response = await fetch(base + route(`/files/${id}/${name}`), {
     headers: headers({ Range: `bytes=${start}-${start + length - 1}` }),
   });
   if (!response.ok) throw new GuideError(response.status, `${name}: HTTP ${response.status}`);
@@ -192,13 +261,13 @@ export async function fetchRange(id: string, name: string, start: number, length
 }
 
 export async function fetchBytes(id: string, name: string): Promise<ArrayBuffer> {
-  const response = await fetch(base + `/files/${id}/${name}`, { headers: headers() });
+  const response = await fetch(base + route(`/files/${id}/${name}`), { headers: headers() });
   if (!response.ok) throw new GuideError(response.status, `${name}: HTTP ${response.status}`);
   return response.arrayBuffer();
 }
 
 export async function fetchText(id: string, name: string): Promise<string> {
-  const response = await fetch(base + `/files/${id}/${name}`, { headers: headers() });
+  const response = await fetch(base + route(`/files/${id}/${name}`), { headers: headers() });
   if (!response.ok) throw new GuideError(response.status, `${name}: HTTP ${response.status}`);
   return response.text();
 }

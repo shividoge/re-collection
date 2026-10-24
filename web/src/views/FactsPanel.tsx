@@ -8,7 +8,7 @@ import type { CaptureStatus, Fact, FactChange, Moment } from '../api';
  * evidence that backs it. Nothing reaches the patient until it's approved
  * here. Clicking evidence seeks the video to that moment.
  */
-export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: (t: number, play?: boolean) => void }) {
+export function FactsPanel({ captureId, onSeek, readOnly = false }: { captureId: string; onSeek: (t: number, play?: boolean) => void; readOnly?: boolean }) {
   const [moment, setMoment] = useState<Moment | null>(null);
   const [status, setStatus] = useState<CaptureStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -101,7 +101,7 @@ export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: (
         <div className="facts-title">
           <h2>Facts</h2>
           <span className="count">
-            {approved} approved · {pending} to check
+            {readOnly ? `${approved} approved by the family` : `${approved} approved · ${pending} to check`}
           </span>
         </div>
         {moment.moment.summary && <p className="summary">{moment.moment.summary}</p>}
@@ -114,19 +114,21 @@ export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: (
             ))}
           </div>
         )}
-        <p className="muted small">Only facts you approve are ever said to your loved one.</p>
+        <p className="muted small">
+          {readOnly ? 'Only facts the family approved are ever said to their loved one.' : 'Only facts you approve are ever said to your loved one.'}
+        </p>
       </header>
 
       {error && <p className="error small">{error}</p>}
 
       <ol className="facts">
         {moment.facts.map((fact) => (
-          <FactCard key={fact.id} captureId={captureId} fact={fact} onChange={(u) => void change(fact, u)} onSeek={onSeek} />
+          <FactCard key={fact.id} captureId={captureId} readOnly={readOnly} fact={fact} onChange={(u) => void change(fact, u)} onSeek={onSeek} />
         ))}
       </ol>
 
       <footer className="facts-footer">
-        {moment.dropped.length > 0 && (
+        {!readOnly && moment.dropped.length > 0 && (
           <div className="dropped">
             <button className="link" onClick={() => setShowDropped((v) => !v)}>
               {showDropped ? '▾' : '▸'} The grounding check removed {moment.dropped.length} {moment.dropped.length === 1 ? 'fact' : 'facts'}
@@ -146,9 +148,11 @@ export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: (
           Extracted by {moment.model} from {moment.inputs.keyframes} keyframes
           {moment.inputs.transcriptSegments === null ? ', no transcript' : ` and ${moment.inputs.transcriptSegments} transcript lines`}.
         </p>
-        <button className="link" onClick={() => void reextract()}>
-          Ask Claude again (keeps what you've reviewed)
-        </button>
+        {!readOnly && (
+          <button className="link" onClick={() => void reextract()}>
+            Ask Claude again (keeps what you've reviewed)
+          </button>
+        )}
       </footer>
     </section>
   );
@@ -156,11 +160,13 @@ export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: (
 
 function FactCard({
   captureId,
+  readOnly,
   fact,
   onChange,
   onSeek,
 }: {
   captureId: string;
+  readOnly: boolean;
   fact: Fact;
   onChange: (update: FactChange) => void;
   onSeek: (t: number, play?: boolean) => void;
@@ -172,7 +178,7 @@ function FactCard({
   return (
     <li className={`fact ${fact.status} ${fact.doNotRaise ? 'do-not-raise' : ''}`}>
       <div className="fact-top">
-        <span className={`status-pill ${fact.status}`}>{statusLabel(fact)}</span>
+        <span className={`status-pill ${fact.status}`}>{readOnly ? 'Approved by the family' : statusLabel(fact)}</span>
         <span className="kind">{fact.kind}</span>
         <span className="salience" title={`Memorable: ${fact.salience} of 3`}>
           {'●'.repeat(fact.salience)}
@@ -219,7 +225,7 @@ function FactCard({
       </div>
       {fact.cue && <p className="cue">Hint: {fact.cue}</p>}
 
-      <div className="actions">
+      {!readOnly && <div className="actions">
         <button className={fact.status === 'approved' ? 'on approve' : 'approve'} onClick={() => onChange({ status: fact.status === 'approved' ? 'pending' : 'approved' })}>
           {fact.status === 'approved' ? '✓ Approved' : 'Approve'}
         </button>
@@ -231,7 +237,7 @@ function FactCard({
           <input type="checkbox" checked={fact.doNotRaise} onChange={(e) => onChange({ doNotRaise: e.target.checked })} />
           Don't bring this up
         </label>
-      </div>
+      </div>}
     </li>
   );
 }

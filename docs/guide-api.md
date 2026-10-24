@@ -179,6 +179,22 @@ type Progress = {
 };
 ```
 
+## Public routes (visitors, no key)
+
+For the site's front page. Nothing here needs `X-Braindance-Key`, nothing writes, and nothing calls Claude. A capture is visible only after the family marks it public; a private capture answers 404, the same as one that doesn't exist.
+
+| Method | Path | Returns |
+|---|---|---|
+| PUT | `/api/captures/:id/public` (needs the key) | body `{ "public": true \| false }` → `{ ok, public }`. Also `npm --prefix guide run publish -- <id> [--off]` |
+| GET | `/public/captures` | public captures: `{ id, title, summary, createdAt, durationSec, thumb, facts }[]` |
+| GET | `/public/captures/:id` | like `/api/captures/:id`, with file URLs under `/public/files/` |
+| GET | `/public/moments/:id` | the moment with only facts that are approved and not "don't bring this up", in the family's wording; the grounding log is left out |
+| GET | `/public/progress/:id` | same as `/api/progress` |
+| GET | `/public/sessions/:id` | a finished session of a public capture: turns, held-back sentences, branches, scores, note (no person details) |
+| GET, HEAD | `/public/files/:id/:name` | capture files with Range; never `status.json`, `moment.json` or `room.ply` |
+
+The web app's `#/` (front page) and `#/p/<id>` (walk-in viewer) use only these routes. `#/captures` is the family's gallery and asks for the key.
+
 ## The grounding check (code, not prompt)
 
 `guide/src/grounding.mjs`. Every narration and conversation reply from Claude comes back as `Sentence[]` through tool use, and before anything reaches the tablet the check:

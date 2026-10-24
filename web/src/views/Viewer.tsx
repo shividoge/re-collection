@@ -16,7 +16,7 @@ import { RoomCloud } from '../scene/RoomCloud';
 export type Loaded = { detail: CaptureDetail; room: Room | null; timeline: Timeline };
 export type ViewMode = 'orbit' | 'phone';
 
-export function Viewer({ id }: { id: string }) {
+export function Viewer({ id, publicView = false }: { id: string; publicView?: boolean }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState('Loading the capture…');
@@ -41,10 +41,10 @@ export function Viewer({ id }: { id: string }) {
 
   if (error) return <div className="center-message error">{error}</div>;
   if (!loaded) return <div className="center-message">{progress}</div>;
-  return <Stage {...loaded} />;
+  return <Stage {...loaded} publicView={publicView} />;
 }
 
-function Stage({ detail, room, timeline }: Loaded) {
+function Stage({ detail, room, timeline, publicView }: Loaded & { publicView: boolean }) {
   const { manifest } = detail;
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -105,11 +105,14 @@ function Stage({ detail, room, timeline }: Loaded) {
       </Canvas>
 
       <header className="stage-header">
-        <a href="#/" className="back">← Captures</a>
-        <nav className="stage-links">
-          <a href={`#/revisit/${detail.id}`}>Revisit</a>
-          <a href={`#/dashboard/${detail.id}`}>Dashboard</a>
-        </nav>
+        <a href={publicView ? '#/' : '#/captures'} className="back">{publicView ? '← Braindance' : '← Captures'}</a>
+        {!publicView && (
+          <nav className="stage-links">
+            <a href={`#/revisit/${detail.id}`}>Revisit</a>
+            <a href={`#/dashboard/${detail.id}`}>Dashboard</a>
+            <PublicSwitch id={detail.id} initial={detail.status.public === true} />
+          </nav>
+        )}
         <div>
           <h1>{manifest.title || 'Untitled visit'}</h1>
           <p className="meta">
@@ -137,7 +140,7 @@ function Stage({ detail, room, timeline }: Loaded) {
         />
         {videoError && <p className="error small">{videoError}</p>}
         </div>
-        <FactsPanel captureId={detail.id} onSeek={seek} />
+        <FactsPanel captureId={detail.id} onSeek={seek} readOnly={publicView} />
       </aside>
 
       <footer className="transport">
@@ -171,6 +174,26 @@ function Stage({ detail, room, timeline }: Loaded) {
         </div>
       </footer>
     </div>
+  );
+}
+
+/** The family's switch for the public front page. Off unless they turn it on. */
+function PublicSwitch({ id, initial }: { id: string; initial: boolean }) {
+  const [on, setOn] = useState(initial);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <label className="toggle public-switch" title="When on, anyone with the site's link can see this capture, its approved facts and its finished sessions.">
+      <input
+        type="checkbox"
+        checked={on}
+        onChange={(e) => {
+          const next = e.target.checked;
+          setError(null);
+          guide.setPublic(id, next).then(() => setOn(next)).catch((err: Error) => setError(err.message));
+        }}
+      />
+      Public{error && <span className="error small"> {error}</span>}
+    </label>
   );
 }
 
