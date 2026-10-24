@@ -81,10 +81,10 @@ export function Showcase() {
         <div className="hero-fade" />
         <div className="hero-copy">
           <p className="eyebrow">For families of people living with Alzheimer's</p>
-          <h1>A visit she can step back into.</h1>
+          <h1>A visit they can step back into.</h1>
           <p className="lede">
             Film a visit with an iPhone. Braindance rebuilds the room and the people in it, then lets Claude walk your loved one
-            through it again over the following days, saying only what you approved, and shows you which details she held on to.
+            through it again over the following days, saying only what you approved, and shows you which details they held on to.
           </p>
           <div className="hero-actions">
             {lead && <a className="cta" href={`#/p/${lead.capture.id}`}>Walk into a moment</a>}
@@ -109,12 +109,12 @@ export function Showcase() {
 
       <section className="problem reveal">
         <p>
-          In Alzheimer's, a visit can be gone by the next morning. The family remembers it; she doesn't. A photo or a diary entry
-          can remind her it happened, but it can't put her back in the room.
+          In Alzheimer's, a visit can be gone by the next morning. The family remembers it; they don't. A photo or a diary entry
+          can remind them it happened, but it can't put them back in the room.
         </p>
         <p className="muted">
           Research on reviewing a recording of a recent event suggests that helps (Woodberry et al., 2015). Braindance makes the recording
-          something she can walk back into, gently, at her pace, with the family in control of every word.
+          something they can walk back into, gently, at their pace, with the family in control of every word.
         </p>
       </section>
 
@@ -160,8 +160,8 @@ export function Showcase() {
           <Safe title="The family decides" text="Nothing reaches your loved one until a family member approves it. Anything can be marked 'don't bring this up', and code makes sure it is never said." />
           <Safe title="No invented details" text="Every sentence Claude speaks is checked against the approved facts before it plays. What fails the check is dropped and logged, never softened." />
           <Safe title="No face recognition" text="Names come from the people who filmed, never from guessing at faces. Speech is transcribed on the phone." />
-          <Safe title="Gentle by design" text="Claude offers details instead of quizzing, follows her lead, and never corrects or argues. A sign of distress stops the moment and tells the family." />
-          <Safe title="Honest measurement" text="Scores are never shown to her. The family sees real session times, never relabelled, and a hackathon can't claim clinical benefit." />
+          <Safe title="Gentle by design" text="Claude offers details instead of quizzing, follows their lead, and never corrects or argues. A sign of distress stops the moment and tells the family." />
+          <Safe title="Honest measurement" text="Scores are never shown to them. The family sees real session times, never relabelled, and a hackathon can't claim clinical benefit." />
           <Safe title="Consent" text="Everyone filmed has to agree before a capture is published, and a capture is private until the family turns on sharing." />
         </div>
       </section>
@@ -439,7 +439,7 @@ function GroundingStep({ entry }: { entry: Entry }) {
   return (
     <StepShell
       n="6"
-      title="Every sentence is checked by code before she hears it"
+      title="Every sentence is checked by code before they hear it"
       id="grounding"
       text={
         <>
@@ -450,7 +450,7 @@ function GroundingStep({ entry }: { entry: Entry }) {
             <li>It isn't marked <em>don't bring this up</em>.</li>
             <li>A sentence with no fact behind it can't contain a name, number, date, place or relationship word, and there's at most one per reply.</li>
           </ol>
-          <p>If it fails, the sentence is dropped and logged. If nothing survives, she hears a fixed, safe line instead of silence.</p>
+          <p>If it fails, the sentence is dropped and logged. If nothing survives, they hear a fixed, safe line instead of silence.</p>
         </>
       }
     >
@@ -486,18 +486,18 @@ function RevisitStep({ entry }: { entry: Entry }) {
   return (
     <StepShell
       n="7"
-      title="A gentle revisit, spoken at her pace"
+      title="A gentle revisit, spoken at their pace"
       text={
         <>
           <p>
-            On a tablet she sees the room appear and the moment replay at three-quarter speed. At each chapter Claude narrates a few warm sentences, then
-            she can talk back with one big button.
+            On a tablet they see the room appear and the moment replay at three-quarter speed. At each chapter Claude narrates a few warm sentences, then
+            they can talk back with one big button.
           </p>
           <ul className="features">
             <li>Calm, high-contrast screen, large type, one button.</li>
             <li>Claude offers a detail and leaves room, and never quizzes.</li>
-            <li>If she connects it to an older memory, Claude shows interest and the family sees it later.</li>
-            <li>Confusion or fear stops the moment, reassures her, and alerts the family.</li>
+            <li>If they connect it to an older memory, Claude shows interest and the family sees it later.</li>
+            <li>Confusion or fear stops the moment, reassures them, and alerts the family.</li>
             <li>A caregiver can end it at any time; it ends by itself after ten minutes.</li>
           </ul>
         </>
@@ -546,11 +546,11 @@ function RecallStep({ entries }: { entries: Entry[] }) {
       text={
         <>
           <p>
-            After each session Claude (Opus 5.5) marks which details she brought up on her own, which only after a hint, and which not at all. Code
-            decides "on her own" versus "after a hint" from what Claude had already said.
+            After each session Claude (Opus 5.5) marks which details they brought up on their own, which only after a hint, and which not at all. Code
+            decides "on their own" versus "after a hint" from what Claude had already said.
           </p>
           <p>
-            Times are the real times of the sessions, never relabelled as "day 3", and she is never shown a score. Revisits are suggested at +1, +3, +7 and +14 days.
+            Times are the real times of the sessions, never relabelled as "day 3", and they are never shown a score. Revisits are suggested at +1, +3, +7 and +14 days.
           </p>
         </>
       }

@@ -271,7 +271,7 @@ function Session({ detail, moment, room, timeline }: Loaded) {
                   setTyped('');
                 }}
               >
-                <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Type what she said" />
+                <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Type what they said" />
                 <button disabled={busy}>Send</button>
               </form>
             )}
