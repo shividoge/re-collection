@@ -56,6 +56,7 @@ struct AccumulateUniforms {
     float2 depthRange;        // min, max meters
     uint stride;
     uint maxPoints;
+    float mediumMaxDepth;     // keep medium-confidence pixels up to this many meters; 0 = high only
 };
 
 // One thread per sampled depth pixel. Same math as CameraMath.unprojectToWorld
@@ -73,10 +74,13 @@ kernel void unprojectKernel(uint2 gid [[thread_position_in_grid]],
     uint height = depthTexture.get_height();
     if (pixel.x >= width || pixel.y >= height) return;
 
-    // ARConfidenceLevel: 0 low, 1 medium, 2 high. Keep high only.
-    if (confidenceTexture.read(pixel).r < 2) return;
+    // ARConfidenceLevel: 0 low, 1 medium, 2 high. Low is always dropped; medium
+    // is kept only when mediumMaxDepth > 0, and only up to that distance.
+    uint confidence = confidenceTexture.read(pixel).r;
+    if (confidence < 1) return;
 
     float d = depthTexture.read(pixel).r;
+    if (confidence < 2 && !(d <= u.mediumMaxDepth)) return;
     // Written so NaN fails the test too.
     if (!(d >= u.depthRange.x && d <= u.depthRange.y)) return;
 
