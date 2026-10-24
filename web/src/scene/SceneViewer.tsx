@@ -125,8 +125,9 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
   const canFollow = moment.length > 0
   const indexState = useRoomIndex(interactive ? cloud : null)
   const sizes = useSplatSizes(cloud)
-  const surfaceState = useRoomSurface(capture)
+  const { surface: surfaceState, timeline: timelineState } = useRoomSurface(capture)
   const surface = surfaceState.status === 'ready' ? surfaceState.surface : null
+  const timeline = timelineState.status === 'ready' ? timelineState.timeline : timelineState.status === 'building' ? 'building' : null
   const selectionSizes = useMemo(() => (sizes && selection ? Float32Array.from(selection.points, (i) => sizes[i]) : null), [sizes, selection])
   const room = indexState.status === 'ready' ? indexState.room : null
   // The selected object, tinted on the connected surface and in the video replay.
@@ -231,9 +232,9 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
               <color attach="background" args={['#05060a']} />
               <HoleFill />
               {surface && showSurface ? (
-                <RoomSurfaceMesh surface={surface} selection={selectionTint} dim={canReplayPeople && playback.playing ? 0.55 : 1} />
+                <RoomSurfaceMesh surface={surface} selection={selectionTint} />
               ) : (
-                <StaticCloud cloud={cloud} sizes={sizes} dim={canReplayPeople && playback.playing ? 0.55 : 1} />
+                <StaticCloud cloud={cloud} sizes={sizes} />
               )}
               {selection && (
                 <>
@@ -245,7 +246,15 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
               )}
               {canFollow && showPath && <CameraPath frames={moment} timeRef={playback.timeRef} />}
               {canReplayPeople && capture.id && manifest && videoEl && (
-                <DepthReplay captureId={capture.id} manifest={manifest} frames={moment} video={videoEl} timeRef={playback.timeRef} selection={selectionTint} />
+                <DepthReplay
+                  captureId={capture.id}
+                  manifest={manifest}
+                  frames={moment}
+                  video={videoEl}
+                  timeRef={playback.timeRef}
+                  selection={selectionTint}
+                  timeline={surface && showSurface ? timeline : null}
+                />
               )}
               {mode === 'follow' && canFollow && <FollowCamera frames={moment} timeRef={playback.timeRef} videoW={videoW} videoH={videoH} />}
               {mode === 'orbit' && (
@@ -303,6 +312,8 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
             {pickMiss && <span>Nothing scanned there</span>}
             {surfaceState.status === 'building' && <span>Building the room's surface…</span>}
             {surfaceState.status === 'failed' && <span className="err">Surface unavailable: {surfaceState.message}</span>}
+            {surface && timelineState.status === 'building' && <span>Building the visit's timeline…</span>}
+            {timelineState.status === 'failed' && <span className="err">Timeline unavailable: {timelineState.message}</span>}
             {interactive && (
               <span className="help">{HELP[mode]}</span>
             )}

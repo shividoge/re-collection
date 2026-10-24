@@ -8,6 +8,7 @@ import type { FrameRecord } from './formats'
 import { depthMeshIndices } from './gaps'
 import { frameIndexAtTime } from './pose'
 import { SELECTION_GLSL, applySelection, selectionUniforms, type SelectionTint } from './selectionTint'
+import type { VisitTimeline } from './useRoomSurface'
 
 type DepthFrame = { data: Float32Array }
 
@@ -33,12 +34,36 @@ function depthFrameNear(frames: FrameRecord[], frame: number, maxFrames = 3): nu
   return -1
 }
 
+/** The voxels the room explains, as a 3D texture the shaders test world positions against. */
+function roomTexture(t: VisitTimeline): THREE.Data3DTexture {
+  const { nx, ny, nz } = t.grid
+  const texture = new THREE.Data3DTexture(t.room, nx, ny, nz)
+  texture.format = THREE.RedFormat
+  texture.type = THREE.UnsignedByteType
+  texture.minFilter = THREE.NearestFilter
+  texture.magFilter = THREE.NearestFilter
+  texture.unpackAlignment = 1
+  texture.needsUpdate = true
+  return texture
+}
+
+/** Diameter of a remembered voxel's splat, in meters (voxels are 2 cm; this closes the gaps). */
+const MEMORY_SPLAT = 0.03
+
 /**
- * The Braindance effect: each depth frame becomes a 256×192 grid, unprojected into the room
- * with that frame's own camera pose and colored from the video, so the people in the visit
- * replay in 3D, in place, in sync with sound. Neighboring depth pixels on the same surface are
- * joined into triangles (gaps.ts depthMeshIndices), so people and objects read as solid; the
- * jump from a person to the wall behind is never bridged.
+ * The Braindance effect: the visit replayed in 3D, in place, in sync with sound, on top of the
+ * stable room surface.
+ *
+ * - Live: each depth frame becomes a 256×192 grid, unprojected with that frame's own camera
+ *   pose and colored from the video. Pixels the room surface already explains are left out
+ *   (the room is drawn once, from the fused scan, so it never flickers); what's left is what
+ *   the video adds: people, things brought in or moved, corners the scan missed. Neighboring
+ *   depth pixels on the same surface are joined into triangles (gaps.ts depthMeshIndices); the
+ *   jump from a person to the wall behind is never bridged.
+ * - Remembered: what the video added, from when it was first seen until later frames saw
+ *   through that spot (timeline.ts), colored from the keyframes. It stays while the camera
+ *   looks elsewhere, so the scene at any moment shows everything seen so far from every angle.
+ *   Where the live frame sees the same spot, the live (exact video color) one is shown.
  *
  * Same math as pose.ts unprojectDepthPixel and docs/capture-format.md: scale K to the depth grid,
  * x = (u − cx')·d/fx', y = (v − cy')·d/fy', z = d, flip to ARKit camera space (x, −y, −z), then T.
@@ -51,6 +76,7 @@ export function DepthReplay({
   timeRef,
   show = true,
   selection = null,
+  timeline = null,
   minConfidence = 1,
 }: {
   captureId: string
@@ -62,6 +88,11 @@ export function DepthReplay({
   show?: boolean
   /** The selected object, tinted here too so it stays visible under the replay. */
   selection?: SelectionTint | null
+  /**
+   * What the video adds to the room, and when; null while it's being built (then nothing live
+   * is drawn, so the replay never fights the room) or when it can't be (then the whole frame is).
+   */
+  timeline?: VisitTimeline | null | 'building'
   minConfidence?: number
 }) {
   const { width, height } = manifest.depth
@@ -113,6 +144,11 @@ export function DepthReplay({
           uK: { value: new THREE.Vector4() }, // fx', fy', cx', cy' on the depth grid
           uT: { value: new THREE.Matrix4() }, // camera-to-world for this depth frame
           uVisible: { value: 0 },
+          uRoom: { value: EMPTY_3D },
+          uRoomOrigin: { value: new THREE.Vector3() },
+          uRoomVoxel: { value: 1 },
+          uRoomDims: { value: new THREE.Vector3(1, 1, 1) },
+          uRoomOn: { value: 0 },
           ...selectionUniforms(),
         },
         side: THREE.DoubleSide,
@@ -141,10 +177,20 @@ export function DepthReplay({
         `,
         fragmentShader: /* glsl */ `
           uniform sampler2D uVideo;
+          uniform highp sampler3D uRoom;
+          uniform vec3 uRoomOrigin;
+          uniform float uRoomVoxel;
+          uniform vec3 uRoomDims;
+          uniform float uRoomOn;
           varying vec2 vUv;
           varying vec3 vWorld;
           ${SELECTION_GLSL}
           void main() {
+            // The room surface already shows this spot.
+            if (uRoomOn > 0.5) {
+              vec3 c = (floor((vWorld - uRoomOrigin) / uRoomVoxel) + 0.5) / uRoomDims;
+              if (all(greaterThanEqual(c, vec3(0.0))) && all(lessThanEqual(c, vec3(1.0))) && texture(uRoom, c).r > 0.0) discard;
+            }
             gl_FragColor = vec4(tintSelected(texture2D(uVideo, vUv).rgb, vWorld), 1.0);
           }
         `,
@@ -152,7 +198,103 @@ export function DepthReplay({
     [depthTexture, videoTexture, width, height],
   )
 
-  useEffect(() => applySelection(material, selection), [material, selection])
+  const ready = timeline !== null && timeline !== 'building' ? timeline : null
+  const room = useMemo(() => (ready ? roomTexture(ready) : null), [ready])
+  useEffect(() => {
+    const u = material.uniforms
+    u.uRoomOn.value = room && ready ? 1 : 0
+    if (!room || !ready) return
+    u.uRoom.value = room
+    u.uRoomOrigin.value.set(...ready.grid.origin)
+    u.uRoomVoxel.value = ready.grid.voxel
+    u.uRoomDims.value.set(ready.grid.nx, ready.grid.ny, ready.grid.nz)
+  }, [material, room, ready])
+  useEffect(() => () => room?.dispose(), [room])
+
+  const memoryGeometry = useMemo(() => {
+    if (!ready || ready.start.length === 0) return null
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(ready.positions, 3))
+    g.setAttribute('color', new THREE.BufferAttribute(ready.colors, 3, true))
+    g.setAttribute('aStart', new THREE.BufferAttribute(ready.start, 1))
+    g.setAttribute('aEnd', new THREE.BufferAttribute(ready.end, 1))
+    return g
+  }, [ready])
+  useEffect(() => () => memoryGeometry?.dispose(), [memoryGeometry])
+
+  const memoryMaterial = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          // Shared with the live material: the current depth frame and its intrinsics.
+          uDepth: material.uniforms.uDepth,
+          uGrid: material.uniforms.uGrid,
+          uK: material.uniforms.uK,
+          uTinv: { value: new THREE.Matrix4() }, // world-to-camera for the current depth frame
+          uLive: { value: 0 },
+          uTime: { value: 0 },
+          uViewportH: { value: 1000 },
+          uSize: { value: MEMORY_SPLAT },
+          ...selectionUniforms(),
+        },
+        vertexShader: /* glsl */ `
+          attribute vec3 color;
+          attribute float aStart;
+          attribute float aEnd;
+          uniform sampler2D uDepth;
+          uniform vec2 uGrid;
+          uniform vec4 uK;
+          uniform mat4 uTinv;
+          uniform float uLive;
+          uniform float uTime;
+          uniform float uViewportH;
+          uniform float uSize;
+          varying vec3 vColor;
+          varying vec3 vWorld;
+          void hide() {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            gl_PointSize = 0.0;
+          }
+          void main() {
+            vColor = color;
+            vWorld = position;
+            if (uTime < aStart || uTime >= aEnd) { hide(); return; }
+            // Where the live frame sees this same spot, the live replay shows it instead.
+            if (uLive > 0.5) {
+              vec4 cam = uTinv * vec4(position, 1.0);
+              float d = -cam.z;
+              if (d > 0.05) {
+                vec2 px = floor(vec2(cam.x * uK.x / d + uK.z, -cam.y * uK.y / d + uK.w) + 0.5);
+                if (px.x >= 0.0 && px.y >= 0.0 && px.x < uGrid.x && px.y < uGrid.y) {
+                  vec2 s = texture2D(uDepth, (px + 0.5) / uGrid).rg;
+                  if (s.y >= 1.0 && abs(s.x - d) < 0.06) { hide(); return; }
+                }
+              }
+            }
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            gl_Position = projectionMatrix * mv;
+            gl_PointSize = clamp(uSize * projectionMatrix[1][1] * uViewportH * 0.5 / max(-mv.z, 0.01), 1.0, 128.0);
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          varying vec3 vColor;
+          varying vec3 vWorld;
+          ${SELECTION_GLSL}
+          void main() {
+            vec2 c = gl_PointCoord * 2.0 - 1.0;
+            if (dot(c, c) > 1.0) discard;
+            gl_FragColor = vec4(tintSelected(vColor, vWorld), 1.0);
+          }
+        `,
+      }),
+    [material],
+  )
+  useEffect(() => () => memoryMaterial.dispose(), [memoryMaterial])
+
+  useEffect(() => {
+    applySelection(material, selection)
+    applySelection(memoryMaterial, selection)
+  }, [material, memoryMaterial, selection])
 
   useEffect(
     () => () => {
@@ -182,7 +324,15 @@ export function DepthReplay({
   // missing until playback). Upload it once whenever the paused frame changes.
   const uploadedAt = useRef(-1)
 
-  useFrame(() => {
+  const viewport = useMemo(() => new THREE.Vector2(), [])
+  // While the timeline is being built nothing live is drawn: the whole frame would fight the
+  // room surface. If it can't be built, the whole frame is drawn as before.
+  const liveAllowed = timeline !== 'building'
+
+  useFrame((state) => {
+    memoryMaterial.uniforms.uTime.value = timeRef.current
+    memoryMaterial.uniforms.uViewportH.value = state.gl.getDrawingBufferSize(viewport).y
+    memoryMaterial.uniforms.uLive.value = material.uniforms.uVisible.value
     if (video.paused && video.readyState >= 2 && video.currentTime !== uploadedAt.current) {
       videoTexture.needsUpdate = true
       uploadedAt.current = video.currentTime
@@ -209,6 +359,7 @@ export function DepthReplay({
       const sy = height / manifest.video.height
       material.uniforms.uK.value.set(f.K[0] * sx, f.K[1] * sy, f.K[2] * sx, f.K[3] * sy)
       ;(material.uniforms.uT.value as THREE.Matrix4).fromArray(f.T)
+      ;(memoryMaterial.uniforms.uTinv.value as THREE.Matrix4).fromArray(f.T).invert()
       shown.current = k
       // Drop frames far behind playback so memory stays flat.
       for (const key of cache.current.keys()) if (key < k - 20) cache.current.delete(key)
@@ -216,5 +367,12 @@ export function DepthReplay({
     material.uniforms.uVisible.value = 1
   })
 
-  return <mesh geometry={geometry} material={material} frustumCulled={false} visible={show} />
+  return (
+    <>
+      <mesh geometry={geometry} material={material} frustumCulled={false} visible={show && liveAllowed} />
+      {memoryGeometry && <points geometry={memoryGeometry} material={memoryMaterial} frustumCulled={false} visible={show} />}
+    </>
+  )
 }
+
+const EMPTY_3D = new THREE.Data3DTexture(new Uint8Array(1), 1, 1, 1)

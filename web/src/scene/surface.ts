@@ -53,12 +53,16 @@ export interface FuseOptions {
   ghostRatio?: number
 }
 
-export interface Volume {
+/** A voxel grid over the room: voxel (x, y, z) is index (z·ny + y)·nx + x. */
+export interface Grid {
   nx: number
   ny: number
   nz: number
   origin: Vec3
   voxel: number
+}
+
+export interface Volume extends Grid {
   /** Signed distance / truncation, in [−1, 1]; positive in front of the surface. */
   tsdf: Float32Array
   /**
@@ -69,7 +73,7 @@ export interface Volume {
 }
 
 /** A depth pixel is on an edge when a neighbor is much nearer or farther (mixed depth). */
-function edgePixels(depth: Uint16Array, w: number, h: number): Uint8Array {
+export function edgePixels(depth: Uint16Array, w: number, h: number): Uint8Array {
   const edge = new Uint8Array(w * h)
   for (let v = 0; v < h; v++)
     for (let u = 0; u < w; u++) {
@@ -185,7 +189,7 @@ export function fuseTSDF(views: Iterable<DepthView>, o: FuseOptions): Volume {
 }
 
 /** The largest value within `r` voxels along each axis (a separable box max). */
-function maxFilter(src: Uint8Array, nx: number, ny: number, nz: number, r: number): Uint8Array {
+export function maxFilter(src: Uint8Array, nx: number, ny: number, nz: number, r: number): Uint8Array {
   let a = src.slice()
   let b = new Uint8Array(src.length)
   const strides = [1, nx, nx * ny]
@@ -471,12 +475,13 @@ export interface RoomSurfaceInput {
  * high-confidence depth only, at least three views agreeing, and only where the phone also
  * kept colored points (so every triangle shown has a measured color), without specks.
  */
-export function buildRoomSurface(views: DepthView[], o: RoomSurfaceInput): ColoredMesh {
+export function buildRoomSurface(views: DepthView[], o: RoomSurfaceInput): { mesh: ColoredMesh; grid: Grid } {
   const voxel = 0.02
   const volume = fuseTSDF(views, { ...roomExtent(o.points), voxel, depthW: o.depthW, depthH: o.depthH, videoW: o.videoW, videoH: o.videoH, minConfidence: 2 })
   const mesh = marchingCubes(volume, 3)
   const { colors, colored } = colorFromPoints(mesh.positions, o.points, o.colors, voxel)
-  return trimMesh({ ...mesh, colors }, colored, MIN_PIECE_AREA)
+  const { nx, ny, nz, origin } = volume
+  return { mesh: trimMesh({ ...mesh, colors }, colored, MIN_PIECE_AREA), grid: { nx, ny, nz, origin, voxel } }
 }
 
 /** Pieces smaller than this (m²) are dropped: about a 7 × 7 cm patch. */
