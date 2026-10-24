@@ -4,6 +4,10 @@
 
 Shivin is away for about two hours (back ~18:00). Everything that's left is split evenly between **Firdavs** and **IBS27** so you can work in parallel. Don't wait for Shivin: pick up your list below, top to bottom. Older sections further down are history; this section wins where they disagree.
 
+**The goal for these two hours: [`docs/LAST-STEP.md`](docs/LAST-STEP.md).** Old video → 3D → experienced two ways: swiping around it on the iPad (Memory Window), and walking a Memory Museum of picture frames that a family member can **join from their phone** to guide the patient. Read it first.
+
+**Get the data first** (both of you): the GitHub release `team-data-1` has Shivin's four phone scans and three old clips already converted to 3D. Steps in `docs/LAST-STEP.md` → "Get the data". After import the museum should show seven frames.
+
 **Shivin's iPad stays with the team** for testing the museum and the Memory Window (Firdavs, task 2).
 
 **Rules for these two hours**
@@ -21,29 +25,30 @@ Shivin is away for about two hours (back ~18:00). Everything that's left is spli
 | `web/app` → PR #16 (Firdavs) | Render quality: room as one surface, selection tint, sharp replay | Needs merging with #25 |
 | `web/video-estimated` (no PR yet) | "Estimated from a video" badge on cards, viewer, public view and Memory Window; guide summary includes `source` | Built on `web/orange`, open a PR |
 | `web/museum` (no PR yet) | **Memory Museum** `#/museum`: a hall of picture frames, one per moment; tap to walk to it, tap again to step into its Memory Window (`#/window/<id>?from=museum`) and back. Also drag-to-look in the Memory Window | UI overlay works; **the 3D hall renders blank** (see Firdavs 2) |
-| `tools/video-to-3d` (no PR yet) | `tools/video2capture/`: any old video → a capture package with Depth Anything 3 (README inside) | Written, not run end to end yet |
+| `tools/video-to-3d` (no PR yet) | `tools/video2capture/`: any old video → a capture package with Depth Anything 3 (README inside) | **Works**: three real clips converted (on the `team-data-1` release); render in the viewer and the Memory Window, drag-to-look checked |
 | `web/hide-triggers` | "Hide from her": family picks parts of a scene to hide from the patient. Guide side + tests done, web side not started | Paused, last priority |
 | `docs/spatial-editor` → PR #24 (IBS27) | Plan v3 proposal | Waiting for Shivin; don't build on it in these two hours |
 
 ### Firdavs: the website (`web/`)
 
 1. **Review PR #25 and merge your #16 onto it.** Check out `web/orange`, run it (`npm --prefix guide start`, then http://127.0.0.1:8787), look at the front page, gallery, viewer, `#/p/<id>` and `#/window/<id>`. Then make a branch `web/app-on-orange` that merges `web/app` into `web/orange`, fix the conflicts, and open a PR. Keep one orange look (no blue) and no password prompt.
-2. **Fix the Memory Museum** (`web/museum`, `web/src/museum/Museum.tsx`). The UI overlay renders ("Your memories", Previous/Next) but the R3F canvas shows only the background colour. Already ruled out: the bundle is fresh, the canvas has a WebGL context and a size. Suspects, in order: the drei `<Html transform>` plaques, the `Walker` camera quaternion (the helper is a `PerspectiveCamera` so `lookAt` faces −z), the fog range, or a component throwing inside the Canvas. Remove pieces until the hall draws. Then check: tap a frame → walk to it; tap again or "Step into this moment" → Memory Window → "← Back to the museum" returns to the same frame; Next/Previous; works on an iPad (Safari, or Xcode's iPad simulator; touch drag, big buttons). Open a PR from `web/museum`.
+2. **Fix the Memory Museum** (`web/museum`, `web/src/museum/Museum.tsx`). The UI overlay renders ("Your memories", Previous/Next) but the R3F canvas shows only the background colour. Already ruled out: the bundle is fresh, the canvas has a WebGL context and a size, and the capture viewer draws fine in the same browser, so the problem is in the museum code. Suspects, in order: the drei `<Html transform>` plaques, the `Walker` camera quaternion (the helper is a `PerspectiveCamera` so `lookAt` faces −z), the fog range, or a component throwing inside the Canvas. Remove pieces until the hall draws. Then check: tap a frame → walk to it; tap again or "Step into this moment" → Memory Window → "← Back to the museum" returns to the same frame; Next/Previous; works on an iPad (Safari, or Xcode's iPad simulator; touch drag, big buttons). Open a PR from `web/museum`.
    - **Test it on Shivin's real iPad** (he left it with the team). The iPad only allows the front camera and the tilt sensor over **HTTPS**, so a `http://192.168…` link or the simulator won't show head tracking. On your laptop: run the guide, then `cloudflared tunnel --url http://127.0.0.1:8787` (`brew install cloudflared` if needed), and open the printed `https://….trycloudflare.com/#/museum` in Safari on the iPad. Check, in landscape:
      - museum: walking to frames, tapping, Previous/Next, text size and button size;
      - Memory Window: **head tracking** (allow the camera; moving your head should shift the view like looking through a window), **tilt** (allow motion when asked; tilting the iPad looks around), and **drag to look** when both are off; "← Back to the museum".
    - Write what works and what feels off in the PR. Fix what you can; these become the demo shots (IBS27's `docs/demo-video.md`), so tell IBS27 when it's ready to film.
-3. **Open a PR for `web/video-estimated`** after checking the badge on a capture whose manifest has `"source": "video"` (IBS27 will have one from task 1; until then, edit a copy's manifest locally).
+3. **Open a PR for `web/video-estimated`** after checking the badge on a capture whose manifest has `"source": "video"` (the three converted clips on the `team-data-1` release are video-sourced).
 4. **"Relive With A Smile" rename** in the website, user-facing strings only, per `docs/THEME.md` §5. Do it on top of `web/orange` (branch `web/relive-rename`).
 5. Only if all of that is done: the "Hide from her" web side (`web/hide-triggers`; routes in its guide changes) plus a short scroll section on the front page explaining it.
 
-### IBS27: video-to-3D, demo story, Devpost
+### IBS27: museum together, video-to-3D, Devpost
 
-1. **Get video-to-3D working end to end** (`tools/video-to-3d`, `tools/video2capture/README.md`). Your machine with a GPU is ideal (`--device cuda`). Steps: set up the venv, download DA3-BASE, run it on a short clip (any 10–30 s video with a person in a room works to start; Shivin's three clips `IMG_9516.MOV`, `IMG_9518.MOV` and `EEC77133-…MP4` come next), import the output with `npm --prefix guide run import -- out/capture-<id>`, and look at it in the viewer. Check: the room is upright and not mirrored, the camera path follows the video, the people replay lines up. If it's off, `to_capture_pose` in `video2capture.py` is where to look. Zip each good result and put it in the team drive for Shivin. Open a PR from `tools/video-to-3d` with what you checked.
-2. **Devpost draft** in `docs/devpost.md` (branch `docs/devpost`): name and story from `docs/THEME.md`, how it works (CLAUDE.md §1, §6), impact and pilot plan (§8), safety (§9), the research references, credits (Rumi, Déjà View, Apple sample code, Depth Anything 3). Add the new pieces: Memory Window (head-tracked 3D on any screen, no headset), Memory Museum, and old videos turned into 3D.
-3. **Demo video plan** in `docs/demo-video.md`: the 3:00 shot list from `docs/THEME.md` §7, plus shots of the museum and the Memory Window on an iPad, and a "this was an old video" moment. Note which shots need tonight's 20:00 capture.
-4. **Sponsors** (`docs/SPONSOR-PLAN.md`): answer the "Check these before spending any time" list (Devpost opt-ins, MLH supplemental form, Microsoft requirements, Cartesia/Vultr criteria) and write the answers into that file.
-5. **Tonight's filming prep:** consent note, who plays the grandparent, and 4–5 specific details the family should mention (a named dish, a gift, a place, a story).
+1. **Build "Visit together"**: a family member joins the patient's museum from their phone and leads the walk. Full spec (guide routes with server-sent events, the `useMuseumRoom` hook, tests, done-when) in `docs/LAST-STEP.md` → "Spec: joining the museum together". Branch `web/museum-together` off `web/museum`; write the guide routes and tests first (they don't depend on Firdavs's canvas fix), then wire `Museum.tsx` once his fix is pushed. Test with the real iPad plus your phone through the tunnel.
+2. **Video-to-3D on your machine** (`tools/video-to-3d`, `tools/video2capture/README.md`). It already works on Shivin's Mac; set it up on yours (`--device cuda` if you have a GPU) so we can convert any new old video tonight. Re-run one of the source clips from `original-clips.zip` on the release and compare. Open a PR from `tools/video-to-3d` saying what you checked. If someone has a better old video (a real family moment, with consent), convert it: that's the strongest demo.
+3. **Devpost draft** in `docs/devpost.md` (branch `docs/devpost`): name and story from `docs/THEME.md`, how it works (CLAUDE.md §1, §6), impact and pilot plan (§8), safety (§9), the research references, credits (Rumi, Déjà View, Apple sample code, Depth Anything 3). Add the new pieces: Memory Window (head-tracked 3D on any screen, no headset), Memory Museum, and old videos turned into 3D.
+4. **Demo video plan** in `docs/demo-video.md`: the 3:00 shot list from `docs/THEME.md` §7, plus shots of the museum, the Memory Window on an iPad, a helper joining from a phone, and a "this was an old video" moment. Note which shots need tonight's 20:00 capture.
+5. **Sponsors** (`docs/SPONSOR-PLAN.md`): answer the "Check these before spending any time" list (Devpost opt-ins, MLH supplemental form, Microsoft requirements, Cartesia/Vultr criteria) and write the answers into that file.
+6. **Tonight's filming prep:** consent note, who plays the grandparent, and 4–5 specific details the family should mention (a named dish, a gift, a place, a story).
 
 ### Shivin, when he's back (~18:00)
 
@@ -57,17 +62,17 @@ Shivin is away for about two hours (back ~18:00). Everything that's left is spli
 Firdavs:
 ```
 Read CLAUDE.md and TASKS.md (the "Right now" section at the top). I'm Firdavs.
-Work through "Firdavs: the website" in order, starting with task 1 (merge web/app onto
-web/orange). One branch and one PR per task; don't merge to main. Run the guide and check
+Read docs/LAST-STEP.md and get the data from the team-data-1 release. Work through
+"Firdavs: the website" in order, starting with task 1 (merge web/app onto web/orange). One branch and one PR per task; don't merge to main. Run the guide and check
 each change in the browser before opening the PR.
 ```
 
 IBS27:
 ```
 Read CLAUDE.md and TASKS.md (the "Right now" section at the top). I'm IBS27.
-Work through "IBS27: video-to-3D, demo story, Devpost" in order, starting with task 1:
-check out tools/video-to-3d, follow tools/video2capture/README.md, convert a short clip,
-import it into the guide and check it in the viewer. One branch and one PR per task;
+Read docs/LAST-STEP.md. Work through "IBS27: museum together, video-to-3D, Devpost" in
+order, starting with task 1: the guide routes and tests for joining the museum together,
+then the web hook, on branch web/museum-together. One branch and one PR per task;
 don't merge to main.
 ```
 
