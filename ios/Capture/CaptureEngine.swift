@@ -42,11 +42,6 @@ final class CaptureEngine: NSObject, ARSessionDelegate {
     func start(token: UUID, folder: URL) {
         captureQueue.async {
             self.token = token
-            do {
-                self.recorder = try CaptureRecorder(folder: folder)
-            } catch {
-                self.emit(.failed("The capture files couldn't be created: \(error.localizedDescription)"))
-            }
             self.isAccumulating = true
             self.lastAccumulatedPose = nil
             self.lastCountReport = 0
@@ -61,8 +56,22 @@ final class CaptureEngine: NSObject, ARSessionDelegate {
         // Set from the start: changing the configuration later could shift
         // the world frame, and the scan and the moment must share one.
         config.providesAudioData = true
-        // Keep the default 1920x1440 @ 30 fps format: same 4:3 aspect as the
-        // 256x192 depth map, so image and depth pixels map by a straight scale.
+        // 1920x1440 @ 30 fps: same 4:3 aspect as the 256x192 depth map, so
+        // image and depth pixels map by a straight scale. The iPhone 16 Pro Max
+        // defaults to 60 fps, which doubles the data for no gain here.
+        if let format = ARWorldTrackingConfiguration.supportedVideoFormats.first(where: {
+            $0.imageResolution == CGSize(width: 1920, height: 1440) && $0.framesPerSecond == 30
+        }) {
+            config.videoFormat = format
+        }
+        let fps = config.videoFormat.framesPerSecond
+        captureQueue.async {
+            do {
+                self.recorder = try CaptureRecorder(folder: folder, fps: fps)
+            } catch {
+                self.emit(.failed("The capture files couldn't be created: \(error.localizedDescription)"))
+            }
+        }
         session.run(config, options: [.resetTracking, .removeExistingAnchors])
     }
 

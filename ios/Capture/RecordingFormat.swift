@@ -10,11 +10,12 @@ enum RecordingFormat {
     /// Depth and confidence frames are recorded at 10 Hz.
     static let depthInterval: TimeInterval = 0.1
 
-    /// True when the next depth frame is due. Allows half a 30 fps frame of
-    /// slack so a 10 Hz schedule lands on every third frame instead of drifting.
+    /// True when the next depth frame is due. 5 ms of slack absorbs frame
+    /// timestamp jitter so 10 Hz lands on every 3rd frame at 30 fps and every
+    /// 6th at 60 fps, without letting an early frame sneak in.
     static func isDepthDue(at timestamp: TimeInterval, lastDepth: TimeInterval?) -> Bool {
         guard let lastDepth else { return true }
-        return timestamp - lastDepth >= depthInterval - 1.0 / 60.0
+        return timestamp - lastDepth >= depthInterval - 0.005
     }
 
     /// Sample time relative to the moment's first frame `t0`. Video uses the

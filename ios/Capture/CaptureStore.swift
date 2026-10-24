@@ -37,7 +37,7 @@ extension CaptureStore {
             title: "",
             attendees: [],
             video: .init(
-                width: Int(moment.videoSize.width), height: Int(moment.videoSize.height), fps: 30,
+                width: Int(moment.videoSize.width), height: Int(moment.videoSize.height), fps: moment.fps,
                 durationSec: (moment.durationSec * 1000).rounded() / 1000, frameCount: moment.frameCount),
             audio: .init(inVideo: true, sampleRate: moment.audioSampleRate, channels: 1),
             depth: .init(width: 256, height: 192, rateHz: 10, count: moment.depthCount),

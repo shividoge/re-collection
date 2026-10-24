@@ -69,17 +69,29 @@ final class RetimeTests: XCTestCase {
         XCTAssertEqual(RecordingFormat.videoTime(t0 + 1.5, t0: t0).timescale, 600)
     }
 
-    func testDepthRunsAtTenHertzOnThirtyFps() {
+    private func depthFrames(fps: Double, jitter: Double = 0) -> [Int] {
         var last: TimeInterval?
         var sampled: [Int] = []
-        for frame in 0..<30 {
-            let ts = 100 + Double(frame) / 30
+        for frame in 0..<Int(fps) {
+            // Alternate early and late timestamps to mimic real frame jitter.
+            let ts = 100 + Double(frame) / fps + (frame.isMultiple(of: 2) ? -jitter : jitter)
             if RecordingFormat.isDepthDue(at: ts, lastDepth: last) {
                 sampled.append(frame)
                 last = ts
             }
         }
-        XCTAssertEqual(sampled, [0, 3, 6, 9, 12, 15, 18, 21, 24, 27])
+        return sampled
+    }
+
+    func testDepthRunsAtTenHertzOnThirtyFps() {
+        XCTAssertEqual(depthFrames(fps: 30), [0, 3, 6, 9, 12, 15, 18, 21, 24, 27])
+        XCTAssertEqual(depthFrames(fps: 30, jitter: 0.001).count, 10)
+    }
+
+    /// The first real capture ran at 60 fps and logged depth at 12 Hz.
+    func testDepthRunsAtTenHertzOnSixtyFps() {
+        XCTAssertEqual(depthFrames(fps: 60), Array(Swift.stride(from: 0, to: 60, by: 6)))
+        XCTAssertEqual(depthFrames(fps: 60, jitter: 0.001).count, 10)
     }
 }
 

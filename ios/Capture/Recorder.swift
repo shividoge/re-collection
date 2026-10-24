@@ -21,6 +21,7 @@ final class CaptureRecorder {
         let frameCount: Int
         let depthCount: Int
         let videoSize: CGSize
+        let fps: Int
         let audioSampleRate: Int
         let scanSpan: CaptureManifest.Span?
         let warnings: [String]
@@ -31,6 +32,8 @@ final class CaptureRecorder {
     private enum Mode { case scan, paused, waitingForMoment, moment, finished }
 
     let folder: URL
+    /// The ARKit video format's frame rate; written to the manifest.
+    let fps: Int
     private var mode: Mode = .scan
 
     private let fileQueue = DispatchQueue(label: "braindance.files", qos: .utility)
@@ -64,8 +67,9 @@ final class CaptureRecorder {
     private var thumbnailTaken = false
     private lazy var ciContext = CIContext()
 
-    init(folder: URL) throws {
+    init(folder: URL, fps: Int) throws {
         self.folder = folder
+        self.fps = fps
         func open(_ name: String) throws -> FileHandle {
             let url = folder.appending(path: name)
             guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
@@ -246,10 +250,12 @@ final class CaptureRecorder {
             scanEnd.map { CaptureManifest.Span(tStart: start - t0, tEnd: $0 - t0) }
         }
         let result = MomentResult(
-            durationSec: (lastMomentTimestamp ?? t0) - t0 + 1.0 / 30.0,
+            // Last frame's start plus its own display time.
+            durationSec: (lastMomentTimestamp ?? t0) - t0 + 1.0 / Double(max(fps, 1)),
             frameCount: frameCount,
             depthCount: depthCount,
             videoSize: videoSize,
+            fps: fps,
             audioSampleRate: audioSampleRate,
             scanSpan: scanSpan,
             warnings: warnings)
