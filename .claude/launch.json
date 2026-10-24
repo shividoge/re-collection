@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "guide",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "guide", "start"],
+      "port": 8787
+    }
+  ]
+}

@@ -66,16 +66,26 @@ The capture id is the manifest's `id`.
 |---|---|---|---|
 | PUT | `/api/captures/:id/files/:name` | raw file bytes | `{ ok: true, bytes }`. `name` may include `keyframes/` |
 | POST | `/api/captures/:id/complete` | – | `{ ok: true }` after validating; starts fact extraction in the background |
-| GET | `/api/captures` | – | `[{ id, title, createdAt, durationSec, status }]`, newest first |
-| GET | `/api/captures/:id` | – | `{ manifest, status, files: { [name]: url } }` |
-| GET | `/files/:id/:name` | – | the file, with `Range` support (needed for video and depth.bin) |
+| GET | `/api/captures` | – | `[{ id, title, createdAt, durationSec, thumb, status }]`, newest first. `thumb` is a URL or `null` |
+| GET | `/api/captures/:id` | – | `{ id, manifest, status, files: { [name]: url } }` |
+| GET | `/files/:id/:name` | – | the file, with `Range` support (needed for video and depth.bin). `HEAD` works too |
+
+URLs the guide returns (`thumb`, `files`) are paths like `/files/<id>/room.bin`, relative to the guide's base URL. If `BRAINDANCE_KEY` is set, `<video>` and `<img>` can't send the header, so add `?key=<key>` to `/files` URLs.
 
 The phone uploads `manifest.json`, `room.bin` and `thumb.jpg` first, so the web can show the room within seconds, then everything else, then calls `complete`. Each file is retried up to three times. `complete` checks that every file the manifest names is present and the right size (for example, `depth.bin` must be exactly `count·256·192·2` bytes), and rejects with a specific message if not.
 
 `status`:
 ```json
-{ "upload": "done", "facts": "queued | running | done | failed", "factsError": null }
+{
+  "upload": "receiving | done | invalid",
+  "uploadErrors": [],
+  "warnings": ["No transcript: facts can only come from what the keyframes show."],
+  "facts": "not_started | queued | running | done | failed",
+  "factsError": null,
+  "updatedAt": "2026-10-24T14:12:54Z"
+}
 ```
+`upload` is `invalid` when `complete` failed; `uploadErrors` says why. Re-uploading any file sets it back to `receiving`. `facts` stays `queued` until the extractor (TASKS.md Shivin step 3) runs. `warnings` are worth showing to the family.
 
 ### Moment and facts (family review)
 
