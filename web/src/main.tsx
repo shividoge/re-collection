@@ -20,7 +20,7 @@ function App() {
 
   // Visitors never need a key: the front page and #/p/<id> read only /public.
   const visitor = /^#\/p\/([0-9a-f-]{36})$/i.exec(hash);
-  const front = hash === '' || hash === '#' || hash === '#/' || hash.startsWith('#how') || hash.startsWith('#moments') || hash.startsWith('#research');
+  const front = !hash.startsWith('#/') || hash === '#/';   // '#how' and other anchors stay on the front page
   if (!STATIC) setPublicMode(Boolean(visitor) || front);
   if (visitor) return <Viewer key={visitor[1]} id={visitor[1]} publicView />;
   if (front || STATIC) return <Showcase />;   // a static site has no family tools

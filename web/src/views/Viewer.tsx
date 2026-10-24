@@ -224,7 +224,7 @@ const scale = new THREE.Vector3();
  * recorded pose (smoothed), with the phone's vertical field of view, so the
  * replay lines up with the video.
  */
-export function CameraRig({ timeline, room, mode, frameRef }: { timeline: Timeline; room: Room | null; mode: ViewMode; frameRef: React.RefObject<number> }) {
+export function CameraRig({ timeline, room, mode, frameRef, zoom = true, locked = false }: { timeline: Timeline; room: Room | null; mode: ViewMode; frameRef: React.RefObject<number>; zoom?: boolean; locked?: boolean }) {
   const camera = useThree((state) => state.camera) as THREE.PerspectiveCamera;
   const controls = useRef<OrbitControlsImpl>(null);
 
@@ -269,7 +269,7 @@ export function CameraRig({ timeline, room, mode, frameRef }: { timeline: Timeli
     }
   });
 
-  return <OrbitControls ref={controls} enabled={mode === 'orbit'} enableDamping makeDefault />;
+  return <OrbitControls ref={controls} enabled={mode === 'orbit' && !locked} enableZoom={zoom} enableDamping makeDefault />;
 }
 
 function formatTime(seconds: number) {
