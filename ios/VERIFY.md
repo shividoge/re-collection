@@ -20,7 +20,18 @@ Everything here needs the iPhone 16 Pro Max. Claude Code can't run the app, so e
 
 ## Checkpoint 2 (08:30): live points accumulate and render over the camera
 
-Not built yet.
+- [ ] Unit tests pass: in Xcode, choose an iPhone simulator and press Cmd+U. These cover the coordinate math
+- [ ] Sweep a desk: colored points appear over the surfaces as you move
+- [ ] Points stay locked to real objects as you walk around them, with no swimming or lag
+- [ ] Point colors match the real objects (a red mug gives red points)
+- [ ] The cloud's scale looks right: points on the desk edge sit on the real edge, not in front of or behind it
+- [ ] Standing still adds no new points; the count in the HUD holds steady
+- [ ] The count rises steadily while you move (around 10k points per step)
+- [ ] "Cloud only" shows the points on black and still looks like the room
+- [ ] It rotates correctly in landscape too
+- [ ] The HUD holds about 60 fps with more than 1M points
+- [ ] Scanning to the 4M cap shows "Room captured" and the count stops rising
+- [ ] Stop, then start a new scan: the old points are gone
 
 ## Checkpoint 3 (09:30): `room.ply` opens on a laptop with correct colors and scale
 

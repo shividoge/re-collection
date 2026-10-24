@@ -36,4 +36,17 @@ targets:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-    scheme: {}
+    scheme:
+      testTargets:
+        - BraindanceCaptureTests
+  BraindanceCaptureTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests
+    dependencies:
+      - target: BraindanceCapture
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.shividoge.braindance.capture.tests
