@@ -47,7 +47,7 @@ Work on a branch named for your area (`ios/...`, `guide/...`, `web/...`), push o
 - Routes: `GET /api/moments/:id`, `PATCH /api/moments/:id/facts/:factId`, `POST /api/moments/:id/extract`.
 - Done when the real capture has facts in `moment.json`, each linked to a keyframe or quote.
 
-**4. Guide server, part 3: grounding, sessions, scoring.** Branch `guide/sessions`.
+**4. Guide server, part 3: grounding, sessions, scoring.** Branch `guide/sessions` (built and run against real Claude).
 - `src/grounding.mjs` per `CLAUDE.md` 6.4, with tests including a deliberately ungrounded sentence that must be dropped, and a do-not-raise fact that must never appear.
 - `src/session.mjs`: `POST /api/sessions`, `/narrate`, `/turn` (Sonnet, tools `reply`, `log_branch`, `flag_distress`), `/end`. Sessions saved as JSON with every turn and every dropped sentence.
 - `src/scoring.mjs` (Opus, 6.6) on `/end`; `GET /api/progress`.
@@ -147,5 +147,5 @@ docs/devpost and open a PR.
 - **Now** Shivin → Firdavs: the sample capture (release `sample-capture-1`) and the working viewer in `web/`.
 - **11:00** Shivin → Firdavs: guide server tunnel URL serving the sample capture. If late, Firdavs keeps loading from `web/public/sample/`.
 - **Done (09:15)** Shivin → Firdavs: real facts in `/api/moments/:id` (the sample capture has them), plus `PATCH .../facts/:factId` and `POST .../extract`.
-- **18:00** Shivin → Firdavs: session routes with grounding. Until then, mock mode with the banner.
+- **Done (10:30)** Shivin → Firdavs: session routes with grounding, distress and scoring, plus `/api/progress` and `/api/person`.
 - **20:00** Shivin → everyone: the demo capture. Everything after depends on this one, so protect it (keep the zip, upload it twice).

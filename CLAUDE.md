@@ -139,18 +139,15 @@ Prompt rules: only state what the frames or transcript show; use the attendee na
 Nothing reaches the patient until a family member approves it. The review screen shows each fact next to its evidence (the keyframe, or the quote with a play button that seeks the video). The family can approve, edit the wording, or reject. They can also mark a fact "don't bring this up" (for example, someone who has since died).
 
 ### 6.4 Grounding enforcement (code, not prompt)
-Every narrator and companion reply comes back as `[{ "sentence": "...", "factIds": ["f1"], "free": false }]` (tool `reply`). `guide/src/grounding.mjs`:
-- drops any non-free sentence whose `factIds` are missing, unknown, not approved, or marked do-not-raise;
-- allows at most one free sentence per reply (purely social, like "It's nice to see you."), and drops free sentences that contain a name, number, date or place;
-- logs every dropped sentence with a reason, so the team can tune the prompt and show it in the demo.
+Every narrator and companion reply comes back as structured JSON, `[{ "sentence": "...", "factIds": ["f1"], "free": false }]`. `guide/src/grounding.mjs` drops any sentence citing an unknown, unapproved or do-not-raise fact; holds sentences citing nothing to the free-sentence rules (no number, date, place, relationship word or name, except words the person just said and their form of address); allows one free sentence per reply, two after distress or a shared memory; and logs every dropped sentence with a reason. Full rules in `docs/guide-api.md`.
 
 ### 6.5 Companion system prompt (core of it)
 - You're talking with someone who has dementia, about a moment their family shared with them.
 - Speak in short, warm sentences. One idea at a time.
 - **Never** ask "do you remember...?" and never test. Offer the detail yourself, then leave room: "Priya brought the mango cake you love. It looked delicious."
 - Follow their lead. If they talk about something else, go with them.
-- If they connect this to an older memory, show interest and ask one gentle open question ("What was your mother's kitchen like?"). Call `log_branch` with their words.
-- If they seem confused, upset or frightened, stop the moment, reassure them in plain words, and call `flag_distress`. Don't correct them or argue.
+- If they connect this to an older memory, show interest and ask one gentle open question ("What was your mother's kitchen like?"). Put their words in the reply's `branch` field.
+- If they seem confused, upset or frightened, stop the moment, reassure them in plain words, and set `distress`. Don't correct them or argue.
 - Never mention facts the family marked "don't bring up."
 - Only use the approved facts provided. Never invent details.
 
@@ -268,7 +265,7 @@ Never cut: real capture, grounded facts with family approval, grounding enforcem
 
 ## Status
 
-**Last updated:** Sat Oct 24, 09:45 PT, by Shivin's Claude session
+**Last updated:** Sat Oct 24, 10:30 PT, by Shivin's Claude session
 
 **Done:**
 - iPhone app checkpoints 1–5: live camera, GPU point cloud, `room.ply`/`room.bin` export, visit recording (video, audio, poses, 10 Hz depth) in one session. Built, installed and tested on Shivin's iPhone 16 Pro Max. Two real captures checked: files consistent, scale correct, 30 fps, 10 Hz depth. 25 unit tests pass.
@@ -283,11 +280,13 @@ Never cut: real capture, grounded facts with family approval, grounding enforcem
 
 - Family fact review screen (branch `web/review`): facts panel beside the video in the viewer; approve/reject/edit/don't bring up, evidence thumbnails and quotes that seek the video, chapters, grounding log, re-extract, live status while Claude works. Checked in the browser on the real capture (review state reset afterwards).
 
+- Guide step 4 (branch `guide/sessions`): revisit sessions (welcome, chapter narration, conversation, distress with a code-level phrase backstop, branches), the grounding check on every reply, Opus recall scoring with code deciding unprompted vs after-cue, `/api/progress`, `/api/person`. 43 tests. Real run with Claude: narration cited only approved facts; a shared memory got a warm follow-up question; "I want to go home, where is everyone" got reassurance and an alert; scoring was right. Re-extract now tells Claude which facts are already reviewed, to avoid duplicates.
+
 **In progress:** nothing running.
 
-**Not done yet:** guide step 4 (reply grounding, sessions, scoring), revisit / dashboard screens, a public URL for judges (cloudflared; Shivin runs it himself), the web app polish (nothing in `web/`), phone transcript/keyframes/review/upload, the clap test (hands weren't in frame).
+**Not done yet:** revisit / dashboard screens, a public URL for judges (cloudflared; Shivin runs it himself), the web app polish (nothing in `web/`), phone transcript/keyframes/review/upload, the clap test (hands weren't in frame).
 
-**Next step:** see `TASKS.md`. Shivin: guide step 4 (grounding check on replies, sessions, scoring). Firdavs: viewer and review-panel polish, then the revisit session screen (needs guide step 4). Firdavs: web scaffold + StaticCloud on the sample capture.
+**Next step:** see `TASKS.md`. Shivin: better scans (see TASKS) and the demo capture at 20:00. Firdavs: viewer and review-panel polish, then the revisit session screen (needs guide step 4). Firdavs: web scaffold + StaticCloud on the sample capture.
 
 **Open questions:**
 - IBS27's new role (see TASKS.md); he hasn't accepted the GitHub invite yet.
@@ -305,6 +304,7 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 - 2026-10-24 08:30 | Shivin + Claude | phone step 2 (PR #4); web viewer with people replay, served by the guide (branch web/viewer) | guide step 3 (facts); Firdavs: viewer polish + review screen
 - 2026-10-24 09:15 | Shivin + Claude | guide step 3: Claude fact extraction with grounding, worker, review routes; real run OK | guide step 4 (sessions, grounding, scoring)
 - 2026-10-24 09:45 | Shivin + Claude | family fact review panel in the viewer (branch web/review) | guide step 4; revisit screen
+- 2026-10-24 10:30 | Shivin + Claude | guide step 4: sessions, reply grounding, distress, scoring, progress; fixes from a real Claude run | revisit screen + dashboard (web); better scans
 
 ---
 

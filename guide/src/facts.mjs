@@ -132,17 +132,24 @@ export async function extractFacts({ store, claude, model }, id) {
   const durationSec = manifest.video?.durationSec ?? 0;
   const shown = new Set(frames.map((f) => f.name));
 
+  // On a re-extract, Claude sees what's already reviewed so it adds new details instead of duplicates.
+  const previous = await store.readJson(id, 'moment.json');
+  const reviewed = (previous?.facts ?? []).filter((f) => f.status !== 'pending' || f.editedText || f.doNotRaise);
   const { data, model: usedModel } = await claude.json({
     model,
     system: FACTS_SYSTEM,
-    content: factsContent({ title: manifest.title ?? '', attendees: manifest.attendees ?? [], durationSec }, segments, frames),
+    content: factsContent(
+      { title: manifest.title ?? '', attendees: manifest.attendees ?? [], durationSec },
+      segments,
+      frames,
+      reviewed.map((f) => f.editedText ?? f.text),
+    ),
     schema: FACTS_SCHEMA,
     effort: 'high',
     mock: () => mockReply(frames),
   });
 
   const { facts, dropped, chapters } = groundFacts(data, shown, segments, durationSec);
-  const previous = await store.readJson(id, 'moment.json');
   const moment = {
     captureId: id,
     moment: {
