@@ -54,9 +54,12 @@ export function createPublicViews({ store, sessions }) {
     const files = {};
     for (const name of names) files[name] = `${filesBase}/${id}/${name}`;
     const status = await store.status(id);
+    const manifest = await store.readJson(id, 'manifest.json');
+    // Nobody typed a title on the phone? Use the one Claude gave the moment.
+    const moment = await store.readJson(id, 'moment.json');
     return {
       id,
-      manifest: await store.readJson(id, 'manifest.json'),
+      manifest: manifest && { ...manifest, title: manifest.title || moment?.moment?.title || '' },
       status: { upload: status.upload, facts: status.facts, factsError: null },
       files,
     };

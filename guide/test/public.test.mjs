@@ -101,6 +101,7 @@ describe('public surface', () => {
 
     const detail = await (await get(`/public/captures/${CAPTURE_ID}`)).json();
     assert.equal(detail.manifest.id, CAPTURE_ID);
+    assert.equal(detail.manifest.title, 'Test visit');
     assert.equal(detail.files['room.bin'], `/public/files/${CAPTURE_ID}/room.bin`);
     assert.equal('status.json' in detail.files, false);
     assert.equal('moment.json' in detail.files, false);
