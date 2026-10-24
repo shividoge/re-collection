@@ -15,6 +15,9 @@ export const CODE_LETTERS = 'BCDFGHJKLMNPQRSTVWXZ';
 const CODE_PATTERN = new RegExp(`^[${CODE_LETTERS}]{4}$`);
 export const ROOM_TTL_MS = 3 * 60 * 60 * 1000;
 export const KEEPALIVE_MS = 15_000;
+/** A screen that polls instead of listening counts as present this long after its last poll. */
+export const POLL_TTL_MS = 10_000;
+const CLIENT_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
 const MAX_AT = 9999;
 const MAX_NAME = 40;
 
@@ -67,9 +70,46 @@ export function parseStateBody(body) {
   };
 }
 
-/** A room with no listeners and no change for 3 hours is gone. */
+/** True while a polling screen's last poll is under 10 s old. */
+export function isPollerLive(poller, now) {
+  return now - poller.seenAt < POLL_TTL_MS;
+}
+
+/** A room with no listeners, no live pollers and no change for 3 hours is gone. */
 export function isExpired(room, now) {
-  return room.clients.size === 0 && now - room.changedAt >= ROOM_TTL_MS;
+  if (room.clients.size > 0) return false;
+  for (const poller of room.pollers.values()) if (isPollerLive(poller, now)) return false;
+  return now - room.changedAt >= ROOM_TTL_MS;
+}
+
+/**
+ * Who is here: one entry per screen. A screen that sends a client id is counted once, even if it
+ * both listens and polls (it falls back from one to the other).
+ */
+export function countPeers(clients, pollers) {
+  const screens = new Map();
+  for (const client of clients) screens.set(client.id ?? client, client);
+  for (const [id, poller] of pollers) if (!screens.has(id)) screens.set(id, poller);
+  const peers = { patient: 0, helpers: [] };
+  for (const screen of screens.values()) {
+    if (screen.as === 'helper') peers.helpers.push(screen.name ?? 'Someone');
+    else peers.patient += 1;
+  }
+  return peers;
+}
+
+/**
+ * Reads ?as=, ?name= and ?client= (who a listener or poller is) and ?since= (polls only).
+ * A name that is too long is dropped, like on the event stream; a malformed client id or since is an error.
+ */
+export function parseWho(query) {
+  const name = cleanName(query.get('name') ?? undefined);
+  const client = query.get('client');
+  if (client !== null && !CLIENT_PATTERN.test(client)) return { ok: false, error: 'client must be 8 to 64 letters, digits, - or _.' };
+  const sinceRaw = query.get('since');
+  const since = sinceRaw === null ? null : Number(sinceRaw);
+  if (since !== null && !(sinceRaw.trim() !== '' && Number.isInteger(since) && since >= 0)) return { ok: false, error: 'since must be a whole number.' };
+  return { ok: true, value: { as: query.get('as') === 'helper' ? 'helper' : 'patient', name: name.ok ? name.value : null, id: client, since } };
 }
 
 function sse(res, event, data) {
@@ -81,25 +121,44 @@ function sse(res, event, data) {
  * Returns { routes, sweep, close, rooms }.
  */
 export function createMuseumRooms({ store, now = Date.now, random = randomInt, keepaliveMs = KEEPALIVE_MS }) {
-  /** code → { code, state, changedAt, clients: Set<{ res, as, name }> } */
+  /**
+   * code → { code, state, changedAt, version, clients: Set<{ res, as, name, id }>,
+   * pollers: Map<id, { as, name, seenAt }> }. `version` goes up on any change to state or peers.
+   */
   const rooms = new Map();
 
-  const peersOf = (room) => {
-    const peers = { patient: 0, helpers: [] };
-    for (const client of room.clients) {
-      if (client.as === 'helper') peers.helpers.push(client.name ?? 'Someone');
-      else peers.patient += 1;
-    }
-    return peers;
-  };
-  const view = (room) => ({ code: room.code, state: room.state, peers: peersOf(room) });
+  const peersOf = (room) => countPeers(room.clients, room.pollers);
+  const view = (room) => ({ code: room.code, state: room.state, peers: peersOf(room), version: room.version });
   const broadcast = (room, event, data) => {
     for (const client of room.clients) sse(client.res, event, data);
   };
+  /** Call after anything that may change who is here. Returns true if it did (and told the listeners). */
+  const peersChanged = (room, before) => {
+    const after = peersOf(room);
+    if (JSON.stringify(after) === JSON.stringify(before)) return false;
+    room.version += 1;
+    broadcast(room, 'peers', after);
+    return true;
+  };
+
+  /** Drops pollers that stopped polling (a closed phone), and tells the listeners. */
+  function prune(room, t) {
+    const before = peersOf(room);
+    let dropped = false;
+    for (const [id, poller] of room.pollers) {
+      if (isPollerLive(poller, t)) continue;
+      room.pollers.delete(id);
+      dropped = true;
+    }
+    if (dropped) peersChanged(room, before);
+  }
 
   function sweep() {
     const t = now();
-    for (const [code, room] of rooms) if (isExpired(room, t)) rooms.delete(code);
+    for (const [code, room] of rooms) {
+      prune(room, t);
+      if (isExpired(room, t)) rooms.delete(code);
+    }
   }
 
   /** The room for a code in the URL, or null (bad format, unknown or expired). */
@@ -113,6 +172,7 @@ export function createMuseumRooms({ store, now = Date.now, random = randomInt, k
     if (!code) return null;
     const room = rooms.get(code);
     if (!room) return null;
+    prune(room, now());
     if (isExpired(room, now())) {
       rooms.delete(code);
       return null;
@@ -133,24 +193,43 @@ export function createMuseumRooms({ store, now = Date.now, random = randomInt, k
       code,
       state: { at, atId: null, window: null, by: 'patient', name: null, rev: 0, updatedAt: new Date(t).toISOString() },
       changedAt: t,
+      version: 0,
       clients: new Set(),
+      pollers: new Map(),
     };
     rooms.set(code, room);
     sendJson(res, 200, view(room));
   }
 
+  /**
+   * The room as JSON. With ?client= this is also a poll: the screen counts as present for 10 s.
+   * With ?since=<version> it answers 204 when nothing changed since then.
+   */
   async function get(req, res, rawCode) {
     const room = find(rawCode);
     if (!room) return notFound(res);
+    const who = parseWho(new URL(req.url, 'http://guide.local').searchParams);
+    if (!who.ok) return sendError(res, 400, who.error);
+    const { as, name, id, since } = who.value;
+    if (id !== null) {
+      const before = peersOf(room);
+      room.pollers.set(id, { as, name, seenAt: now() });
+      peersChanged(room, before);
+    }
+    if (since !== null && since === room.version) {
+      res.writeHead(204, { ...CORS_HEADERS, 'Cache-Control': 'no-store' });
+      return res.end();
+    }
     sendJson(res, 200, view(room));
   }
 
   async function events(req, res, rawCode) {
     const room = find(rawCode);
     if (!room) return notFound(res);
-    const query = new URL(req.url, 'http://guide.local').searchParams;
-    const name = cleanName(query.get('name') ?? undefined);
-    const client = { res, as: query.get('as') === 'helper' ? 'helper' : 'patient', name: name.ok ? name.value : null };
+    const who = parseWho(new URL(req.url, 'http://guide.local').searchParams);
+    if (!who.ok) return sendError(res, 400, who.error);
+    const { as, name, id } = who.value;
+    const client = { res, as, name, id };
 
     // Headers that keep proxies (cloudflared, nginx) from buffering or closing the stream.
     res.writeHead(200, {
@@ -165,13 +244,16 @@ export function createMuseumRooms({ store, now = Date.now, random = randomInt, k
     req.socket.setTimeout(0);
     res.write('retry: 3000\n\n');
 
+    const before = peersOf(room);
     room.clients.add(client);
     sse(res, 'state', room.state);
-    broadcast(room, 'peers', peersOf(room));
+    // Everyone hears about a new face; a screen already counted (it polled first) just gets the list.
+    if (!peersChanged(room, before)) sse(res, 'peers', before);
 
     const leave = () => {
+      const was = peersOf(room);
       if (!room.clients.delete(client)) return;
-      broadcast(room, 'peers', peersOf(room));
+      peersChanged(room, was);
     };
     req.on('close', leave);
     res.on('close', leave);
@@ -189,18 +271,22 @@ export function createMuseumRooms({ store, now = Date.now, random = randomInt, k
     const t = now();
     room.state = { ...parsed.value, rev: room.state.rev + 1, updatedAt: new Date(t).toISOString() };
     room.changedAt = t;
+    room.version += 1;
     broadcast(room, 'state', room.state);
     sendJson(res, 200, { ok: true, state: room.state });
   }
 
   const timer = setInterval(() => {
     for (const room of rooms.values()) for (const client of room.clients) client.res.write(': keepalive\n\n');
-    sweep();
   }, keepaliveMs);
   timer.unref();
+  // Often enough that a helper who stops polling leaves the iPad's list within a few seconds.
+  const sweeper = setInterval(sweep, POLL_TTL_MS / 4);
+  sweeper.unref();
 
   function close() {
     clearInterval(timer);
+    clearInterval(sweeper);
     for (const room of rooms.values()) for (const client of room.clients) client.res.end();
     rooms.clear();
   }

@@ -188,9 +188,9 @@ A family member joins the patient's Memory Museum from their phone and leads the
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| POST | `/api/museum/rooms` | optional `{ at }` (the iPad's current frame) | `{ code, state, peers }` |
-| GET | `/api/museum/rooms/:code` | – | `{ code, state, peers }`. Lets the helper check a typed code |
-| GET | `/api/museum/rooms/:code/events?as=patient\|helper&name=` | – | server-sent events (`text/event-stream`), below |
+| POST | `/api/museum/rooms` | optional `{ at }` (the iPad's current frame) | `{ code, state, peers, version }` |
+| GET | `/api/museum/rooms/:code?as=&name=&client=&since=` | – | `{ code, state, peers, version }`, or 204 with no body when `since` equals `version`. Checks a typed code, and is the polling fallback, below |
+| GET | `/api/museum/rooms/:code/events?as=patient\|helper&name=&client=` | – | server-sent events (`text/event-stream`), below |
 | POST | `/api/museum/rooms/:code/state` | `{ at, atId?, window, by, name? }` | `{ ok: true, state }`, and the new state goes to every listener |
 
 ```ts
@@ -203,13 +203,15 @@ type RoomState = {
   rev: number;              // goes up by one on every change
   updatedAt: string;        // ISO time
 };
-type Peers = { patient: number; helpers: string[] };   // open event streams; helpers by name
+type Peers = { patient: number; helpers: string[] };   // screens listening or polling; helpers by name
+// version: goes up by one on every change to state or peers (send it back as ?since=)
 ```
 
 - **Codes** are 4 consonants with no vowels and no Y (e.g. `KTRB`), so they never spell a word. A new code skips codes in use. Codes are case-insensitive. No auth beyond the code (hackathon only).
-- **Events:** `event: state` with a `RoomState` (sent on connect, then on every change) and `event: peers` with `Peers` (on connect and whenever someone joins or leaves). A comment line (`: keepalive`) every 15 s keeps the cloudflared tunnel open. `as` and `name` only label the listener in `peers`. `EventSource` can't send headers, so when `BRAINDANCE_KEY` is set this route also accepts `?key=`.
+- **Events:** `event: state` with a `RoomState` (sent on connect, then on every change) and `event: peers` with `Peers` (on connect and whenever someone joins or leaves). A comment line (`: keepalive`) every 15 s keeps the cloudflared tunnel open. `as`, `name` and `client` only label the listener in `peers`. A malformed `client` or `since` → 400. `EventSource` can't send headers, so when `BRAINDANCE_KEY` is set this route also accepts `?key=`.
+- **Polling fallback:** a cloudflared quick tunnel (`*.trycloudflare.com`) passes the event stream's headers but never its body, so a screen whose stream hasn't delivered its first `state` within 3 s (or errors) polls `GET /api/museum/rooms/:code` about once a second instead. A poll with `client` (8–64 letters, digits, `-` or `_`, one per browser tab) counts that screen in `peers` for 10 s after its last poll; `as` and `name` label it as on the event stream. A screen that sends the same `client` on its stream and its polls is counted once. Stale pollers are dropped (and listeners get `peers`) within a few seconds. `since` is a whole number; with `since` equal to the room's `version`, the answer is 204 with no body. Screens order states by `rev`, so a late poll never moves a screen back.
 - **Validation:** `at` is an integer from -1 to 9999; `atId` is null or a capture id; `window` is null or the id of a capture on this guide; `by` is `patient` or `helper`; `name` is at most 40 characters. A bad body → 400. A badly formed or unknown code → 404.
-- **Storage:** in memory only (a `Map`); a guide restart forgets every room. A room expires 3 hours after its last change once no one is listening; its code can then be reused.
+- **Storage:** in memory only (a `Map`); a guide restart forgets every room. A room expires 3 hours after its last change once no one is listening and no one has polled for 10 s; its code can then be reused.
 
 ## Public routes (visitors, no key)
 
