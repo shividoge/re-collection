@@ -5,7 +5,11 @@ const ROOM_KEY = 'braindance.museum.room'
 const NAME_KEY = 'braindance.museum.helperName'
 /** The newest change any iPad screen has acted on: { code, rev }. Survives the museum ↔ window switch. */
 const FOLLOWED_KEY = 'braindance.museum.followed'
-const RETRY_MS = 3000
+/** One id per browser tab, so the iPad's museum and Memory Window count as one screen. */
+const CLIENT_KEY = 'braindance.museum.client'
+/** How long the event stream gets to deliver its first state before the hook polls instead. */
+const STREAM_GRACE_MS = 3000
+const POLL_MS = 1000
 /** How long stepping in or out waits for the guide before going anyway. */
 const NAVIGATE_WAIT_MS = 1500
 const CODE_PATTERN = /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/
@@ -40,6 +44,16 @@ function writeStorage(storage: () => Storage, key: string, value: string | null)
 
 const session = () => sessionStorage
 const local = () => localStorage
+
+function clientId(): string {
+  const kept = readStorage(session, CLIENT_KEY)
+  if (kept && /^[A-Za-z0-9_-]{8,64}$/.test(kept)) return kept
+  // getRandomValues works on plain http too (randomUUID needs a secure context).
+  const bytes = crypto.getRandomValues(new Uint8Array(12))
+  const id = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  writeStorage(session, CLIENT_KEY, id)
+  return id
+}
 
 function followedRev(code: string): number {
   try {
@@ -87,8 +101,9 @@ const NO_PEERS: RoomPeers = { patient: 0, helpers: [] }
 /**
  * One shared museum walk between the patient's iPad and a helper's phone. The iPad opens the
  * room and keeps its code for this tab (so the Memory Window joins the same room); the helper
- * joins with the code from the link. State comes from the guide's event stream; changes are
- * shown at once and sent with a POST.
+ * joins with the code from the link. State comes from the guide's event stream, or from polling
+ * once a second when the stream doesn't get through (a cloudflared quick tunnel holds back the
+ * stream's body). Changes are shown at once and sent with a POST.
  *
  * `enabled: false` keeps the hook idle (the Memory Window opened from somewhere else).
  */
@@ -102,7 +117,7 @@ export function useMuseumRoom(role: RoomRole, { join = null, enabled = true }: {
   const [state, setState] = useState<RoomState | null>(null)
   const [peers, setPeers] = useState<RoomPeers>(NO_PEERS)
   const [status, setStatus] = useState<RoomStatus>('off')
-  const [retry, setRetry] = useState(0)
+  const [client] = useState(clientId)
 
   /** The newest state the guide has confirmed (by rev), and how many of our own changes are in flight. */
   const latest = useRef<RoomState | null>(null)
@@ -131,49 +146,75 @@ export function useMuseumRoom(role: RoomRole, { join = null, enabled = true }: {
       return
     }
     let stopped = false
-    let timer = 0
+    let polling = false
+    let pollTimer = 0
+    let graceTimer = 0
+    let version: number | null = null
+    const aborter = new AbortController()
+    const who = { as: role, name, client }
     setStatus((s) => (s === 'live' || s === 'reconnecting' ? 'reconnecting' : 'connecting'))
-    const events = new EventSource(museumRooms.eventsUrl(code, role, name))
+    const events = new EventSource(museumRooms.eventsUrl(code, who))
 
-    events.addEventListener('open', () => setStatus('live'))
-    events.addEventListener('state', (e) => {
-      const next = JSON.parse((e as MessageEvent<string>).data) as RoomState
+    const apply = (next: RoomState) => {
       if (latest.current && next.rev <= latest.current.rev) return
       latest.current = next
       // Our own change echoing back while others are still in flight would make the screen jump.
       if (pending.current > 0 && next.by === role) return
       setState(next)
-    })
-    events.addEventListener('peers', (e) => setPeers(JSON.parse((e as MessageEvent<string>).data) as RoomPeers))
-    events.addEventListener('error', () => {
-      if (stopped) return
-      if (events.readyState !== EventSource.CLOSED) {
-        setStatus('reconnecting')
-        return
+    }
+
+    const poll = async () => {
+      try {
+        const room = await museumRooms.poll(code, who, version, aborter.signal)
+        if (stopped) return
+        if (room) {
+          version = room.version
+          apply(room.state)
+          setPeers(room.peers)
+        }
+        setStatus('live')
+      } catch (error) {
+        if (stopped) return
+        if (error instanceof GuideError && error.status === 404) {
+          stopped = true
+          setStatus('gone')
+          forget()
+          return
+        }
+        setStatus((s) => (s === 'connecting' ? s : 'reconnecting'))
       }
-      // The browser gave up (for example a 404, or the tunnel answering 502). Find out which.
-      museumRooms
-        .get(code)
-        .then(() => {
-          if (!stopped) timer = window.setTimeout(() => setRetry((n) => n + 1), RETRY_MS)
-        })
-        .catch((error: unknown) => {
-          if (stopped) return
-          if (error instanceof GuideError && error.status === 404) {
-            setStatus('gone')
-            forget()
-          } else {
-            setStatus('reconnecting')
-            timer = window.setTimeout(() => setRetry((n) => n + 1), RETRY_MS)
-          }
-        })
+      pollTimer = window.setTimeout(() => void poll(), POLL_MS)
+    }
+    /** Quietly switch to polling for as long as this room stays open. */
+    const fallBack = () => {
+      if (polling || stopped) return
+      polling = true
+      window.clearTimeout(graceTimer)
+      events.close()
+      void poll()
+    }
+    // Headers can arrive with no body behind them (a quick tunnel), so only a first state counts.
+    graceTimer = window.setTimeout(fallBack, STREAM_GRACE_MS)
+
+    events.addEventListener('state', (e) => {
+      if (polling) return
+      window.clearTimeout(graceTimer)
+      setStatus('live')
+      apply(JSON.parse((e as MessageEvent<string>).data) as RoomState)
     })
+    events.addEventListener('peers', (e) => {
+      if (!polling) setPeers(JSON.parse((e as MessageEvent<string>).data) as RoomPeers)
+    })
+    // A dropped stream, a 404 or a tunnel's 502: polling finds out which, and carries on if it can.
+    events.addEventListener('error', fallBack)
     return () => {
       stopped = true
-      window.clearTimeout(timer)
+      window.clearTimeout(graceTimer)
+      window.clearTimeout(pollTimer)
+      aborter.abort()
       events.close()
     }
-  }, [code, connectable, role, name, retry, forget])
+  }, [code, connectable, role, name, client, forget])
 
   const send = useCallback(
     async (change: Omit<RoomChange, 'by' | 'name'>) => {
