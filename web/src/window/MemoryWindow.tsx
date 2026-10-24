@@ -135,7 +135,7 @@ function WindowStage({ id, capture }: { id: string; capture: LoadedCapture }) {
   return (
     <div className={`window${idle ? ' idle' : ''}`}>
       <Canvas flat dpr={[1, 2]} camera={{ near: 0.02, far: 60 }} gl={{ antialias: true }} className="window-canvas">
-        <color attach="background" args={['#05060a']} />
+        <color attach="background" args={['#07080a']} />
         <HoleFill />
         <StaticCloud cloud={cloud!} sizes={sizes} dim={canReplayPeople && playback.playing ? 0.6 : 1} />
         {canReplayPeople && started && manifest && videoEl && (

@@ -2,7 +2,7 @@
 .window {
   position: fixed;
   inset: 0;
-  background: #05060a;
+  background: #07080a;
   color: #f2efe9;
   overflow: hidden;
 }
@@ -27,7 +27,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  background: #05060a;
+  background: #07080a;
   color: #b9b3ab;
   font-size: 20px;
   pointer-events: none;
@@ -37,7 +37,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  background: #05060a;
+  background: #07080a;
   color: #b9b3ab;
   font-size: 20px;
   padding: 24px;

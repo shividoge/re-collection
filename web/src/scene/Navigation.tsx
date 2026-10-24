@@ -339,11 +339,11 @@ export function PivotMarker() {
     <group ref={ref}>
       <mesh renderOrder={10}>
         <ringGeometry args={[0.8, 1, 32]} />
-        <meshBasicMaterial color="#6ee7ff" depthTest={false} transparent opacity={0.9} />
+        <meshBasicMaterial color="#ff5c3a" depthTest={false} transparent opacity={0.9} />
       </mesh>
       <mesh renderOrder={10}>
         <circleGeometry args={[0.25, 16]} />
-        <meshBasicMaterial color="#6ee7ff" depthTest={false} />
+        <meshBasicMaterial color="#ff5c3a" depthTest={false} />
       </mesh>
     </group>
   )
