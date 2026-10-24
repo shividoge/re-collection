@@ -3,6 +3,7 @@ import { CaptureView } from './views/CaptureView'
 import { Dashboard, DashboardOverview } from './views/Dashboard'
 import { FactsPage } from './views/FactsPage'
 import { Gallery } from './views/Gallery'
+import { MuseumPage } from './museum/MuseumPage'
 import { RoomFile } from './views/RoomFile'
 import './views/views.css'
 
@@ -14,6 +15,8 @@ const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
   // Revisiting happens in the playground now; old links still land there.
   [/^#\/revisit\/([0-9a-f-]{36})$/i, (id) => <CaptureView key={id} id={id} />],
   [/^#\/dashboard\/([0-9a-f-]{36})$/i, (id) => <Dashboard key={id} id={id} />],
+  // The museum: #/museum, or #/museum/<exhibition id>.
+  [/^#\/museum(?:\/([\w-]+))?$/, (id) => <MuseumPage key="museum" id={id} />],
 ]
 
 export default function App() {
