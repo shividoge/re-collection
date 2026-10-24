@@ -134,22 +134,27 @@ Nothing reaches the patient until a family member approves it. Only facts with `
 
 ### Revisit sessions (patient tablet)
 
+`GET /api/person` / `PUT /api/person` with `{ displayName, preferredAddress }` sets who the sessions are for (e.g. `"Grandma"`, `"Mom"`). The welcome uses `preferredAddress`.
+
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| POST | `/api/sessions` | `{ momentId }` | `{ sessionId, welcome: Reply }` |
+| POST | `/api/sessions` | `{ momentId }` | `{ sessionId, welcome: Reply }`. 409 if no facts are approved yet. The welcome is a fixed sentence, not Claude |
 | POST | `/api/sessions/:sid/narrate` | `{ chapterIndex }` | `{ reply: Reply }`: 2 or 3 grounded sentences for that chapter |
 | POST | `/api/sessions/:sid/turn` | `{ text }`: what the patient said (browser speech-to-text, or typed by the caregiver) | `{ reply: Reply, branch: string \| null, distress: boolean }` |
-| POST | `/api/sessions/:sid/end` | `{ reason: "complete" \| "caregiver" \| "distress" \| "timeout" }` | `{ scores: Score[], branches: Branch[], note: string }` (runs Claude scoring) |
+| POST | `/api/sessions/:sid/end` | `{ reason: "complete" \| "caregiver" \| "distress" \| "timeout" }` | `{ scores: Score[], branches: Branch[], note: string, alerts: Alert[] }` (runs Claude scoring; calling it again returns the same result) |
 | GET | `/api/sessions/:sid` | – | the full session: turns, dropped sentences, scores |
 
 ```ts
 type Sentence = { sentence: string; factIds: string[]; free?: boolean };
 type Reply = { sentences: Sentence[]; dropped: { sentence: string; reason: string }[] };
-type Score = { factId: string; result: "unprompted" | "after_cue" | "not_mentioned" };
+type Score = { factId: string; result: "unprompted" | "after_cue" | "not_mentioned"; line?: number };
 type Branch = { t: string; quote: string; note: string };   // t = ISO time
+type Alert = { t: string; kind: "distress"; note: string };
 ```
 
-- **`distress: true`** means Claude flagged confusion, fear or grief. The tablet stops the moment, shows the reply (which is reassurance), and ends the session with reason `distress`.
+- Narration and conversation use `MODEL_LIVE` (Sonnet 5.5) at low effort for speed; scoring uses `MODEL_OFFLINE` (Opus 5.5). Claude answers in structured JSON (`sentences`, `branch`, `distress`) rather than tool calls.
+- **Scoring:** Claude says which of the person's lines carries each fact; code then decides `unprompted` vs `after_cue` from whether the companion had already said that fact before that line. Facts approved after the session started aren't scored.
+- **`distress: true`** means Claude flagged confusion, fear or grief, or the person's words matched a distress phrase in code (e.g. "I want to go home", "where is everyone", "I'm scared"). The tablet stops the moment, shows the reply (which is reassurance), and ends the session with reason `distress`.
 - **`branch`** is set when the patient linked the moment to an older memory ("this kitchen looks like my mother's"). The dashboard lists these.
 - **`dropped`** lists sentences the grounding check removed and why. Don't show them to the patient. The caregiver debug panel and the demo can show them.
 - Speak `sentences` in order with the browser's `speechSynthesis` (Cartesia is a stretch goal).
@@ -178,8 +183,12 @@ type Progress = {
 
 `guide/src/grounding.mjs`. Every narration and conversation reply from Claude comes back as `Sentence[]` through tool use, and before anything reaches the tablet the check:
 
-- drops any sentence without `free: true` whose `factIds` are missing, unknown, not approved, or marked `doNotRaise`;
-- allows at most **one** `free` sentence per reply, and drops free sentences that contain a name, number, date or place (the name list is built from approved facts and attendees);
+- drops any sentence whose `factIds` include a fact that is unknown, not approved, or marked `doNotRaise`;
+- treats a sentence with no `factIds` as a free (social) sentence, whether or not Claude marked it so, and drops it if it contains a number, a day or date, a place, a relationship word (grandson, sister…) or a name (attendees and capitalized words in the facts). Words the person just said, and how they like to be addressed ("Mom"), are allowed, so Claude can follow their lead;
+- allows **one** free sentence per reply, or **two** when they're distressed (reassurance) or just shared an older memory (a warm reply plus one question);
+- if nothing survives, says a fixed safe sentence ("I'm right here with you." / "You're safe. I'm right here with you.") so the person never meets silence;
 - puts every dropped sentence in `reply.dropped` with a reason and appends it to the session log.
+
+Free sentences are checked with word lists, so they can't catch every invented detail; the prompt, the one-or-two cap and short replies are the rest of the defense.
 
 Tests in `guide/test/grounding.test.mjs` include a deliberately ungrounded sentence that must be dropped. This check is the strongest "thoughtful use of Claude" point in the pitch.

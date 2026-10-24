@@ -212,6 +212,7 @@ describe('facts through the API', () => {
     await waitForFacts();
     const moment = await (await fetch(`${base}/api/moments/${CAPTURE_ID}`)).json();
     assert.deepEqual(moment.facts.map((f) => [f.id, f.status]), [['f1', 'approved'], ['f2', 'pending']]);
+    assert.match(claude.calls.at(-1).content[0].text, /already reviewed these facts[\s\S]*- Priya brought Mom a mango cake\./, 'Claude is told what not to repeat');
     assert.equal(moment.facts[0].editedText, 'Priya brought Mom a mango cake.');
     assert.equal(claude.calls.length, 2);
   });

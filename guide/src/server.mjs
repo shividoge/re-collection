@@ -7,8 +7,9 @@ import { pathToFileURL } from 'node:url';
 
 import { guideRoot, loadConfig } from './config.mjs';
 import { CORS_HEADERS, readJsonBody, sendError, sendFile, sendJson } from './http.mjs';
-import { createClaude } from './claude.mjs';
+import { ClaudeError, createClaude } from './claude.mjs';
 import { extractFacts } from './facts.mjs';
+import { createSessions, SessionError } from './session.mjs';
 import { Store, StoreError } from './store.mjs';
 import { validateCapture } from './validate.mjs';
 import { createFactsWorker } from './worker.mjs';
@@ -28,6 +29,13 @@ export function createApp(config, { claude = createClaude(config), log = console
     log,
     extract: (id) => extractFacts({ store, claude, model: config.models.offline }, id),
   });
+  const sessions = createSessions({ store, claude, models: config.models, dataDir: config.dataDir });
+
+  /** Wraps a session call: JSON body in, JSON out. */
+  const json = (fn) => async (req, res, ...params) => {
+    const body = req.method === 'GET' ? Object.fromEntries(new URL(req.url, 'http://guide.local').searchParams) : await readJsonBody(req);
+    sendJson(res, 200, await fn(...params, body));
+  };
   /** The built web app (web/dist), served at / so judges need one URL. */
   const webDir = config.webDir ?? join(guideRoot, '..', 'web', 'dist');
 
@@ -40,6 +48,14 @@ export function createApp(config, { claude = createClaude(config), log = console
     ['GET', /^\/api\/moments\/([^/]+)$/, getMoment],
     ['PATCH', /^\/api\/moments\/([^/]+)\/facts\/([^/]+)$/, patchFact],
     ['POST', /^\/api\/moments\/([^/]+)\/extract$/, reextract],
+    ['POST', /^\/api\/sessions$/, json((body) => sessions.start(body))],
+    ['GET', /^\/api\/sessions\/([^/]+)$/, json((id) => sessions.get(id))],
+    ['POST', /^\/api\/sessions\/([^/]+)\/narrate$/, json((id, body) => sessions.narrate(id, body))],
+    ['POST', /^\/api\/sessions\/([^/]+)\/turn$/, json((id, body) => sessions.turn(id, body))],
+    ['POST', /^\/api\/sessions\/([^/]+)\/end$/, json((id, body) => sessions.end(id, body))],
+    ['GET', /^\/api\/progress$/, json((query) => sessions.progress(query))],
+    ['GET', /^\/api\/person$/, json(() => sessions.person())],
+    ['PUT', /^\/api\/person$/, json((body) => sessions.setPerson(body))],
     ['GET', /^\/files\/([^/]+)\/(.+)$/, getFile],
     ['HEAD', /^\/files\/([^/]+)\/(.+)$/, getFile],
   ];
@@ -236,7 +252,8 @@ export function createApp(config, { claude = createClaude(config), log = console
     } catch (error) {
       if (res.headersSent) return res.destroy();
       if (error instanceof URIError) return sendError(res, 400, `Bad characters in ${url.pathname}.`);
-      if (error instanceof StoreError || error.status) return sendError(res, error.status, error.message);
+      if (error instanceof StoreError || error instanceof SessionError || error.status) return sendError(res, error.status, error.message);
+      if (error instanceof ClaudeError) return sendError(res, 502, error.message);
       console.error(error);
       sendError(res, 500, `The guide hit an error: ${error.message}`);
     }
