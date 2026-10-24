@@ -170,10 +170,11 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
       const sel = selectAlongRay(room, cloud, moment, videoW, videoH, origin, dir)
       setSelection(sel)
       setPickMiss(!sel)
-      // In orbit, whatever you click becomes the point you circle around.
-      if (sel && mode === 'orbit') faceTowards(pivotOf(sel))
+      // In orbit, whatever you click becomes the point you circle around; clicking empty space
+      // deselects, and the pivot goes back to the room center like Esc.
+      if (mode === 'orbit') faceTowards(sel ? pivotOf(sel) : roomCenter)
     },
-    [room, cloud, moment, videoW, videoH, mode, faceTowards],
+    [room, cloud, moment, videoW, videoH, mode, faceTowards, roomCenter],
   )
 
   const goToSelection = useCallback(() => {
