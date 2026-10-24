@@ -1,0 +1,127 @@
+:root {
+  --bd-bg: #05060a;
+  --bd-panel: #0a0f18;
+  --bd-fg: #d7e3ee;
+  --bd-muted: #7d8ea3;
+  --bd-line: #1a2230;
+  --bd-accent: #6ee7ff;
+  --bd-warn: #f5c451;
+  --bd-error: #ff6b6b;
+  color-scheme: dark;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bd-bg);
+  color: var(--bd-fg);
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--bd-line);
+  background: var(--bd-panel);
+  flex-wrap: wrap;
+}
+.brand {
+  letter-spacing: 0.3em;
+  color: var(--bd-accent);
+  font-size: 13px;
+}
+.crumb {
+  color: var(--bd-muted);
+  font-size: 12px;
+}
+.bar-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.btn {
+  font: inherit;
+  font-size: 12px;
+  color: var(--bd-bg);
+  background: var(--bd-accent);
+  border: 1px solid var(--bd-accent);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.btn.ghost {
+  color: var(--bd-muted);
+  background: transparent;
+  border-color: var(--bd-line);
+}
+.url {
+  font: inherit;
+  font-size: 12px;
+  width: 300px;
+  max-width: 60vw;
+  color: var(--bd-fg);
+  background: var(--bd-bg);
+  border: 1px solid var(--bd-line);
+  padding: 6px 8px;
+}
+.banner {
+  padding: 8px 16px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--bd-line);
+}
+.banner.warn {
+  color: var(--bd-bg);
+  background: var(--bd-warn);
+}
+.banner.error {
+  color: var(--bd-error);
+  background: #1c0b0e;
+}
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.meta {
+  padding: 8px 16px;
+  font-size: 13px;
+}
+.muted {
+  color: var(--bd-muted);
+}
+.hint {
+  margin: auto;
+  color: var(--bd-muted);
+  font-size: 14px;
+  padding: 24px;
+  text-align: center;
+}
+.hint.error {
+  color: var(--bd-error);
+}
+.viewer-wrap {
+  flex: 1;
+  min-height: 0;
+}
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.app-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}

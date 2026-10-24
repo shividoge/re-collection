@@ -1,18 +1,10 @@
 # Braindance web app
 
-The family-facing viewer: drop a capture zip from the phone, see it in the gallery, and step into it in 3D.
-
-- **Room:** the phone's scan (`room.bin`) as soft round points, every point where the LiDAR measured it. Gaps stay empty.
-- **People:** the Braindance effect. Each 10 Hz depth frame is unprojected with that frame's own camera pose and colored from the video, so whoever was in the visit replays in 3D, in place, in sync with sound (`src/scene/DepthReplay.tsx`).
-- **Path:** where the phone went during the scan (grey) and the moment (orange), plus a marker at the current frame.
-- **Phone's view:** the camera rides the recorded pose, so the 3D lines up with the video.
-- **Facts (family review):** what Claude extracted, each next to its keyframes or quoted words. Click evidence or a chapter to jump there. Approve, reject, reword, or mark "don't bring this up"; only approved facts ever reach the patient. The panel also shows what the grounding check removed and can ask Claude again (keeping what's been reviewed).
-
-The math and file formats are in `../docs/capture-format.md`; the API is `../docs/guide-api.md`.
+Vite + React + TypeScript + React Three Fiber. Owner: Firdavs. It talks only to the guide server (`../guide`, API in `../docs/guide-api.md`); every Claude call happens there.
 
 ## Run it
 
-The guide server serves the built app at `/`, so one URL works for everything:
+The guide serves the built app at `/`, so one URL works for everything:
 
 ```bash
 npm --prefix web install
@@ -25,18 +17,32 @@ While developing, run Vite with hot reload (it proxies `/api`, `/files` and `/he
 ```bash
 npm --prefix guide start
 npm --prefix web run dev          # http://127.0.0.1:5173
+npm --prefix web test             # vitest: parsers, pose math, selection math
 ```
 
-If the guide has `BRAINDANCE_KEY` set, the gallery asks for the team password once and remembers it in this browser.
+If the guide has `BRAINDANCE_KEY` set, the gallery asks for the team password once. When the guide runs with `MOCK_CLAUDE=1`, every page shows a red MOCK MODE banner.
+
+## Screens (hash routes)
+
+- `#/` **Gallery:** drop a capture zip from the phone (uploaded to the guide), or open a `room.bin` on its own (stays in the browser). Cards show real pipeline status.
+- `#/capture/<id>` **Viewer + fact review:** the room as soft points, people replayed in 3D from depth, the phone's path, synced video, and the family's fact review beside it.
+  - **Orbit:** drag to see the pivot from any angle; the pivot is the room center, or whatever you click. Esc goes back to the center.
+  - **Fly:** drag turns the room around you. Hold WASD to fly and steer with the mouse like a shooter (cursor hidden, keeps turning at the screen edge, comes back at the crosshair). E up, Q down, Shift faster, Alt slower.
+  - **Camera path:** ride along with the phone.
+  - **Select:** click an object to see its size and when the recording camera saw it (marks on the scrubber). F flies to it. Space plays and pauses.
+- `#/room` a `room.bin` opened from this computer: Orbit, Fly and select.
+- `#/revisit/<id>` **Revisit (patient):** welcome, slow replay with grounded narration, push-to-talk conversation, caregiver corner, goodbye.
+- `#/dashboard/<id>` **Dashboard (family):** recall per session at real times, older memories, distress alerts, next revisits.
 
 ## Layout
 
 ```
-src/api.ts                guide client; ?key= on file URLs for <video>/<img>
-src/capture.ts            room.bin and frames.jsonl parsing, frame lookup by time, depth decoding
-src/upload.ts             unzip in the browser (fflate), upload file by file, then validate
-src/views/Gallery.tsx     drop zone + capture cards
-src/views/Viewer.tsx      3D stage, video panel, transport, view modes, layer toggles
-src/views/FactsPanel.tsx  family fact review beside the video
-src/scene/                RoomCloud, CameraPath/CameraMarker, DepthReplay, point material
+src/api.ts                 guide client; ?key= on file URLs for <video>/<img>
+src/upload.ts              unzip in the browser (fflate), upload file by file, then validate
+src/scene/formats.ts       room.bin and frames.jsonl readers
+src/scene/pose.ts          unprojection and upright-video math (matches docs/capture-format.md)
+src/scene/spatial.ts       voxel index, picking, floor/wall detection, object selection, on-camera intervals
+src/scene/SceneViewer.tsx  the 3D viewer: StaticCloud, CameraPath, DepthReplay, Navigation (Orbit/Fly)
+src/views/                 Gallery, CaptureView, FactsPanel, RoomFile, Revisit, Dashboard
+tests/                     vitest; tests/fixture.ts is a synthetic box room for tests only
 ```
