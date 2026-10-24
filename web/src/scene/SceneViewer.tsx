@@ -34,9 +34,9 @@ interface Props {
 }
 
 const HELP: Record<NavMode, string> = {
-  orbit: 'Drag to view the pivot from any angle · scroll to get closer · right-drag to pan · click something to orbit it · Esc back to room center',
-  fly: 'Drag rotates the room around you · hold WASD to fly and steer with the mouse, no click needed · E up · Q/C down · Shift faster · Alt slower · click to select',
-  follow: 'Following the recording camera · click to select',
+  orbit: 'Drag to view the pivot from any angle · scroll to get closer · right-drag to pan · click something to orbit it · Esc back to room center · V video',
+  fly: 'Drag rotates the room around you · hold WASD to fly and steer with the mouse, no click needed · E up · Q/C down · Shift faster · Alt slower · click to select · V video',
+  follow: 'Following the recording camera · click to select · V video',
 }
 
 /**
@@ -53,7 +53,9 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
     videoRef.current = el
     setVideoEl(el)
   }, [])
-  const [layers, setLayers] = useState({ room: true, people: true, path: true })
+  const [showPath, setShowPath] = useState(true)
+  // The video plays all the time (sound, people replay); this only hides or shows its panel.
+  const [videoOpen, setVideoOpen] = useState(false)
   const cameraRef = useRef<THREE.Camera | null>(null)
   const [mode, setMode] = useState<NavMode>(initialMode)
   const [orbitTarget, setOrbitTarget] = useState<Vec3 | null>(null)
@@ -165,6 +167,7 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return
       if (e.code === 'Escape') clearSelection()
       if (e.code === 'KeyF') goToSelection()
+      if (e.code === 'KeyV' && showVideo) setVideoOpen((o) => !o)
       if (e.code === 'Space' && duration > 0) {
         e.preventDefault()
         if (playback.playing) playback.pause()
@@ -173,7 +176,7 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [goToSelection, clearSelection, duration, playback])
+  }, [goToSelection, clearSelection, duration, playback, showVideo])
 
   // Only read when OrbitControls mounts; afterwards the pivot moves through CameraTween.
   const orbitAt = orbitTarget ?? roomCenter
@@ -195,15 +198,15 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
               }}
             >
               <color attach="background" args={['#05060a']} />
-              {layers.room && <StaticCloud cloud={cloud} dim={selection ? 0.45 : canReplayPeople && layers.people && playback.playing ? 0.55 : 1} />}
+              <StaticCloud cloud={cloud} dim={selection ? 0.45 : canReplayPeople && playback.playing ? 0.55 : 1} />
               {selection && (
                 <>
                   <StaticCloud cloud={selection.cloud} pointSize={0.016} tint={ACCENT} tintMix={0.35} renderOrder={1} />
                   <SelectionBox selection={selection} />
                 </>
               )}
-              {canFollow && layers.path && <CameraPath frames={moment} timeRef={playback.timeRef} />}
-              {canReplayPeople && layers.people && capture.id && manifest && videoEl && (
+              {canFollow && showPath && <CameraPath frames={moment} timeRef={playback.timeRef} />}
+              {canReplayPeople && capture.id && manifest && videoEl && (
                 <DepthReplay captureId={capture.id} manifest={manifest} frames={moment} video={videoEl} timeRef={playback.timeRef} />
               )}
               {mode === 'follow' && canFollow && <FollowCamera frames={moment} timeRef={playback.timeRef} videoW={videoW} videoH={videoH} />}
@@ -233,6 +236,26 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
 
           {interactive && selection && <SelectionPanel selection={selection} onGoTo={goToSelection} onClear={clearSelection} onSeek={playback.seek} />}
 
+          {showVideo && (
+            <div className={`viewer-video-float${videoOpen ? ' open' : ''}`} aria-hidden={!videoOpen}>
+              <div className="viewer-video">
+                {capture.videoUrl && !videoError ? (
+                  <VideoPanel
+                    src={capture.videoUrl}
+                    videoRef={attachVideo}
+                    quarterTurns={videoTurns}
+                    videoW={videoW}
+                    videoH={videoH}
+                    onError={setVideoError}
+                    onDuration={setVideoDuration}
+                  />
+                ) : (
+                  <div className="viewer-empty">{videoError ?? 'No video in this capture.'}</div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="viewer-foot">
             {cloud && <span>{cloud.count.toLocaleString()} points</span>}
             {interactive && indexState.status === 'building' && <span>Indexing room for selection…</span>}
@@ -244,25 +267,6 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
           </div>
         </div>
 
-        {showVideo && (
-          <div className="viewer-side">
-            <div className="viewer-video">
-              {capture.videoUrl && !videoError ? (
-                <VideoPanel
-                  src={capture.videoUrl}
-                  videoRef={attachVideo}
-                  quarterTurns={videoTurns}
-                  videoW={videoW}
-                  videoH={videoH}
-                  onError={setVideoError}
-                  onDuration={setVideoDuration}
-                />
-              ) : (
-                <div className="viewer-empty">{videoError ?? 'No video in this capture.'}</div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Drawn in the system pointer's style: Windows white, macOS and Linux black. */}
@@ -290,10 +294,13 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
           {fmt(playback.time)} / {fmt(duration)}
         </span>
         <div className="layers">
-          <Layer label="Room" on={layers.room} disabled={!cloud} set={(on) => setLayers((l) => ({ ...l, room: on }))} />
-          <Layer label="People" on={layers.people} disabled={!canReplayPeople} set={(on) => setLayers((l) => ({ ...l, people: on }))} />
-          <Layer label="Path" on={layers.path} disabled={!canFollow} set={(on) => setLayers((l) => ({ ...l, path: on }))} />
+          <Layer label="Path" on={showPath} disabled={!canFollow} set={setShowPath} />
         </div>
+        {showVideo && (
+          <button className={`video-toggle${videoOpen ? ' on' : ''}`} onClick={() => setVideoOpen((o) => !o)} title="Show or hide the video (V)">
+            {videoOpen ? 'Hide video' : 'Video'}
+          </button>
+        )}
       </div>
     </div>
   )

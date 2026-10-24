@@ -118,7 +118,7 @@
   pointer-events: none;
 }
 .viewer-foot .help {
-  margin-left: auto;
+  max-width: calc(100% - min(36%, 420px) - 24px);
 }
 .viewer-foot .err {
   color: var(--bd-error, #ff6b6b);
@@ -273,4 +273,43 @@ html.bd-virtual-cursor * {
 .virtual-cursor.win {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='26' viewBox='0 0 20 26'><path d='M2 2 L2 20 L6.5 15.8 L9.6 23 L12.6 21.7 L9.6 14.6 L15.5 14.6 Z' fill='white' stroke='black' stroke-width='1.2' stroke-linejoin='round'/></svg>");
   filter: none;
+}
+/* The recorded video slides up over the 3D view on demand (Video button or V). It keeps
+   playing while hidden, so sound and the people replay stay in sync. */
+.viewer-video-float {
+  position: absolute;
+  right: 12px;
+  bottom: 40px;
+  width: min(36%, 420px);
+  max-height: calc(100% - 64px);
+  display: flex;
+  border: 1px solid var(--bd-line, #1a2230);
+  background: #000;
+  transition: transform 220ms ease, opacity 220ms ease;
+  transform: translateY(calc(100% + 60px));
+  opacity: 0;
+  pointer-events: none;
+}
+.viewer-video-float.open {
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .viewer-video-float {
+    transition: none;
+  }
+}
+.viewer-video-float .viewer-video {
+  flex: 1;
+}
+.viewer-timeline .video-toggle.on {
+  border-color: var(--bd-accent, #6ee7ff);
+  color: var(--bd-accent, #6ee7ff);
+}
+@media (max-width: 760px) {
+  .viewer-video-float {
+    width: auto;
+    left: 12px;
+  }
 }
