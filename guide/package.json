@@ -11,7 +11,8 @@
     "start": "node src/server.mjs",
     "test": "node --test test/*.test.mjs",
     "import": "node scripts/import.mjs",
-    "publish": "node scripts/publish.mjs"
+    "publish": "node scripts/publish.mjs",
+    "export-static": "node scripts/export-static.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0"
