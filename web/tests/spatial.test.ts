@@ -11,6 +11,7 @@ import {
   pointsOfVoxels,
   raycastVoxels,
   segmentAt,
+  verticesInVoxels,
   visibleIntervals,
 } from '../src/scene/spatial'
 import { K, ROOM, TABLE, VIDEO, lookAtPose, makeFixture } from './fixture'
@@ -89,5 +90,12 @@ describe('spatial queries on the synthetic room', () => {
     const behindWall = { t: 0, T: lookAtPose([0, 1.4, 3], TABLE.center, -90), K, d: null }
     const lookingAway = { t: 1, T: lookAtPose([0, 1.4, 1], [0, 1.4, 2], -90), K, d: null }
     expect(visibleIntervals(idx, seg.voxels, [behindWall, lookingAway], VIDEO.width, VIDEO.height)).toEqual([])
+  })
+
+  it('marks surface vertices on the selected object, not on the wall behind it', () => {
+    const seg = segmentAt(idx, structure, raycastVoxels(idx, [0, 2, 0], [0, -1, 0])!.id)
+    // A vertex on the table top, one just above it (a fused surface sits within a voxel), and one on a wall.
+    const verts = new Float32Array([0.1, TABLE.center[1], 0.1, -0.2, TABLE.center[1] + 0.02, 0.05, ROOM.xMax, 1.2, 0])
+    expect(Array.from(verticesInVoxels(idx, seg.voxels, verts))).toEqual([1, 1, 0])
   })
 })

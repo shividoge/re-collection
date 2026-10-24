@@ -402,6 +402,40 @@ export interface Bounds {
   size: Vec3
 }
 
+/**
+ * Which vertices of the room surface belong to a selection: those in a selected voxel or right
+ * next to one (face neighbors), since the fused surface sits within a voxel of the points it
+ * came from. Returns 1 per selected vertex.
+ */
+export function verticesInVoxels(idx: VoxelIndex, voxels: Uint32Array, vertices: Float32Array): Uint8Array {
+  const selected = new Uint8Array(idx.voxelCount)
+  for (const v of voxels) selected[v] = 1
+  const out = new Uint8Array(vertices.length / 3)
+  const s = idx.size
+  const near = [
+    [0, 0, 0],
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 1, 0],
+    [0, -1, 0],
+    [0, 0, 1],
+    [0, 0, -1],
+  ]
+  for (let i = 0; i < out.length; i++) {
+    const x = Math.floor((vertices[i * 3] - idx.origin[0]) / s)
+    const y = Math.floor((vertices[i * 3 + 1] - idx.origin[1]) / s)
+    const z = Math.floor((vertices[i * 3 + 2] - idx.origin[2]) / s)
+    for (const [dx, dy, dz] of near) {
+      const id = voxelId(idx, x + dx, y + dy, z + dz)
+      if (id >= 0 && selected[id]) {
+        out[i] = 1
+        break
+      }
+    }
+  }
+  return out
+}
+
 export function boundsOfPoints(positions: Float32Array, points: Uint32Array): Bounds {
   const min: Vec3 = [Infinity, Infinity, Infinity]
   const max: Vec3 = [-Infinity, -Infinity, -Infinity]

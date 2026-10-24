@@ -10,6 +10,7 @@ import type { FrameRecord } from './formats'
 import type { LoadedCapture } from './loadCapture'
 import { CameraTween, FlyControls, PickHandler, PivotMarker, type CameraGoal, type NavMode } from './Navigation'
 import { dominantQuarterTurns, type Vec3 } from './pose'
+import { verticesInVoxels } from './spatial'
 import { StaticCloud } from './StaticCloud'
 import { RoomSurfaceMesh } from './RoomSurfaceMesh'
 import { usePlayback } from './usePlayback'
@@ -128,6 +129,11 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
   const surface = surfaceState.status === 'ready' ? surfaceState.surface : null
   const selectionSizes = useMemo(() => (sizes && selection ? Float32Array.from(selection.points, (i) => sizes[i]) : null), [sizes, selection])
   const room = indexState.status === 'ready' ? indexState.room : null
+  // The selected object as part of the connected surface.
+  const surfaceSelection = useMemo(
+    () => (surface && selection && room ? verticesInVoxels(room.index, selection.voxels, surface.positions) : null),
+    [surface, selection, room],
+  )
 
   const startCam = bounds
     ? ([bounds.center.x + bounds.radius * 0.6, bounds.center.y + bounds.radius * 1.3, bounds.center.z + bounds.radius * 1.0] as const)
@@ -227,19 +233,22 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
               <color attach="background" args={['#05060a']} />
               <HoleFill />
               {surface && showSurface ? (
-                <RoomSurfaceMesh surface={surface} dim={selection ? 0.45 : canReplayPeople && playback.playing ? 0.55 : 1} />
+                <RoomSurfaceMesh surface={surface} selected={surfaceSelection} tint={ACCENT} dim={canReplayPeople && playback.playing ? 0.55 : 1} />
               ) : (
-                <StaticCloud cloud={cloud} sizes={sizes} dim={selection ? 0.45 : canReplayPeople && playback.playing ? 0.55 : 1} />
+                <StaticCloud cloud={cloud} sizes={sizes} dim={canReplayPeople && playback.playing ? 0.55 : 1} />
               )}
               {selection && (
                 <>
-                  <StaticCloud cloud={selection.cloud} sizes={selectionSizes} pointSize={1.2} tint={ACCENT} tintMix={0.35} renderOrder={1} />
+                  {!(surface && showSurface) && (
+                    <StaticCloud cloud={selection.cloud} sizes={selectionSizes} pointSize={1.2} tint={ACCENT} tintMix={0.35} renderOrder={1} />
+                  )}
                   <SelectionBox selection={selection} />
                 </>
               )}
               {canFollow && showPath && <CameraPath frames={moment} timeRef={playback.timeRef} />}
               {canReplayPeople && capture.id && manifest && videoEl && (
-                <DepthReplay captureId={capture.id} manifest={manifest} frames={moment} video={videoEl} timeRef={playback.timeRef} />
+                // While paused you explore and select the room itself; people replay while the visit plays.
+                <DepthReplay captureId={capture.id} manifest={manifest} frames={moment} video={videoEl} timeRef={playback.timeRef} show={playback.playing || !(surface && showSurface)} />
               )}
               {mode === 'follow' && canFollow && <FollowCamera frames={moment} timeRef={playback.timeRef} videoW={videoW} videoH={videoH} />}
               {mode === 'orbit' && (

@@ -48,6 +48,7 @@ export function DepthReplay({
   frames,
   video,
   timeRef,
+  show = true,
   minConfidence = 1,
 }: {
   captureId: string
@@ -55,6 +56,8 @@ export function DepthReplay({
   frames: FrameRecord[]
   video: HTMLVideoElement
   timeRef: MutableRefObject<number>
+  /** Hide without unloading (keeps depth frames and textures ready). */
+  show?: boolean
   minConfidence?: number
 }) {
   const { width, height } = manifest.depth
@@ -208,5 +211,5 @@ export function DepthReplay({
     material.uniforms.uVisible.value = 1
   })
 
-  return <mesh geometry={geometry} material={material} frustumCulled={false} />
+  return <mesh geometry={geometry} material={material} frustumCulled={false} visible={show} />
 }
