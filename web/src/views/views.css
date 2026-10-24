@@ -613,3 +613,16 @@ blockquote {
 .pill.after_cue {
   color: var(--bd-warn);
 }
+
+/* Fact review page */
+.facts-page-body {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 16px 24px 80px;
+}
+.facts-page-body .facts-panel {
+  font-size: 14px;
+}
+.facts-page-body .evidence .frame {
+  width: 140px;
+}

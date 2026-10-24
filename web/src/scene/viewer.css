@@ -27,18 +27,12 @@
   background: var(--bd-panel, #0a0f18);
 }
 .viewer-video {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #000;
   padding: 8px;
-  max-height: 55%;
-}
-.viewer-side-content {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  border-top: 1px solid var(--bd-line, #1a2230);
 }
 .viewer-timeline .layers {
   display: flex;

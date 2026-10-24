@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
 import { SceneViewer } from '../scene/SceneViewer'
 import { loadGuideCapture, type LoadedCapture } from '../scene/loadCapture'
-import { FactsPanel } from './FactsPanel'
 
-/** One capture from the guide: the 3D room and the visit, with the family's fact review. */
-export function CaptureView({ id }: { id: string }) {
+/** One capture from the guide: the 3D room and the visit. `startAt` opens it at that second. */
+export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
   const [capture, setCapture] = useState<LoadedCapture | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -38,6 +37,7 @@ export function CaptureView({ id }: { id: string }) {
           )}
         </div>
         <nav className="bar-links">
+          <a href={`#/facts/${id}`}>Facts</a>
           <a href={`#/revisit/${id}`}>Revisit</a>
           <a href={`#/dashboard/${id}`}>Dashboard</a>
         </nav>
@@ -51,7 +51,7 @@ export function CaptureView({ id }: { id: string }) {
       )}
       <main className="main">
         <div className="viewer-wrap">
-          <SceneViewer capture={capture} side={(seek) => <FactsPanel captureId={id} onSeek={seek} />} />
+          <SceneViewer capture={capture} startAt={startAt} />
         </div>
       </main>
     </div>

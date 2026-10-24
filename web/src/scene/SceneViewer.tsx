@@ -1,6 +1,6 @@
 import { OrbitControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { CameraPath, FollowCamera } from './CameraPath'
 import { cloudBounds } from './cloudBounds'
@@ -21,9 +21,6 @@ const IS_WINDOWS = typeof navigator !== 'undefined' && /win/i.test(navigator.pla
 
 export type { NavMode }
 
-/** Lets side content (the facts panel) drive playback. */
-export type Seek = (t: number, play?: boolean) => void
-
 interface Props {
   capture: LoadedCapture
   initialMode?: NavMode
@@ -32,8 +29,8 @@ interface Props {
   showVideo?: boolean
   /** Turn off flying and selection. */
   interactive?: boolean
-  /** Shown under the video, e.g. the family's fact review. */
-  side?: (seek: Seek) => ReactNode
+  /** Seconds into the visit to start at, e.g. when opened from a fact's evidence. */
+  startAt?: number
 }
 
 const HELP: Record<NavMode, string> = {
@@ -47,7 +44,7 @@ const HELP: Record<NavMode, string> = {
  * fly through, the recorder's path, object selection, and the recorded video in a
  * synced panel. Areas without data stay empty.
  */
-export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVideo = true, interactive = true, side }: Props) {
+export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVideo = true, interactive = true, startAt }: Props) {
   const { cloud, frames, manifest } = capture
   const moment = frames?.moment ?? NO_FRAMES
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -91,13 +88,13 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
   // Stored frames are sensor-landscape; turn them upright the same way the camera path does.
   const videoTurns = turns
   const canReplayPeople = Boolean(capture.id && manifest && manifest.depth?.count > 0 && moment.length > 0 && videoEl && hasVideo)
-  const seekTo: Seek = useCallback(
-    (t, play) => {
-      playback.seek(t)
-      if (play) playback.play()
-    },
-    [playback],
-  )
+  // Jump to `startAt` once, as soon as the video knows its length.
+  const startedAt = useRef(false)
+  useEffect(() => {
+    if (startAt === undefined || startedAt.current || videoDuration === null) return
+    startedAt.current = true
+    playback.seek(startAt)
+  }, [startAt, videoDuration, playback])
   const bounds = useMemo(() => (cloud ? cloudBounds(cloud) : null), [cloud])
   const canFollow = moment.length > 0
   const indexState = useRoomIndex(interactive ? cloud : null)
@@ -247,26 +244,23 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
           </div>
         </div>
 
-        {(showVideo || side) && (
+        {showVideo && (
           <div className="viewer-side">
-            {showVideo && (
-              <div className="viewer-video">
-                {capture.videoUrl && !videoError ? (
-                  <VideoPanel
-                    src={capture.videoUrl}
-                    videoRef={attachVideo}
-                    quarterTurns={videoTurns}
-                    videoW={videoW}
-                    videoH={videoH}
-                    onError={setVideoError}
-                    onDuration={setVideoDuration}
-                  />
-                ) : (
-                  <div className="viewer-empty">{videoError ?? 'No video in this capture.'}</div>
-                )}
-              </div>
-            )}
-            {side && <div className="viewer-side-content">{side(seekTo)}</div>}
+            <div className="viewer-video">
+              {capture.videoUrl && !videoError ? (
+                <VideoPanel
+                  src={capture.videoUrl}
+                  videoRef={attachVideo}
+                  quarterTurns={videoTurns}
+                  videoW={videoW}
+                  videoH={videoH}
+                  onError={setVideoError}
+                  onDuration={setVideoDuration}
+                />
+              ) : (
+                <div className="viewer-empty">{videoError ?? 'No video in this capture.'}</div>
+              )}
+            </div>
           </div>
         )}
       </div>

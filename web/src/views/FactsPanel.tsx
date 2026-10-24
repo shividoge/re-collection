@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { captureFileUrl, guide, GuideError } from '../api'
 import type { CaptureStatus, Fact, FactChange, Moment } from '../api'
-import type { Seek } from '../scene/SceneViewer'
+
+/** Jumps to a moment of the visit; `play` starts playback there. */
+export type Seek = (t: number, play?: boolean) => void
 
 /**
  * Family review (CLAUDE.md 6.3): every fact Claude extracted, next to the
