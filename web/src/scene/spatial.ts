@@ -403,37 +403,29 @@ export interface Bounds {
 }
 
 /**
- * Which vertices of the room surface belong to a selection: those in a selected voxel or right
- * next to one (face neighbors), since the fused surface sits within a voxel of the points it
- * came from. Returns 1 per selected vertex.
+ * A selection as a dense voxel grid (x fastest, then y, then z, over `idx.dims`): 1 in its voxels
+ * and their face neighbors, since a fused surface or a replayed depth pixel sits within a voxel of
+ * the points it matches. Uploaded as a 3D texture so shaders can tint the selected object.
  */
-export function verticesInVoxels(idx: VoxelIndex, voxels: Uint32Array, vertices: Float32Array): Uint8Array {
-  const selected = new Uint8Array(idx.voxelCount)
-  for (const v of voxels) selected[v] = 1
-  const out = new Uint8Array(vertices.length / 3)
-  const s = idx.size
-  const near = [
-    [0, 0, 0],
-    [1, 0, 0],
-    [-1, 0, 0],
-    [0, 1, 0],
-    [0, -1, 0],
-    [0, 0, 1],
-    [0, 0, -1],
-  ]
-  for (let i = 0; i < out.length; i++) {
-    const x = Math.floor((vertices[i * 3] - idx.origin[0]) / s)
-    const y = Math.floor((vertices[i * 3 + 1] - idx.origin[1]) / s)
-    const z = Math.floor((vertices[i * 3 + 2] - idx.origin[2]) / s)
-    for (const [dx, dy, dz] of near) {
-      const id = voxelId(idx, x + dx, y + dy, z + dz)
-      if (id >= 0 && selected[id]) {
-        out[i] = 1
-        break
-      }
-    }
+export function selectionMask(idx: VoxelIndex, voxels: Uint32Array): Uint8Array {
+  const [dx, dy, dz] = idx.dims
+  const mask = new Uint8Array(dx * dy * dz)
+  const set = (x: number, y: number, z: number) => {
+    if (x >= 0 && y >= 0 && z >= 0 && x < dx && y < dy && z < dz) mask[(z * dy + y) * dx + x] = 1
   }
-  return out
+  for (const v of voxels) {
+    const x = idx.coords[v * 3]
+    const y = idx.coords[v * 3 + 1]
+    const z = idx.coords[v * 3 + 2]
+    set(x, y, z)
+    set(x + 1, y, z)
+    set(x - 1, y, z)
+    set(x, y + 1, z)
+    set(x, y - 1, z)
+    set(x, y, z + 1)
+    set(x, y, z - 1)
+  }
+  return mask
 }
 
 export function boundsOfPoints(positions: Float32Array, points: Uint32Array): Bounds {

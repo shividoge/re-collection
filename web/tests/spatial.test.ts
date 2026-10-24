@@ -11,7 +11,7 @@ import {
   pointsOfVoxels,
   raycastVoxels,
   segmentAt,
-  verticesInVoxels,
+  selectionMask,
   visibleIntervals,
 } from '../src/scene/spatial'
 import { K, ROOM, TABLE, VIDEO, lookAtPose, makeFixture } from './fixture'
@@ -92,10 +92,17 @@ describe('spatial queries on the synthetic room', () => {
     expect(visibleIntervals(idx, seg.voxels, [behindWall, lookingAway], VIDEO.width, VIDEO.height)).toEqual([])
   })
 
-  it('marks surface vertices on the selected object, not on the wall behind it', () => {
+  it('masks the selected object and its immediate surroundings, not the wall behind it', () => {
     const seg = segmentAt(idx, structure, raycastVoxels(idx, [0, 2, 0], [0, -1, 0])!.id)
-    // A vertex on the table top, one just above it (a fused surface sits within a voxel), and one on a wall.
-    const verts = new Float32Array([0.1, TABLE.center[1], 0.1, -0.2, TABLE.center[1] + 0.02, 0.05, ROOM.xMax, 1.2, 0])
-    expect(Array.from(verticesInVoxels(idx, seg.voxels, verts))).toEqual([1, 1, 0])
+    const mask = selectionMask(idx, seg.voxels)
+    const [dx, dy] = idx.dims
+    const at = (p: [number, number, number]) => {
+      const [x, y, z] = p.map((c, a) => Math.floor((c - idx.origin[a]) / idx.size))
+      return mask[(z * dy + y) * dx + x]
+    }
+    expect(at([0.1, TABLE.center[1], 0.1])).toBe(1)
+    expect(at([-0.2, TABLE.center[1] + 0.02, 0.05])).toBe(1) // just above the top: within a voxel
+    expect(at([ROOM.xMax, 1.2, 0])).toBe(0)
+    expect(at([0, 0.3, 0])).toBe(0) // the floor area under the table
   })
 })

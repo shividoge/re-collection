@@ -7,6 +7,7 @@ import type { Manifest } from '../api'
 import type { FrameRecord } from './formats'
 import { depthMeshIndices } from './gaps'
 import { frameIndexAtTime } from './pose'
+import { SELECTION_GLSL, applySelection, selectionUniforms, type SelectionTint } from './selectionTint'
 
 type DepthFrame = { data: Float32Array }
 
@@ -49,6 +50,7 @@ export function DepthReplay({
   video,
   timeRef,
   show = true,
+  selection = null,
   minConfidence = 1,
 }: {
   captureId: string
@@ -58,6 +60,8 @@ export function DepthReplay({
   timeRef: MutableRefObject<number>
   /** Hide without unloading (keeps depth frames and textures ready). */
   show?: boolean
+  /** The selected object, tinted here too so it stays visible under the replay. */
+  selection?: SelectionTint | null
   minConfidence?: number
 }) {
   const { width, height } = manifest.depth
@@ -109,6 +113,7 @@ export function DepthReplay({
           uK: { value: new THREE.Vector4() }, // fx', fy', cx', cy' on the depth grid
           uT: { value: new THREE.Matrix4() }, // camera-to-world for this depth frame
           uVisible: { value: 0 },
+          ...selectionUniforms(),
         },
         side: THREE.DoubleSide,
         vertexShader: /* glsl */ `
@@ -119,6 +124,7 @@ export function DepthReplay({
           uniform float uVisible;
           attribute vec2 pixel;
           varying vec2 vUv;
+          varying vec3 vWorld;
           void main() {
             vUv = (pixel + 0.5) / uGrid;
             float d = texture2D(uDepth, vUv).r;   // meters; unmeasured pixels are never in a triangle
@@ -128,34 +134,25 @@ export function DepthReplay({
             }
             // Image-camera space (y down, z forward), then ARKit camera space.
             vec3 cam = vec3((pixel.x - uK.z) * d / uK.x, -((pixel.y - uK.w) * d / uK.y), -d);
-            gl_Position = projectionMatrix * viewMatrix * (uT * vec4(cam, 1.0));
+            vec4 world = uT * vec4(cam, 1.0);
+            vWorld = world.xyz;
+            gl_Position = projectionMatrix * viewMatrix * world;
           }
         `,
         fragmentShader: /* glsl */ `
           uniform sampler2D uVideo;
           varying vec2 vUv;
+          varying vec3 vWorld;
+          ${SELECTION_GLSL}
           void main() {
-            gl_FragColor = vec4(texture2D(uVideo, vUv).rgb, 1.0);
+            gl_FragColor = vec4(tintSelected(texture2D(uVideo, vUv).rgb, vWorld), 1.0);
           }
         `,
       }),
     [depthTexture, videoTexture, width, height],
   )
 
-  // A paused video never pushes its frame to the GPU on its own, which left the replay black
-  // until playback. Upload the current frame whenever one is ready or the video is moved.
-  useEffect(() => {
-    const refresh = () => {
-      if (video.readyState >= 2) videoTexture.needsUpdate = true
-    }
-    refresh()
-    video.addEventListener('loadeddata', refresh)
-    video.addEventListener('seeked', refresh)
-    return () => {
-      video.removeEventListener('loadeddata', refresh)
-      video.removeEventListener('seeked', refresh)
-    }
-  }, [video, videoTexture])
+  useEffect(() => applySelection(material, selection), [material, selection])
 
   useEffect(
     () => () => {
@@ -181,7 +178,15 @@ export function DepthReplay({
       .catch(() => cache.current.delete(k))
   }
 
+  // A paused video never pushes its frame to the GPU on its own (the replay stayed black or
+  // missing until playback). Upload it once whenever the paused frame changes.
+  const uploadedAt = useRef(-1)
+
   useFrame(() => {
+    if (video.paused && video.readyState >= 2 && video.currentTime !== uploadedAt.current) {
+      videoTexture.needsUpdate = true
+      uploadedAt.current = video.currentTime
+    }
     const frame = depthFrameNear(frames, frameIndexAtTime(frames, timeRef.current))
     if (frame < 0) {
       material.uniforms.uVisible.value = 0
