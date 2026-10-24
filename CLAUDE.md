@@ -265,28 +265,29 @@ Never cut: real capture, grounded facts with family approval, grounding enforcem
 
 ## Status
 
-**Last updated:** Sat Oct 24, afternoon PT, by Shivin's Claude session. Team summary: `docs/TEAM-HANDOFF.md`.
+**Last updated:** Sat Oct 24, evening PT, by Shivin's Claude session. Team summary: `docs/TEAM-HANDOFF.md`. Sponsor plan: `docs/SPONSOR-PLAN.md`.
 
 **Done and working** (checked on real hardware or real Claude):
-- **iPhone app** (`ios/`): live room scan, visit recording, on-device transcript, keyframes, review screen, upload, AirDrop zip. PR #10 adds an optional medium-confidence depth setting (not yet tested on a device).
-- **Guide server** (`guide/`, 66 tests): everything through revisit sessions, grounding, distress, scoring and progress is on `main`. Open PRs add a read-only `/public` surface, a static exporter and the Revisit/dashboard support.
-- **Website** (`web/`): viewer, family review, patient Revisit screen, family dashboard, and a public front page with a scroll-driven walkthrough. These are in the stacked PRs #9, #11, #12, #14. **PR #13 (Firdavs) replaces `web/` with his viewer and overlaps all of them: decide which tree we keep** (see `docs/TEAM-HANDOFF.md`).
-- **Public site:** live at https://shividoge.github.io/braindance-site/ (repo `shividoge/braindance-site`), four real scans: Anthropic booth, Cal Hacks sign, Hardware Lab table, Cal Hacks bear. Publish steps: `deploy/static/README.md`.
-- **Real data** (in `guide/data`, not in git): the four captures above with approved facts and one narration-only session each (nobody spoke, so the recall chart is an empty state).
+- **iPhone app** (`ios/`): live room scan, visit recording, on-device transcript, keyframes, review, upload, AirDrop zip, and a **guided UI** (step bar, live coaching, one big button per screen; PR #21 merged, tried on the phone). PR #10 adds an optional medium-confidence depth setting (not yet tested on a device).
+- **Guide server** (`guide/`, 44 tests on `main`, 67 with PR #17): uploads, fact extraction, review, revisit sessions, grounding, distress, scoring, progress. PR #17 adds the read-only `/public` routes and the static exporter.
+- **Website** (`web/`): Firdavs's viewer is on `main` (PR #13): orbit, fly, select, visit dock (the Revisit screen), dashboard, fact review. **PR #17** puts the public front page (scroll-driven walkthrough), the read-only viewer `#/p/<id>` and the "Public" switch on top of it. **PR #16** (Firdavs) improves render quality.
+- **Public site:** live at https://shividoge.github.io/braindance-site/ (repo `shividoge/braindance-site`), four real scans (Anthropic booth, Cal Hacks sign, Hardware Lab table, Cal Hacks bear). It is a snapshot built before #17 and #16; republish after they merge.
+- **Real data** (in `guide/data`, not in git): the four captures with approved facts and one narration-only session each (nobody has talked back, so the recall chart is an empty state).
 
 **Not done yet:**
-- **The demo capture** (tonight 20:00) with real people talking, then 3+ real Revisit sessions spaced a few hours apart.
-- Clap test; demo video; Devpost; pitch rehearsal.
+- **The demo capture** (tonight 20:00) with real people talking, then 3+ real Revisit sessions a few hours apart.
+- Review and merge #17 and #16; close the old stacked PRs #9, #11, #12, #14 after #17 merges.
+- Sponsor work (`docs/SPONSOR-PLAN.md`), clap test, demo video, Devpost, pitch rehearsal.
+- Stretch: photo-to-3D (`docs/PHOTO-TO-3D.md`), re-scan the sign.
 - IBS27's role isn't confirmed (invite was pending).
-- Optional: Cartesia voice, a LiDAR "far mode".
 
 **Next steps, in order:**
-1. Shivin and Firdavs decide the `web/` question (#13 versus #9/#11/#12/#14), then merge in a clear order.
-2. Film the demo capture at 20:00, import it, review facts, run real sessions.
-3. Rebuild and republish the public site (`./deploy/static/build.sh` then `publish.sh ... --publish`).
+1. Film the demo capture at 20:00, import it, review facts, run real sessions.
+2. Review and merge #17 and #16, then republish the public site (ask Shivin).
+3. Do the sponsor opt-ins and the cheap integrations.
 4. Demo video, Devpost, rehearse. Submit by 8:30 AM Sunday (hard deadline 9:00).
 
-**Open questions:** which `web/` we keep; IBS27's role; where tonight's filming happens and who plays the grandparent; consent from everyone filmed.
+**Open questions:** which sponsors to chase beyond the opt-ins; where tonight's filming happens and who plays the grandparent; consent from everyone filmed.
 
 ### Local machine notes (Shivin's MacBook Air)
 
@@ -322,6 +323,7 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 - 2026-10-24 08:15 | Shivin + Claude | guide step 4: sessions, reply grounding, distress, scoring, progress; fixes from a real Claude run (PR #8) | merge PR #8; sign scan diagnosis; Revisit screen + dashboard
 - 2026-10-24 08:20 | Shivin + Claude | handoff written: Shivin switching Claude accounts | next session starts at "Next steps" above
 - 2026-10-24 ~13:00 | Shivin + Claude | PR #8 merged; Revisit screen + dashboard (#9); public site, static export and GitHub Pages (#11, #12, #14); iOS medium-confidence option (#10); four real scans published | decide the web/ tree with Firdavs's #13; tonight's demo capture
+- 2026-10-24 ~19:00 | Shivin + Claude | Firdavs's web/ merged (#13); public site ported onto it (#17); briefs for render quality, photo-to-3D and sponsors; guided phone UI merged (#21) | review #17 and #16; demo capture 20:00; sponsor work
 
 ---
 
