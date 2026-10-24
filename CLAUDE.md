@@ -265,29 +265,29 @@ Never cut: real capture, grounded facts with family approval, grounding enforcem
 
 ## Status
 
-**Last updated:** Sat Oct 24, 08:20 PT, by Shivin's Claude session (account handoff: Shivin is switching to another Claude account; everything needed to continue is below)
+**Last updated:** Sat Oct 24, evening PT, by Shivin's Claude session. Team summary: `docs/TEAM-HANDOFF.md`. Sponsor plan: `docs/SPONSOR-PLAN.md`.
 
-**Done and working** (all checked on real hardware or real Claude, not just tests):
-- **iPhone app** (`ios/`, on `main`): live GPU point cloud room scan, `room.bin`/`room.ply` export, visit recording in the same ARKit session (H.264 video + audio, a pose per frame, 10 Hz depth/confidence), on-device transcript, one keyframe per second, review screen (title, attendees), upload to the guide, AirDrop zip. Installed on Shivin's iPhone 16 Pro Max. 31 unit tests.
-- **Guide server** (`guide/`): uploads, validation, Range file serving, `npm run import`; Claude fact extraction (Opus 5.5) with the grounding check; family review routes; revisit sessions with reply grounding, distress, branches, Opus recall scoring, `/api/progress`, `/api/person`. 43 tests. Steps 1–3 on `main`; step 4 on branch `guide/sessions`, **PR #8 open, not merged yet**.
-- **Website** (`web/`, served by the guide at `/`, on `main`): gallery with zip drag-and-drop upload, 3D room viewer, camera path, synced video, people replayed in 3D from depth (DepthReplay), Orbit / Phone's view, family fact review panel.
-- **Real data:** one good capture (MLH Hardware Lab table, id `aa8ba104…`) in `guide/data/captures/` with keyframes and 16 facts that Shivin reviewed in the web app (no transcript; nobody spoke). Also on the GitHub release `sample-capture-1` (without keyframes).
+**Done and working** (checked on real hardware or real Claude):
+- **iPhone app** (`ios/`): live room scan, visit recording, on-device transcript, keyframes, review, upload, AirDrop zip, and a **guided UI** (step bar, live coaching, one big button per screen; PR #21 merged, tried on the phone). PR #10 adds an optional medium-confidence depth setting (not yet tested on a device).
+- **Guide server** (`guide/`, 44 tests on `main`, 67 with PR #17): uploads, fact extraction, review, revisit sessions, grounding, distress, scoring, progress. PR #17 adds the read-only `/public` routes and the static exporter.
+- **Website** (`web/`): Firdavs's viewer is on `main` (PR #13): orbit, fly, select, visit dock (the Revisit screen), dashboard, fact review. **PR #17** puts the public front page (scroll-driven walkthrough), the read-only viewer `#/p/<id>` and the "Public" switch on top of it. **PR #16** (Firdavs) improves render quality.
+- **Public site:** live at https://shividoge.github.io/braindance-site/ (repo `shividoge/braindance-site`), four real scans (Anthropic booth, Cal Hacks sign, Hardware Lab table, Cal Hacks bear). It is a snapshot built before #17 and #16; republish after they merge.
+- **Real data** (in `guide/data`, not in git): the four captures with approved facts and one narration-only session each (nobody has talked back, so the recall chart is an empty state).
 
 **Not done yet:**
-- Patient **Revisit screen** (CLAUDE.md 7.4) and family **dashboard** (7.5) on the website. The guide routes for both are done (PR #8).
-- A scan of the Cal Hacks sign came out much worse than the table. Not diagnosed yet: the capture isn't on the Mac. Likely causes: distance (the app keeps only high-confidence depth under 4.5 m), bright light, glossy/dark/LED letters. A possible fix is a "far mode" that keeps medium-confidence points out to ~5 m.
-- **The demo capture** (tonight 20:00): scan the room before people arrive, then 1–2 minutes of family talking about specific things (a named dish, gift, story, place) so Claude gets quotes and the replay shows people.
-- Clap test (audio/video sync) with hands in frame.
-- Public URL for judges: cloudflared tunnel. Claude Code's safety rules block it from starting a tunnel, so Shivin runs it himself (below).
-- IBS27's role (proposed in TASKS.md) isn't confirmed, and he hasn't accepted the GitHub invite.
+- **The demo capture** (tonight 20:00) with real people talking, then 3+ real Revisit sessions a few hours apart.
+- Review and merge #17 and #16; close the old stacked PRs #9, #11, #12, #14 after #17 merges.
+- Sponsor work (`docs/SPONSOR-PLAN.md`), clap test, demo video, Devpost, pitch rehearsal.
+- Stretch: photo-to-3D (`docs/PHOTO-TO-3D.md`), re-scan the sign.
+- IBS27's role isn't confirmed (invite was pending).
 
 **Next steps, in order:**
-1. Merge PR #8 (`gh pr merge 8 --repo shividoge/braindance --merge`), then `git switch main && git pull`.
-2. Diagnose the sign scan once Shivin AirDrops the zip (point count, depth confidence and distance stats, tracking) and add a far mode to the app if distance is the cause.
-3. Build the Revisit screen and the dashboard in `web/` (branch `web/revisit`), against the session routes in `docs/guide-api.md`.
-4. Help plan and then check the 20:00 demo capture.
+1. Film the demo capture at 20:00, import it, review facts, run real sessions.
+2. Review and merge #17 and #16, then republish the public site (ask Shivin).
+3. Do the sponsor opt-ins and the cheap integrations.
+4. Demo video, Devpost, rehearse. Submit by 8:30 AM Sunday (hard deadline 9:00).
 
-**Open questions:** IBS27's role; where tonight's filming happens and who plays the grandparent; consent from everyone filmed.
+**Open questions:** which sponsors to chase beyond the opt-ins; where tonight's filming happens and who plays the grandparent; consent from everyone filmed.
 
 ### Local machine notes (Shivin's MacBook Air)
 
@@ -322,6 +322,8 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 - 2026-10-24 ~08:00 | Shivin + Claude | family fact review panel in the viewer | guide step 4
 - 2026-10-24 08:15 | Shivin + Claude | guide step 4: sessions, reply grounding, distress, scoring, progress; fixes from a real Claude run (PR #8) | merge PR #8; sign scan diagnosis; Revisit screen + dashboard
 - 2026-10-24 08:20 | Shivin + Claude | handoff written: Shivin switching Claude accounts | next session starts at "Next steps" above
+- 2026-10-24 ~13:00 | Shivin + Claude | PR #8 merged; Revisit screen + dashboard (#9); public site, static export and GitHub Pages (#11, #12, #14); iOS medium-confidence option (#10); four real scans published | decide the web/ tree with Firdavs's #13; tonight's demo capture
+- 2026-10-24 ~19:00 | Shivin + Claude | Firdavs's web/ merged (#13); public site ported onto it (#17); briefs for render quality, photo-to-3D and sponsors; guided phone UI merged (#21) | review #17 and #16; demo capture 20:00; sponsor work
 
 ---
 
