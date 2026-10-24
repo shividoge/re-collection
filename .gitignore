@@ -1,0 +1,11 @@
+.DS_Store
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+.env
+server/data/
+ios/DerivedData/
+*.xcuserstate
+xcuserdata/
