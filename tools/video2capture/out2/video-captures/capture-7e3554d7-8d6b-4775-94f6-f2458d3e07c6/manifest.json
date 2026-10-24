@@ -1,0 +1,61 @@
+{
+  "format": "braindance.capture",
+  "version": 1,
+  "id": "7e3554d7-8d6b-4775-94f6-f2458d3e07c6",
+  "createdAt": "2026-10-24T22:32:29.000000Z",
+  "device": "video (DA3-BASE)",
+  "source": "video",
+  "title": "Old clip IMG_9518",
+  "attendees": [],
+  "coordinates": "arkit-world-meters-y-up",
+  "imageOrientation": "upright",
+  "video": {
+    "file": "video.mp4",
+    "width": 1920,
+    "height": 1080,
+    "fps": 57,
+    "durationSec": 7.25,
+    "frameCount": 410
+  },
+  "audio": {
+    "inVideo": true,
+    "sampleRate": 48000,
+    "channels": 1
+  },
+  "depth": {
+    "file": "depth.bin",
+    "confidenceFile": "confidence.bin",
+    "width": 256,
+    "height": 192,
+    "unit": "mm",
+    "rateHz": 2.207,
+    "count": 16,
+    "estimated": true,
+    "model": "Depth Anything 3 (DA3-BASE)",
+    "scale": "approximate"
+  },
+  "mesh": {
+    "present": false
+  },
+  "room": {
+    "ply": "room.ply",
+    "bin": "room.bin",
+    "points": 171618,
+    "voxelMeters": 0.015,
+    "source": "estimated-from-video"
+  },
+  "keyframes": {
+    "dir": "keyframes",
+    "everySec": 1,
+    "count": 8
+  },
+  "phases": {
+    "moment": {
+      "tStart": 0,
+      "tEnd": 7.25
+    }
+  },
+  "warnings": [
+    "Reconstructed from an ordinary video by Depth Anything 3 (DA3-BASE). The room, depth, scale and camera path are estimated, not measured."
+  ]
+}

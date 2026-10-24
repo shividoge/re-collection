@@ -31,9 +31,9 @@ done
 
 ```bash
 .venv/bin/python video2capture.py ~/Downloads/IMG_9518.MOV --title "Cal Hacks booth" --out out
-npm --prefix ../../guide run import -- out/capture-<id>
+npm --prefix ../../guide run import -- "$PWD/out/capture-<id>"   # absolute path: npm runs the script from guide/
 ```
 
-Options: `--max-frames` (default keeps memory in check on a laptop), `--sample-fps`. Check the result
+Options: `--attendees "Priya,Sam"`, `--sample-fps` (default 2), `--max-frames` (default 40, for laptop memory), `--device mps|cuda|cpu`. Check the result
 in the viewer: if the room looks upside down or mirrored, the pose conversion in `to_capture_pose`
 is the place to look.

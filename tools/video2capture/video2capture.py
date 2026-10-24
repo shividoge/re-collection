@@ -12,7 +12,7 @@ Output follows docs/capture-format.md (same files a phone capture has), so the g
 fact extraction, review, revisit sessions, the viewer and the Memory Window all work unchanged:
 
     .venv/bin/python video2capture.py ~/Movies/birthday-2015.mov --title "Mom's 70th birthday"
-    npm --prefix ../../guide run import -- out/capture-<id>
+    npm --prefix ../../guide run import -- "$PWD/out/capture-<id>"
 
 Coordinates: DA3 returns OpenCV-style world-to-camera poses (x right, y down, z forward) in the
 first camera's frame. We convert to the capture convention (ARKit: x right, y up, camera looks
@@ -95,7 +95,14 @@ def extract_frames(video: Path, times: list[float], folder: Path, width: int | N
     for k, t in enumerate(times):
         p = folder / f"f{k:04d}.jpg"
         vf = ["-vf", f"scale={width}:-2"] if width else []
-        run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", str(video), "-frames:v", "1", *vf, "-q:v", "2", str(p)])
+        # Some phone videos end a little before their stated duration; step back until a frame comes out.
+        for back in (0.0, 0.25, 0.5, 1.0):
+            run(["ffmpeg", "-v", "error", "-y", "-ss", f"{max(0.0, t - back):.3f}", "-i", str(video), "-frames:v", "1",
+                 *vf, "-pix_fmt", "yuvj420p", "-q:v", "2", str(p)])
+            if p.exists():
+                break
+        else:
+            raise SystemExit(f"Couldn't read a frame near {t:.2f}s from {video}")
         paths.append(p)
     return paths
 
@@ -273,11 +280,10 @@ def main() -> None:
     write_room_bin(out / "room.bin", points, colors)
     write_room_ply(out / "room.ply", points, colors)
 
-    # ---- depth.bin / confidence.bin on a small grid, long side 256 ----
-    if w >= h:
-        dw, dh = 256, max(2, round(256 * h / w))
-    else:
-        dw, dh = max(2, round(256 * w / h)), 256
+    # ---- depth.bin / confidence.bin on the phone's 256x192 grid ----
+    # The web viewer assumes LiDAR's 256x192 for every capture and scales K per axis
+    # (fx by 256/videoW, fy by 192/videoH), so any video aspect works on this grid.
+    dw, dh = 256, 192
     with open(out / "depth.bin", "wb") as fd, open(out / "confidence.bin", "wb") as fc:
         for k in range(n):
             d = np.asarray(Image.fromarray(depth[k]).resize((dw, dh), Image.NEAREST))
@@ -311,8 +317,9 @@ def main() -> None:
     print("[6/6] Keyframes and manifest…")
     (out / "keyframes").mkdir()
     for s in range(int(math.floor(duration - 1e-3)) + 1):
-        run(["ffmpeg", "-v", "error", "-y", "-ss", f"{s}", "-i", str(video), "-frames:v", "1",
-             "-vf", "scale='if(gt(iw,ih),1024,-2)':'if(gt(iw,ih),-2,1024)'", "-q:v", "3", str(out / f"keyframes/k{s:04d}.jpg")])
+        # Seek a little before the end for the last second: a seek past the final frame writes nothing.
+        run(["ffmpeg", "-v", "error", "-y", "-ss", f"{min(s, max(0.0, duration - 0.3)):.3f}", "-i", str(video), "-frames:v", "1",
+             "-vf", "scale='if(gt(iw,ih),1024,-2)':'if(gt(iw,ih),-2,1024)'", "-pix_fmt", "yuvj420p", "-q:v", "3", str(out / f"keyframes/k{s:04d}.jpg")])
     shutil.copy(out / f"keyframes/k{min(2, int(duration - 1e-3)):04d}.jpg", out / "thumb.jpg")
 
     created = info["created"] or datetime.now(timezone.utc).isoformat()
