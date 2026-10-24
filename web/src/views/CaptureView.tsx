@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { SceneViewer } from '../scene/SceneViewer'
 import { loadGuideCapture, type LoadedCapture } from '../scene/loadCapture'
+import { PublicSwitch } from './PublicSwitch'
 import { VisitDock } from './VisitDock'
 
 /**
@@ -28,7 +29,7 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
   return (
     <div className="page">
       <header className="bar">
-        <a href="#/" className="back">
+        <a href="#/captures" className="back">
           ← Captures
         </a>
         <div className="bar-title">
@@ -43,6 +44,7 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
         <nav className="bar-links">
           <a href={`#/facts/${id}`}>Facts</a>
           <a href={`#/dashboard/${id}`}>Dashboard</a>
+          <PublicSwitch id={id} initial={capture.isPublic} />
         </nav>
       </header>
       {capture.errors.length > 0 && (

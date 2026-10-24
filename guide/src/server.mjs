@@ -9,6 +9,7 @@ import { guideRoot, loadConfig } from './config.mjs';
 import { CORS_HEADERS, readJsonBody, sendError, sendFile, sendJson } from './http.mjs';
 import { ClaudeError, createClaude } from './claude.mjs';
 import { extractFacts } from './facts.mjs';
+import { createPublic } from './public.mjs';
 import { createSessions, SessionError } from './session.mjs';
 import { Store, StoreError } from './store.mjs';
 import { validateCapture } from './validate.mjs';
@@ -39,7 +40,10 @@ export function createApp(config, { claude = createClaude(config), log = console
   /** The built web app (web/dist), served at / so judges need one URL. */
   const webDir = config.webDir ?? join(guideRoot, '..', 'web', 'dist');
 
+  const publicRoutes = createPublic({ store, sessions });
+
   const routes = [
+    ['PUT', /^\/api\/captures\/([^/]+)\/public$/, setPublic],
     ['GET', /^\/health$/, health],
     ['GET', /^\/api\/captures$/, listCaptures],
     ['GET', /^\/api\/captures\/([^/]+)$/, getCapture],
@@ -59,6 +63,15 @@ export function createApp(config, { claude = createClaude(config), log = console
     ['GET', /^\/files\/([^/]+)\/(.+)$/, getFile],
     ['HEAD', /^\/files\/([^/]+)\/(.+)$/, getFile],
   ];
+
+  /** The family's switch: only a public capture is visible at /public/*. */
+  async function setPublic(req, res, id) {
+    if (!(await store.exists(id))) return sendError(res, 404, `No capture with id ${id}.`);
+    const body = await readJsonBody(req);
+    if (typeof body.public !== 'boolean') return sendError(res, 400, 'Send { "public": true } or { "public": false }.');
+    const status = await store.setStatus(id, { public: body.public });
+    sendJson(res, 200, { ok: true, public: status.public });
+  }
 
   async function health(req, res) {
     sendJson(res, 200, {
@@ -217,7 +230,7 @@ export function createApp(config, { claude = createClaude(config), log = console
   }
 
   function isApiPath(pathname) {
-    return pathname === '/health' || pathname.startsWith('/api/') || pathname.startsWith('/files/');
+    return pathname === '/health' || pathname.startsWith('/api/') || pathname.startsWith('/files/') || pathname.startsWith('/public/');
   }
 
   function authorized(req, url) {
@@ -239,6 +252,14 @@ export function createApp(config, { claude = createClaude(config), log = console
       }
       if ((req.method === 'GET' || req.method === 'HEAD') && !isApiPath(url.pathname)) {
         return await getWebFile(req, res, url);
+      }
+      if (url.pathname.startsWith('/public/')) {
+        for (const [method, pattern, handler] of publicRoutes) {
+          if (req.method !== method) continue;
+          const match = pattern.exec(url.pathname);
+          if (match) return await handler(req, res, ...match.slice(1));
+        }
+        return sendError(res, 404, `No public route for ${req.method} ${url.pathname}.`);
       }
       if (url.pathname !== '/health' && !authorized(req, url)) {
         return sendError(res, 401, 'Missing or wrong X-Braindance-Key.');
