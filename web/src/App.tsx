@@ -4,7 +4,6 @@ import { CaptureView } from './views/CaptureView'
 import { Dashboard } from './views/Dashboard'
 import { FactsPage } from './views/FactsPage'
 import { Gallery } from './views/Gallery'
-import { Revisit } from './views/Revisit'
 import { RoomFile } from './views/RoomFile'
 import './views/views.css'
 
@@ -13,7 +12,8 @@ const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
   // #/capture/<id>, or #/capture/<id>?t=12.5 to open at that second (from a fact's evidence).
   [/^#\/capture\/([0-9a-f-]{36})(?:\?t=([\d.]+))?$/i, (id, t) => <CaptureView key={`${id}@${t ?? ''}`} id={id} startAt={t ? Number(t) : undefined} />],
   [/^#\/facts\/([0-9a-f-]{36})$/i, (id) => <FactsPage key={id} id={id} />],
-  [/^#\/revisit\/([0-9a-f-]{36})$/i, (id) => <Revisit key={id} id={id} />],
+  // Revisiting happens in the playground now; old links still land there.
+  [/^#\/revisit\/([0-9a-f-]{36})$/i, (id) => <CaptureView key={id} id={id} />],
   [/^#\/dashboard\/([0-9a-f-]{36})$/i, (id) => <Dashboard key={id} id={id} />],
 ]
 

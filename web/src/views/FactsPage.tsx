@@ -13,10 +13,9 @@ export function FactsPage({ id }: { id: string }) {
         </a>
         <div className="bar-title">
           <strong>Check the facts</strong>
-          <span className="meta">What Claude found in the visit, each with its evidence. Approve what's right before a Revisit.</span>
+          <span className="meta">What Claude found in the visit, each with its evidence. Only approved facts are ever said during a visit.</span>
         </div>
         <nav className="bar-links">
-          <a href={`#/revisit/${id}`}>Revisit</a>
           <a href={`#/dashboard/${id}`}>Dashboard</a>
         </nav>
       </header>

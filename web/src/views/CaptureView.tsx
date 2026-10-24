@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
 import { SceneViewer } from '../scene/SceneViewer'
 import { loadGuideCapture, type LoadedCapture } from '../scene/loadCapture'
+import { VisitDock } from './VisitDock'
 
-/** One capture from the guide: the 3D room and the visit. `startAt` opens it at that second. */
+/**
+ * One capture from the guide: the 3D room and the visit, where the person revisits it: a narrated
+ * tour they can pause to look around, point at things and ask. `startAt` opens it at that second.
+ */
 export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
   const [capture, setCapture] = useState<LoadedCapture | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -38,7 +42,6 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
         </div>
         <nav className="bar-links">
           <a href={`#/facts/${id}`}>Facts</a>
-          <a href={`#/revisit/${id}`}>Revisit</a>
           <a href={`#/dashboard/${id}`}>Dashboard</a>
         </nav>
       </header>
@@ -51,7 +54,7 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
       )}
       <main className="main">
         <div className="viewer-wrap">
-          <SceneViewer capture={capture} startAt={startAt} />
+          <SceneViewer capture={capture} startAt={startAt} overlay={(controls) => <VisitDock captureId={id} controls={controls} />} />
         </div>
       </main>
     </div>

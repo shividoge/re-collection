@@ -1,6 +1,6 @@
 import { OrbitControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { CameraPath, FollowCamera } from './CameraPath'
 import { cloudBounds } from './cloudBounds'
@@ -21,6 +21,20 @@ const IS_WINDOWS = typeof navigator !== 'undefined' && /win/i.test(navigator.pla
 
 export type { NavMode }
 
+/** What an overlay (the visit dock) can see and drive in the viewer. */
+export interface ViewerControls {
+  selection: Selection | null
+  playback: ReturnType<typeof usePlayback>
+  duration: number
+  mode: NavMode
+  switchMode: (next: NavMode) => void
+  /** Playback speed, e.g. 0.75 for the narrated tour. */
+  setSpeed: (speed: number) => void
+  /** True when the capture has camera poses to follow. */
+  canFollow: boolean
+  video: HTMLVideoElement | null
+}
+
 interface Props {
   capture: LoadedCapture
   initialMode?: NavMode
@@ -31,6 +45,8 @@ interface Props {
   interactive?: boolean
   /** Seconds into the visit to start at, e.g. when opened from a fact's evidence. */
   startAt?: number
+  /** Drawn over the 3D view, with access to playback, the view mode and the selection. */
+  overlay?: (controls: ViewerControls) => ReactNode
 }
 
 const HELP: Record<NavMode, string> = {
@@ -44,7 +60,7 @@ const HELP: Record<NavMode, string> = {
  * fly through, the recorder's path, object selection, and the recorded video in a
  * synced panel. Areas without data stay empty.
  */
-export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVideo = true, interactive = true, startAt }: Props) {
+export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVideo = true, interactive = true, startAt, overlay }: Props) {
   const { cloud, frames, manifest } = capture
   const moment = frames?.moment ?? NO_FRAMES
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -82,7 +98,8 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
 
   const hasVideo = Boolean(capture.videoUrl) && !videoError
   const duration = videoDuration ?? manifest?.video?.durationSec ?? (moment.length ? moment[moment.length - 1].t : 0)
-  const playback = usePlayback(videoRef, hasVideo, duration, rate)
+  const [speed, setSpeed] = useState(rate)
+  const playback = usePlayback(videoRef, hasVideo, duration, speed)
 
   const videoW = manifest?.video?.width ?? 1920
   const videoH = manifest?.video?.height ?? 1440
@@ -233,6 +250,8 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
           </div>
 
           {mode === 'fly' && steering && <div className="viewer-crosshair" />}
+
+          {overlay?.({ selection, playback, duration, mode, switchMode, setSpeed, canFollow, video: videoEl })}
 
           {interactive && selection && <SelectionPanel selection={selection} onGoTo={goToSelection} onClear={clearSelection} onSeek={playback.seek} />}
 

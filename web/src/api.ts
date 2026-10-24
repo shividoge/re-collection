@@ -165,9 +165,12 @@ export const guide = {
   startSession: (momentId: string) => request<{ sessionId: string; welcome: Reply }>('/api/sessions', post({ momentId })),
   /** `chapterIndex: null` narrates the whole moment (for moments without chapters). */
   narrate: (sid: string, chapterIndex: number | null) => request<{ reply: Reply }>(`/api/sessions/${sid}/narrate`, post({ chapterIndex })),
-  turn: (sid: string, text: string) =>
-    request<{ reply: Reply; branch: string | null; distress: boolean }>(`/api/sessions/${sid}/turn`, post({ text })),
-  endSession: (sid: string, reason: EndReason) => request<SessionEnd>(`/api/sessions/${sid}/end`, post({ reason })),
+  /** `focus`: what they're pointing at in the room and the approved facts seen with it (optional). */
+  turn: (sid: string, text: string, focus?: { label: string; factIds: string[] }) =>
+    request<{ reply: Reply; branch: string | null; distress: boolean }>(`/api/sessions/${sid}/turn`, post({ text, focus })),
+  /** `keepalive` lets the request finish while the page unloads (a visit left open by a reload). */
+  endSession: (sid: string, reason: EndReason, keepalive = false) =>
+    request<SessionEnd>(`/api/sessions/${sid}/end`, { ...post({ reason }), keepalive }),
   session: (sid: string) => request<{ turns: unknown[]; dropped?: unknown[] }>(`/api/sessions/${sid}`),
   progress: (momentId: string) => request<Progress>(`/api/progress?momentId=${encodeURIComponent(momentId)}`),
   reextract: (id: string) => request<{ ok: true }>(`/api/moments/${id}/extract`, { method: 'POST' }),
