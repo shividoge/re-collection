@@ -1,11 +1,11 @@
 import { createWriteStream } from 'node:fs';
 import { mkdir, rename, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { dirname } from 'node:path';
+import { dirname, join, normalize, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { pathToFileURL } from 'node:url';
 
-import { loadConfig } from './config.mjs';
+import { guideRoot, loadConfig } from './config.mjs';
 import { CORS_HEADERS, sendError, sendFile, sendJson } from './http.mjs';
 import { Store, StoreError } from './store.mjs';
 import { validateCapture } from './validate.mjs';
@@ -20,6 +20,8 @@ const MAX_UPLOAD_BYTES = 2 * 1024 ** 3;
 export function createApp(config) {
   const store = new Store(config.dataDir);
   const started = Date.now();
+  /** The built web app (web/dist), served at / so judges need one URL. */
+  const webDir = config.webDir ?? join(guideRoot, '..', 'web', 'dist');
 
   const routes = [
     ['GET', /^\/health$/, health],
@@ -35,6 +37,7 @@ export function createApp(config) {
     sendJson(res, 200, {
       ok: true,
       mock: config.mockClaude,
+      keyRequired: Boolean(config.key),
       claudeConfigured: Boolean(config.anthropicKey) || config.mockClaude,
       models: config.models,
       uptimeS: Math.floor((Date.now() - started) / 1000),
@@ -126,6 +129,26 @@ export function createApp(config) {
     sendFile(req, res, path, size, name);
   }
 
+  /** Static web app files. Unknown paths get index.html; the app routes with #hashes. */
+  async function getWebFile(req, res, url) {
+    const relative = normalize(decodeURIComponent(url.pathname)).replace(/^[/\\]+/, '') || 'index.html';
+    let path = join(webDir, relative);
+    if (!path.startsWith(webDir + sep)) return sendError(res, 400, 'Bad path.');
+    let size = await store.size(path);
+    if (size === null) {
+      path = join(webDir, 'index.html');
+      size = await store.size(path);
+    }
+    if (size === null) {
+      return sendError(res, 404, 'The web app isn\'t built yet. Run: npm --prefix web install && npm --prefix web run build');
+    }
+    sendFile(req, res, path, size, path);
+  }
+
+  function isApiPath(pathname) {
+    return pathname === '/health' || pathname.startsWith('/api/') || pathname.startsWith('/files/');
+  }
+
   function authorized(req, url) {
     if (!config.key) return true;
     if (req.headers['x-braindance-key'] === config.key) return true;
@@ -139,6 +162,9 @@ export function createApp(config) {
       if (req.method === 'OPTIONS') {
         res.writeHead(204, CORS_HEADERS);
         return res.end();
+      }
+      if ((req.method === 'GET' || req.method === 'HEAD') && !isApiPath(url.pathname)) {
+        return await getWebFile(req, res, url);
       }
       if (url.pathname !== '/health' && !authorized(req, url)) {
         return sendError(res, 401, 'Missing or wrong X-Braindance-Key.');
