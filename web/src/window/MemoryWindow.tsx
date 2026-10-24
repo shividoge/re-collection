@@ -23,7 +23,7 @@ const canTilt = typeof window !== 'undefined' && 'DeviceOrientationEvent' in win
  * chair looks around the room like a real window, with depth and no headset. The narrated
  * visit (VisitDock) runs inside it unchanged, so everything said is still grounded.
  */
-export function MemoryWindow({ id }: { id: string }) {
+export function MemoryWindow({ id, from }: { id: string; from?: string }) {
   const [capture, setCapture] = useState<LoadedCapture | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -53,10 +53,14 @@ export function MemoryWindow({ id }: { id: string }) {
   }
   if (!capture) return <div className="window-message">Opening the window…</div>
   if (!capture.cloud) return <div className="window-message">This visit has no room scan to look into.</div>
-  return <WindowStage id={id} capture={capture} />
+  return <WindowStage id={id} capture={capture} back={from === 'museum' ? '#/museum' : `#/capture/${id}`} />
 }
 
-function WindowStage({ id, capture }: { id: string; capture: LoadedCapture }) {
+/** Drag distance, as a fraction of the screen's shorter side, for a full head movement. */
+const DRAG_RANGE = 0.35
+const DRAG_HOLD_MS = 8000
+
+function WindowStage({ id, capture, back }: { id: string; capture: LoadedCapture; back: string }) {
   const { cloud, manifest } = capture
   const frames = capture.frames?.moment ?? NO_FRAMES
   const sizes = useSplatSizes(cloud)
@@ -122,6 +126,40 @@ function WindowStage({ id, capture }: { id: string; capture: LoadedCapture }) {
   }
 
   const tracking = tracker.status.kind === 'tracking'
+
+  // Touch or mouse: dragging moves your eye behind the window, the same as moving your head.
+  // Works everywhere (camera head tracking and tilt need https on iPad). After a while with no
+  // touch, the gentle ambient drift takes over again.
+  const dragHead = useRef({ x: 0, y: 0, z: 0 })
+  const drag = useRef<{ x: number; y: number; head: { x: number; y: number } } | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const lastDrag = useRef(0)
+  useEffect(() => {
+    if (!dragging) return
+    const timer = window.setInterval(() => {
+      if (!drag.current && Date.now() - lastDrag.current > DRAG_HOLD_MS) setDragging(false)
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [dragging])
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (tracking) return
+    drag.current = { x: e.clientX, y: e.clientY, head: { x: dragHead.current.x, y: dragHead.current.y } }
+    lastDrag.current = Date.now()
+    setDragging(true)
+  }
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = drag.current
+    if (!d) return
+    const range = Math.min(window.innerWidth, window.innerHeight) * DRAG_RANGE
+    const clamp = (v: number) => Math.max(-1, Math.min(1, v))
+    // Dragging the room to the left is like stepping to the right.
+    dragHead.current = { x: clamp(d.head.x - (e.clientX - d.x) / range), y: clamp(d.head.y + (e.clientY - d.y) / range), z: 0 }
+    lastDrag.current = Date.now()
+  }
+  const onPointerUp = () => {
+    drag.current = null
+    lastDrag.current = Date.now()
+  }
   const controls = {
     selection: null,
     playback,
@@ -135,7 +173,13 @@ function WindowStage({ id, capture }: { id: string; capture: LoadedCapture }) {
 
   return (
     <div className={`window${idle ? ' idle' : ''}`}>
-      <Canvas flat dpr={[1, 2]} camera={{ near: 0.02, far: 60 }} gl={{ antialias: true }} className="window-canvas">
+      <Canvas
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onPointerLeave={onPointerUp}
+        flat dpr={[1, 2]} camera={{ near: 0.02, far: 60 }} gl={{ antialias: true }} className="window-canvas">
         <color attach="background" args={['#07080a']} />
         <HoleFill />
         <StaticCloud cloud={cloud!} sizes={sizes} dim={canReplayPeople && playback.playing ? 0.6 : 1} />
@@ -145,8 +189,8 @@ function WindowStage({ id, capture }: { id: string; capture: LoadedCapture }) {
         <WindowCamera
           frames={frames}
           timeRef={playback.timeRef}
-          head={tracker.head}
-          ambient={!tracking}
+          head={tracking ? tracker.head : dragHead}
+          ambient={!tracking && !dragging}
           videoW={manifest?.video?.width ?? 1920}
           videoH={manifest?.video?.height ?? 1440}
         />
@@ -166,8 +210,8 @@ function WindowStage({ id, capture }: { id: string; capture: LoadedCapture }) {
       )}
 
       <header className="window-top">
-        <a href={`#/capture/${id}`} className="window-exit">
-          ← Back
+        <a href={back} className="window-exit">
+          {back === '#/museum' ? '← Back to the museum' : '← Back'}
         </a>
         <div className="window-title">
           {capture.label} <EstimatedBadge manifest={manifest} />

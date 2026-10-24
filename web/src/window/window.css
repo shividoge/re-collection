@@ -9,6 +9,7 @@
 .window-canvas {
   position: absolute !important;
   inset: 0;
+  touch-action: none; /* dragging looks around instead of scrolling the page */
 }
 /* Kept in the page so it decodes frames for the replay (hidden video elements can stop
    updating in some browsers), but invisible. */

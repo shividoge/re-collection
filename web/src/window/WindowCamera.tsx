@@ -66,7 +66,8 @@ export function WindowCamera({
     }
 
     const target = ambient ? { x: 0.35 * Math.sin(s.clock * 0.25), y: 0.15 * Math.sin(s.clock * 0.17), z: 0 } : head.current
-    s.head = smooth(s.head, target, dt)
+    // Following a real head or finger is quick; drifting on its own is slow and calm.
+    s.head = smooth(s.head, target, dt, ambient ? 1.5 : 0.15)
 
     // Size the window so that, from the center, it shows what the phone's lens saw (a little
     // wider for context): its vertical field of view, upright, at the window's distance.
