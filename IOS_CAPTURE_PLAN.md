@@ -1,5 +1,7 @@
 # Braindance Capture: iPhone app build plan
 
+> **Plan v2 update (Sat 07:15):** checkpoints 1–5 are built and tested on the phone (branch `ios/checkpoint-5-moment-recording`). The upload target is now Shivin's Node guide server (`docs/guide-api.md`), not the old Python server. The phone also writes `transcript.json` (on-device speech recognition) and `keyframes/`, and switches video to H.264 `video.mp4`; see `docs/capture-format.md` and TASKS.md "Shivin" step 2. Where this file conflicts with those docs, the docs win.
+
 Target device: **iPhone 16 Pro Max** (A18 Pro, LiDAR). Owner: teammate A, working with Claude Code.
 This file replaces Section 4 of `CLAUDE.md`. The capture package format in Section 5 of that file still applies, with the additions in Section 7 below.
 
