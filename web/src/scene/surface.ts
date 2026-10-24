@@ -6,6 +6,12 @@
 // view that saw it, so noise from one frame is outvoted by the others. Marching cubes then
 // draws the surface where the averaged distance crosses zero, as one connected triangle mesh.
 // Places no camera measured have no votes and stay open; nothing is filled by guesswork.
+//
+// Three rules keep surfaces from appearing where nothing is, the same way on every scan:
+// - votes are counted per view, not per ray, so one close-up frame counts once;
+// - depth pixels on a depth edge (where LiDAR blends foreground and background) don't vote;
+// - free space wins: a voxel that more views saw straight through than saw a surface at is
+//   dropped, so a surface one frame put there by mistake is carved away by the others.
 
 import { edgeTable, triTable } from 'three/examples/jsm/objects/MarchingCubes.js'
 
@@ -38,6 +44,13 @@ export interface FuseOptions {
   maxDepth?: number
   /** Use every n-th depth pixel in each direction. */
   stride?: number
+  /** Use every n-th depth pixel for free-space votes (they only need to cover each voxel). */
+  freeStride?: number
+  /**
+   * A voxel needs at least this share of the best-supported voxel within one truncation band,
+   * so the noise around a well-seen surface can't form a second, ghost surface next to it.
+   */
+  ghostRatio?: number
 }
 
 export interface Volume {
@@ -48,8 +61,31 @@ export interface Volume {
   voxel: number
   /** Signed distance / truncation, in [−1, 1]; positive in front of the surface. */
   tsdf: Float32Array
-  /** How many votes each voxel got (capped at 255). */
+  /**
+   * How many views measured a surface at each voxel (capped at 255), or 0 where more views saw
+   * straight through it than measured a surface there.
+   */
   weight: Uint8Array
+}
+
+/** A depth pixel is on an edge when a neighbor is much nearer or farther (mixed depth). */
+function edgePixels(depth: Uint16Array, w: number, h: number): Uint8Array {
+  const edge = new Uint8Array(w * h)
+  for (let v = 0; v < h; v++)
+    for (let u = 0; u < w; u++) {
+      const k = v * w + u
+      const d = depth[k]
+      // Allowed jump: 2 cm plus 4% of the depth, so a floor seen at a grazing angle still counts.
+      const limit = 20 + d * 0.04
+      if (
+        (u > 0 && Math.abs(depth[k - 1] - d) > limit) ||
+        (u < w - 1 && Math.abs(depth[k + 1] - d) > limit) ||
+        (v > 0 && Math.abs(depth[k - w] - d) > limit) ||
+        (v < h - 1 && Math.abs(depth[k + w] - d) > limit)
+      )
+        edge[k] = 1
+    }
+  return edge
 }
 
 export function fuseTSDF(views: Iterable<DepthView>, o: FuseOptions): Volume {
@@ -58,26 +94,38 @@ export function fuseTSDF(views: Iterable<DepthView>, o: FuseOptions): Volume {
   const minConf = o.minConfidence ?? 1
   const maxDepth = o.maxDepth ?? 4.5
   const stride = o.stride ?? 1
+  const freeStride = o.freeStride ?? 4
   const nx = Math.ceil((o.max[0] - o.min[0]) / voxel) + 1
   const ny = Math.ceil((o.max[1] - o.min[1]) / voxel) + 1
   const nz = Math.ceil((o.max[2] - o.min[2]) / voxel) + 1
-  const tsdf = new Float32Array(nx * ny * nz).fill(1)
-  const weight = new Uint8Array(nx * ny * nz)
+  const n = nx * ny * nz
+  const tsdf = new Float32Array(n).fill(1)
+  // Ray votes, for averaging the distance; views, for deciding what's real.
+  const rays = new Uint8Array(n)
+  const seen = new Uint8Array(n)
+  const free = new Uint8Array(n)
+  const seenBy = new Int32Array(n).fill(-1)
+  const freeBy = new Int32Array(n).fill(-1)
   const [ox, oy, oz] = o.min
   const sx = o.depthW / o.videoW
   const sy = o.depthH / o.videoH
   const step = voxel * 0.6
 
+  let viewId = 0
   for (const view of views) {
     const T = view.T
     const fx = view.K[0] * sx
     const fy = view.K[1] * sy
     const cx = view.K[2] * sx
     const cy = view.K[3] * sy
-    for (let v = 0; v < o.depthH; v += stride) {
-      for (let u = 0; u < o.depthW; u += stride) {
+    const edge = edgePixels(view.depth, o.depthW, o.depthH)
+    for (let v = 0; v < o.depthH; v++) {
+      for (let u = 0; u < o.depthW; u++) {
+        const surfaceRay = u % stride === 0 && v % stride === 0
+        const freeRay = u % freeStride === 0 && v % freeStride === 0
+        if (!surfaceRay && !freeRay) continue
         const k = v * o.depthW + u
-        if (view.confidence[k] < minConf) continue
+        if (view.confidence[k] < minConf || edge[k]) continue
         const d = view.depth[k] / 1000
         if (d < 0.2 || d > maxDepth) continue
         // Ray direction in ARKit camera space, scaled so that its −z component is 1.
@@ -88,6 +136,21 @@ export function fuseTSDF(views: Iterable<DepthView>, o: FuseOptions): Volume {
         const wy = T[1] * rx + T[5] * ry - T[9]
         const wz = T[2] * rx + T[6] * ry - T[10]
         const len = Math.hypot(rx, ry, 1)
+        if (freeRay) {
+          // Free space: everything from the camera to well in front of the surface was seen
+          // through. Stops a full truncation band short, so the surface's own voxels are safe.
+          for (let t = 0.2; t < d - 2 * trunc; t += voxel / len) {
+            const x = Math.floor((T[12] + wx * t - ox) / voxel)
+            const y = Math.floor((T[13] + wy * t - oy) / voxel)
+            const z = Math.floor((T[14] + wz * t - oz) / voxel)
+            if (x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz) continue
+            const i = (z * ny + y) * nx + x
+            if (freeBy[i] === viewId) continue
+            freeBy[i] = viewId
+            if (free[i] < 255) free[i]++
+          }
+        }
+        if (!surfaceRay) continue
         // Vote at points along the ray from just in front of the surface to just behind it.
         for (let t = d - trunc; t <= d + trunc; t += step / len) {
           const sdf = (d - t) * len
@@ -96,15 +159,52 @@ export function fuseTSDF(views: Iterable<DepthView>, o: FuseOptions): Volume {
           const z = Math.floor((T[14] + wz * t - oz) / voxel)
           if (x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz) continue
           const i = (z * ny + y) * nx + x
-          const w = weight[i]
+          const w = rays[i]
           const value = Math.max(-1, Math.min(1, sdf / trunc))
           tsdf[i] = (tsdf[i] * w + value) / (w + 1)
-          if (w < 255) weight[i] = w + 1
+          if (w < 255) rays[i] = w + 1
+          if (seenBy[i] !== viewId) {
+            seenBy[i] = viewId
+            if (seen[i] < 255) seen[i]++
+          }
         }
       }
     }
+    viewId++
+  }
+  // Free space wins over a surface fewer views agree on.
+  const weight = seen
+  for (let i = 0; i < n; i++) if (free[i] > seen[i]) weight[i] = 0
+  // Ghosts: much weaker support than the best surface within one truncation band.
+  const ratio = o.ghostRatio ?? 0.3
+  if (ratio > 0) {
+    const best = maxFilter(weight, nx, ny, nz, Math.round(trunc / voxel))
+    for (let i = 0; i < n; i++) if (weight[i] < best[i] * ratio) weight[i] = 0
   }
   return { nx, ny, nz, origin: [ox, oy, oz], voxel, tsdf, weight }
+}
+
+/** The largest value within `r` voxels along each axis (a separable box max). */
+function maxFilter(src: Uint8Array, nx: number, ny: number, nz: number, r: number): Uint8Array {
+  let a = src.slice()
+  let b = new Uint8Array(src.length)
+  const strides = [1, nx, nx * ny]
+  const sizes = [nx, ny, nz]
+  for (let axis = 0; axis < 3; axis++) {
+    const st = strides[axis]
+    const len = sizes[axis]
+    for (let i = 0; i < src.length; i++) {
+      const c = Math.floor(i / st) % len
+      let m = 0
+      for (let k = Math.max(0, c - r); k <= Math.min(len - 1, c + r); k++) {
+        const v = a[i + (k - c) * st]
+        if (v > m) m = v
+      }
+      b[i] = m
+    }
+    ;[a, b] = [b, a]
+  }
+  return a
 }
 
 export interface Mesh {
@@ -241,9 +341,14 @@ function vertexNormals(pos: Float32Array, idx: Uint32Array): Float32Array {
 /**
  * Colors each mesh vertex from the scan's own colored points nearby: the average of the points
  * in the 3×3×3 cells around it, or the 5×5×5 cells when those are empty. Vertices with no point
- * that close get neutral grey.
+ * that close get neutral grey and are marked uncolored.
  */
-export function colorFromPoints(meshPositions: Float32Array, points: Float32Array, colors: Uint8Array, cell = 0.02): Uint8Array {
+export function colorFromPoints(
+  meshPositions: Float32Array,
+  points: Float32Array,
+  colors: Uint8Array,
+  cell = 0.02,
+): { colors: Uint8Array; colored: Uint8Array } {
   const AXIS = 1 << 16
   const OFF = AXIS / 2
   const keyOf = (x: number, y: number, z: number) => ((x + OFF) * AXIS + (y + OFF)) * AXIS + (z + OFF)
@@ -258,6 +363,7 @@ export function colorFromPoints(meshPositions: Float32Array, points: Float32Arra
     s[3]++
   }
   const out = new Uint8Array(meshPositions.length)
+  const colored = new Uint8Array(meshPositions.length / 3)
   for (let v = 0; v < meshPositions.length / 3; v++) {
     const cx = Math.floor(meshPositions[v * 3] / cell)
     const cy = Math.floor(meshPositions[v * 3 + 1] / cell)
@@ -278,10 +384,103 @@ export function colorFromPoints(meshPositions: Float32Array, points: Float32Arra
             n += s[3]
           }
     if (n === 0) out.set([128, 128, 128], v * 3)
-    else out.set([r / n, g / n, b / n], v * 3)
+    else {
+      out.set([r / n, g / n, b / n], v * 3)
+      colored[v] = 1
+    }
   }
-  return out
+  return { colors: out, colored }
 }
+
+export type ColoredMesh = Mesh & { colors: Uint8Array }
+
+/**
+ * Keeps only triangles whose three vertices pass `keep`, then drops connected pieces smaller
+ * than `minArea` square meters (specks floating on their own), and packs the vertices.
+ */
+export function trimMesh(mesh: ColoredMesh, keep: Uint8Array, minArea: number): ColoredMesh {
+  const { positions: P, indices: I } = mesh
+  const tris: number[] = []
+  for (let k = 0; k < I.length; k += 3) if (keep[I[k]] && keep[I[k + 1]] && keep[I[k + 2]]) tris.push(k)
+
+  // Connected pieces over shared vertices (union-find).
+  const parent = new Int32Array(P.length / 3).map((_, i) => i)
+  const find = (i: number): number => {
+    while (parent[i] !== i) i = parent[i] = parent[parent[i]]
+    return i
+  }
+  for (const k of tris) {
+    const a = find(I[k])
+    parent[find(I[k + 1])] = a
+    parent[find(I[k + 2])] = a
+  }
+  const area = new Map<number, number>()
+  for (const k of tris) {
+    const root = find(I[k])
+    area.set(root, (area.get(root) ?? 0) + triangleArea(P, I[k], I[k + 1], I[k + 2]))
+  }
+
+  const remap = new Int32Array(P.length / 3).fill(-1)
+  const positions: number[] = []
+  const normals: number[] = []
+  const colors: number[] = []
+  const indices: number[] = []
+  for (const k of tris) {
+    if ((area.get(find(I[k])) ?? 0) < minArea) continue
+    for (let c = 0; c < 3; c++) {
+      const v = I[k + c]
+      if (remap[v] < 0) {
+        remap[v] = positions.length / 3
+        positions.push(P[v * 3], P[v * 3 + 1], P[v * 3 + 2])
+        normals.push(mesh.normals[v * 3], mesh.normals[v * 3 + 1], mesh.normals[v * 3 + 2])
+        colors.push(mesh.colors[v * 3], mesh.colors[v * 3 + 1], mesh.colors[v * 3 + 2])
+      }
+      indices.push(remap[v])
+    }
+  }
+  return {
+    positions: new Float32Array(positions),
+    normals: new Float32Array(normals),
+    colors: new Uint8Array(colors),
+    indices: new Uint32Array(indices),
+  }
+}
+
+function triangleArea(P: Float32Array, a: number, b: number, c: number): number {
+  const ux = P[b * 3] - P[a * 3]
+  const uy = P[b * 3 + 1] - P[a * 3 + 1]
+  const uz = P[b * 3 + 2] - P[a * 3 + 2]
+  const vx = P[c * 3] - P[a * 3]
+  const vy = P[c * 3 + 1] - P[a * 3 + 1]
+  const vz = P[c * 3 + 2] - P[a * 3 + 2]
+  return Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2
+}
+
+export interface RoomSurfaceInput {
+  depthW: number
+  depthH: number
+  videoW: number
+  videoH: number
+  /** The phone's colored room points (room.bin). */
+  points: Float32Array
+  colors: Uint8Array
+}
+
+/**
+ * The room's surface from its scan, with the same settings for every capture: 2 cm voxels,
+ * high-confidence depth only, at least three views agreeing, and only where the phone also
+ * kept colored points (so every triangle shown has a measured color), without specks.
+ */
+export function buildRoomSurface(views: DepthView[], o: RoomSurfaceInput): ColoredMesh {
+  const voxel = 0.02
+  const volume = fuseTSDF(views, { ...roomExtent(o.points), voxel, depthW: o.depthW, depthH: o.depthH, videoW: o.videoW, videoH: o.videoH, minConfidence: 2 })
+  const mesh = marchingCubes(volume, 3)
+  const { colors, colored } = colorFromPoints(mesh.positions, o.points, o.colors, voxel)
+  return trimMesh({ ...mesh, colors }, colored, MIN_PIECE_AREA)
+}
+
+/** Pieces smaller than this (m²) are dropped: about a 7 × 7 cm patch. */
+export const MIN_PIECE_AREA = 0.005
 
 /** The room's extent from its points, ignoring the most extreme 0.5% on each axis (stray points). */
 export function roomExtent(points: Float32Array, pad = 0.15): { min: Vec3; max: Vec3 } {

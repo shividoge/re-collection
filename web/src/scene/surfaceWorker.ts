@@ -1,5 +1,5 @@
 // Builds the room's connected surface off the main thread (see surface.ts).
-import { colorFromPoints, fuseTSDF, marchingCubes, roomExtent, type DepthView } from './surface'
+import { buildRoomSurface, type DepthView } from './surface'
 
 export interface SurfaceJob {
   views: { T: number[]; K: number[]; offset: number }[]
@@ -22,18 +22,6 @@ self.onmessage = (e: MessageEvent<SurfaceJob>) => {
     depth: new Uint16Array(job.depth, v.offset * px * 2, px),
     confidence: new Uint8Array(job.confidence, v.offset * px, px),
   }))
-  // High-confidence depth only (what the phone's colored points come from), and at least three
-  // views agreeing on a voxel: on the sample scan that's ~240k triangles, 10% without color nearby.
-  const volume = fuseTSDF(views, {
-    ...roomExtent(job.points),
-    voxel: 0.02,
-    depthW: job.depthW,
-    depthH: job.depthH,
-    videoW: job.videoW,
-    videoH: job.videoH,
-    minConfidence: 2,
-  })
-  const mesh = marchingCubes(volume, 3)
-  const colors = colorFromPoints(mesh.positions, job.points, job.colors, 0.02)
-  ;(self as unknown as Worker).postMessage({ ...mesh, colors }, [mesh.positions.buffer, mesh.normals.buffer, mesh.indices.buffer, colors.buffer])
+  const surface = buildRoomSurface(views, job)
+  ;(self as unknown as Worker).postMessage(surface, [surface.positions.buffer, surface.normals.buffer, surface.indices.buffer, surface.colors.buffer])
 }

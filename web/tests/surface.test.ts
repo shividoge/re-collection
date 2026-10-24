@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { colorFromPoints, fuseTSDF, marchingCubes, type DepthView } from '../src/scene/surface'
+import { colorFromPoints, fuseTSDF, marchingCubes, trimMesh, type DepthView } from '../src/scene/surface'
 import { lookAtPose } from './fixture'
 
 // The phone's real depth resolution: rays land ~1 cm apart at 2 m, finer than the 2 cm voxels.
@@ -51,9 +51,59 @@ describe('TSDF fusion and marching cubes', () => {
     expect(mesh.indices.length).toBe(0)
   })
 
+  it('counts views, not rays: one frame alone never makes a surface', () => {
+    // A single close view sends many rays through each voxel; it still counts once.
+    const mesh = marchingCubes(fuseTSDF([wallView([0, 0.8, -1.2])], { ...box, voxel: 0.02, depthW: W, depthH: H, ...VIDEO, minConfidence: 2 }), 2)
+    expect(mesh.indices.length).toBe(0)
+  })
+
+  it('carves away a surface one frame saw where the others saw straight through', () => {
+    // Three good views of the wall, plus three frames that wrongly measured something at z = −1
+    // on the right of the image. Six more views see the wall through that spot.
+    const bogus = (pos: [number, number, number]) => {
+      const view = wallView(pos)
+      for (let v = 0; v < H; v++) for (let u = W / 2; u < W; u++) view.depth[v * W + u] = Math.round((pos[2] + 1) * 1000)
+      return view
+    }
+    const good = [0, 0.1, -0.1, 0.2, -0.2, 0.05].map((dx) => wallView([dx, 0.8, 0]))
+    const views = [...good, bogus([0, 0.8, 0]), bogus([0.05, 0.8, 0]), bogus([-0.05, 0.8, 0])]
+    const mesh = marchingCubes(fuseTSDF(views, { ...box, voxel: 0.02, depthW: W, depthH: H, ...VIDEO, minConfidence: 2 }), 3)
+    expect(mesh.indices.length).toBeGreaterThan(300)
+    for (let i = 2; i < mesh.positions.length; i += 3) expect(mesh.positions[i]).toBeLessThan(-1.9)
+  })
+
+  it('ignores the mixed depth on an edge between near and far', () => {
+    // Left half at 1 m, right half at 2 m, and one column in between at 1.5 m (a flying pixel
+    // column, as LiDAR gives at silhouettes). No surface may appear at 1.5 m.
+    const views = [0, 0.02, -0.02].map((dx) => {
+      const view = wallView([dx, 0.8, 0])
+      for (let v = 0; v < H; v++)
+        for (let u = 0; u < W; u++) view.depth[v * W + u] = u < W / 2 ? 1000 : u === W / 2 ? 1500 : 2000
+      return view
+    })
+    const mesh = marchingCubes(fuseTSDF(views, { ...box, voxel: 0.02, depthW: W, depthH: H, ...VIDEO, minConfidence: 2 }), 3)
+    expect(mesh.indices.length).toBeGreaterThan(300)
+    for (let i = 2; i < mesh.positions.length; i += 3) expect(Math.abs(mesh.positions[i] + 1.5)).toBeGreaterThan(0.2)
+  })
+
+  it('trims uncolored triangles and drops small floating pieces', () => {
+    // Two separate triangles: a big one (0.5 m²) and a speck (0.00005 m²), plus one with an uncolored corner.
+    const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 5, 5, 5, 5.01, 5, 5, 5, 5.01, 5, 0, 0, 1])
+    const mesh = {
+      positions,
+      normals: new Float32Array(positions.length),
+      colors: new Uint8Array(positions.length),
+      indices: new Uint32Array([0, 1, 2, 3, 4, 5, 0, 1, 6]),
+    }
+    const out = trimMesh(mesh, new Uint8Array([1, 1, 1, 1, 1, 1, 0]), 0.005)
+    expect(Array.from(out.indices)).toEqual([0, 1, 2])
+    expect(Array.from(out.positions)).toEqual([0, 0, 0, 1, 0, 0, 0, 1, 0])
+  })
+
   it('colors the surface from nearby scan points, grey where there are none', () => {
     const positions = new Float32Array([0, 0, 0, 5, 5, 5])
-    const colors = colorFromPoints(positions, new Float32Array([0.01, 0.01, 0.01]), new Uint8Array([200, 10, 20]), 0.02)
+    const { colors, colored } = colorFromPoints(positions, new Float32Array([0.01, 0.01, 0.01]), new Uint8Array([200, 10, 20]), 0.02)
     expect(Array.from(colors)).toEqual([200, 10, 20, 128, 128, 128])
+    expect(Array.from(colored)).toEqual([1, 0])
   })
 })
