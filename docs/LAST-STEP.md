@@ -30,7 +30,10 @@ The scans are not in git. Download Shivin's whole guide data folder (four phone 
 
 ```bash
 gh release download team-data-1 --repo shividoge/braindance --dir ~/braindance-team
-cd ~/braindance-team && unzip -q braindance-data.zip && unzip -q video-captures.zip
+cd ~/braindance-team
+cat braindance-data.zip.part-* > braindance-data.zip   # split in 60 MB parts for slow Wi-Fi
+cat original-clips.zip.part-* > original-clips.zip     # only needed to re-run the converter
+unzip -q braindance-data.zip && unzip -q video-captures.zip
 # run the guide on that data (from your clone, on the web/museum branch):
 cd ~/path/to/braindance && npm --prefix web ci && npm --prefix web run build
 DATA_DIR=$HOME/braindance-team/data npm --prefix guide start
@@ -38,7 +41,7 @@ DATA_DIR=$HOME/braindance-team/data npm --prefix guide start
 for c in ~/braindance-team/video-captures/capture-*; do npm --prefix guide run import -- "$c"; done
 ```
 
-Open http://127.0.0.1:8787/#/museum. You should see seven frames: four phone scans and three old clips.
+Open http://127.0.0.1:8787/#/museum. You should see seven frames: four phone scans and three old clips. Only want one thing quickly? `gh release download team-data-1 -p video-captures.zip` is 28 MB.
 
 A Claude key in `guide/.env` is only needed for fact extraction and Revisit narration, not for the museum, the viewer or the Memory Window. Without one, imported clips show "facts failed: no key", which is fine for this work.
 

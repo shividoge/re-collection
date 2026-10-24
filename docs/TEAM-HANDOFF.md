@@ -1,5 +1,7 @@
 # Braindance: team handoff (Sat Oct 24, evening)
 
+> **Superseded for "what's left":** the current list, owners and timeline are at the top of `TASKS.md` ("Everything left until submission"), and the final feature is in `docs/LAST-STEP.md`. The how-to sections below (running it, updating the public site, gotchas) still apply.
+
 **One line:** a family films a visit with a LiDAR iPhone; Braindance turns it into a moment their loved one with Alzheimer's can step back into, narrated by Claude using only what the family approved, and shows the family what stuck.
 
 **See it now (no login):** https://shividoge.github.io/braindance-site/ (a free static copy on GitHub Pages: four real scans, a guided walkthrough, the 3D viewer). Open it on a laptop in Chrome or Safari.
