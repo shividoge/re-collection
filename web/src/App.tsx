@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { guide } from './api'
 import { CaptureView } from './views/CaptureView'
 import { Dashboard } from './views/Dashboard'
 import { FactsPage } from './views/FactsPage'
@@ -19,21 +18,11 @@ const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
 
 export default function App() {
   const [hash, setHash] = useState(location.hash)
-  const [mock, setMock] = useState(false)
 
   useEffect(() => {
     const onChange = () => setHash(location.hash)
     window.addEventListener('hashchange', onChange)
     return () => window.removeEventListener('hashchange', onChange)
-  }, [])
-
-  useEffect(() => {
-    guide
-      .health()
-      .then((h) => setMock(h.mock))
-      .catch(() => {
-        /* the gallery shows the connection error */
-      })
   }, [])
 
   let view: React.ReactNode = <Gallery />
@@ -45,7 +34,6 @@ export default function App() {
 
   return (
     <div className="app">
-      {mock && <div className="mock-banner">MOCK MODE: Claude's replies are canned [mock] text. Never use this in the demo.</div>}
       <div className="app-body">{view}</div>
     </div>
   )

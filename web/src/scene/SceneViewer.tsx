@@ -246,7 +246,7 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
             {interactive && (
               <ModeButton on={mode === 'fly'} onClick={() => switchMode('fly')} label="Fly" title="Drone: move freely in 3D" />
             )}
-            <ModeButton on={mode === 'follow'} onClick={() => switchMode('follow')} label="Camera path" disabled={!canFollow} title={canFollow ? 'Follow the recording camera' : 'No camera poses in this capture'} />
+            <ModeButton on={mode === 'follow'} onClick={() => switchMode('follow')} label="Camera view" disabled={!canFollow} title={canFollow ? 'Follow the recording camera' : 'No camera poses in this capture'} />
           </div>
 
           {mode === 'fly' && steering && <div className="viewer-crosshair" />}

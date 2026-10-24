@@ -20,7 +20,7 @@ npm --prefix web run dev          # http://127.0.0.1:5173
 npm --prefix web test             # vitest: parsers, pose math, selection math
 ```
 
-If the guide has `BRAINDANCE_KEY` set, the gallery asks for the team password once. When the guide runs with `MOCK_CLAUDE=1`, every page shows a red MOCK MODE banner.
+If the guide has `BRAINDANCE_KEY` set, the gallery asks for the team password once.
 
 ## Screens (hash routes)
 
@@ -28,7 +28,7 @@ If the guide has `BRAINDANCE_KEY` set, the gallery asks for the team password on
 - `#/capture/<id>` **Viewer + fact review:** the room as soft points, people replayed in 3D from depth, the phone's path, synced video, and the family's fact review beside it.
   - **Orbit:** drag to see the pivot from any angle; the pivot is the room center, or whatever you click. Esc goes back to the center.
   - **Fly:** drag turns the room around you. Hold WASD to fly and steer with the mouse like a shooter (cursor hidden, keeps turning at the screen edge, comes back at the crosshair). E up, Q down, Shift faster, Alt slower.
-  - **Camera path:** ride along with the phone.
+  - **Camera view:** ride along with the phone.
   - **Select:** click an object to see its size and when the recording camera saw it (marks on the scrubber). F flies to it. Space plays and pauses.
 - `#/room` a `room.bin` opened from this computer: Orbit, Fly and select.
 - `#/revisit/<id>` **Revisit (patient):** welcome, slow replay with grounded narration, push-to-talk conversation, caregiver corner, goodbye.

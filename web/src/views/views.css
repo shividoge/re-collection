@@ -52,17 +52,6 @@ button.link:hover {
   color: var(--bd-fg) !important;
 }
 
-/* Mock mode: canned Claude replies must never pass for real ones. */
-.mock-banner {
-  padding: 6px 16px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: #fff;
-  background: #c62828;
-  text-align: center;
-}
-
 /* Gallery */
 .gallery {
   max-width: 1080px;
