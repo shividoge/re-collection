@@ -4,6 +4,8 @@
 
 Shivin is away for about two hours (back ~18:00). Everything that's left is split evenly between **Firdavs** and **IBS27** so you can work in parallel. Don't wait for Shivin: pick up your list below, top to bottom. Older sections further down are history; this section wins where they disagree.
 
+**Shivin's iPad stays with the team** for testing the museum and the Memory Window (Firdavs, task 2).
+
 **Rules for these two hours**
 - Branch per task (`web/...`, `tools/...`, `docs/...`), push often, open a PR. Don't push to `main`, and don't merge; Shivin merges when he's back.
 - The website doesn't need to take uploads from the public. It only has to show the scenes **we** give it (phone scans and converted videos). Don't spend time on upload UX.
@@ -27,6 +29,10 @@ Shivin is away for about two hours (back ~18:00). Everything that's left is spli
 
 1. **Review PR #25 and merge your #16 onto it.** Check out `web/orange`, run it (`npm --prefix guide start`, then http://127.0.0.1:8787), look at the front page, gallery, viewer, `#/p/<id>` and `#/window/<id>`. Then make a branch `web/app-on-orange` that merges `web/app` into `web/orange`, fix the conflicts, and open a PR. Keep one orange look (no blue) and no password prompt.
 2. **Fix the Memory Museum** (`web/museum`, `web/src/museum/Museum.tsx`). The UI overlay renders ("Your memories", Previous/Next) but the R3F canvas shows only the background colour. Already ruled out: the bundle is fresh, the canvas has a WebGL context and a size. Suspects, in order: the drei `<Html transform>` plaques, the `Walker` camera quaternion (the helper is a `PerspectiveCamera` so `lookAt` faces −z), the fog range, or a component throwing inside the Canvas. Remove pieces until the hall draws. Then check: tap a frame → walk to it; tap again or "Step into this moment" → Memory Window → "← Back to the museum" returns to the same frame; Next/Previous; works on an iPad (Safari, or Xcode's iPad simulator; touch drag, big buttons). Open a PR from `web/museum`.
+   - **Test it on Shivin's real iPad** (he left it with the team). The iPad only allows the front camera and the tilt sensor over **HTTPS**, so a `http://192.168…` link or the simulator won't show head tracking. On your laptop: run the guide, then `cloudflared tunnel --url http://127.0.0.1:8787` (`brew install cloudflared` if needed), and open the printed `https://….trycloudflare.com/#/museum` in Safari on the iPad. Check, in landscape:
+     - museum: walking to frames, tapping, Previous/Next, text size and button size;
+     - Memory Window: **head tracking** (allow the camera; moving your head should shift the view like looking through a window), **tilt** (allow motion when asked; tilting the iPad looks around), and **drag to look** when both are off; "← Back to the museum".
+   - Write what works and what feels off in the PR. Fix what you can; these become the demo shots (IBS27's `docs/demo-video.md`), so tell IBS27 when it's ready to film.
 3. **Open a PR for `web/video-estimated`** after checking the badge on a capture whose manifest has `"source": "video"` (IBS27 will have one from task 1; until then, edit a copy's manifest locally).
 4. **"Relive With A Smile" rename** in the website, user-facing strings only, per `docs/THEME.md` §5. Do it on top of `web/orange` (branch `web/relive-rename`).
 5. Only if all of that is done: the "Hide from her" web side (`web/hide-triggers`; routes in its guide changes) plus a short scroll section on the front page explaining it.
