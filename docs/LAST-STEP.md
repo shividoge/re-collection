@@ -32,7 +32,6 @@ The scans are not in git. Download Shivin's whole guide data folder (four phone 
 gh release download team-data-1 --repo shividoge/braindance --dir ~/braindance-team
 cd ~/braindance-team
 cat braindance-data.zip.part-* > braindance-data.zip   # split in 60 MB parts for slow Wi-Fi
-cat original-clips.zip.part-* > original-clips.zip     # only needed to re-run the converter
 unzip -q braindance-data.zip && unzip -q video-captures.zip
 # run the guide on that data (from your clone, on the web/museum branch):
 cd ~/path/to/braindance && npm --prefix web ci && npm --prefix web run build
