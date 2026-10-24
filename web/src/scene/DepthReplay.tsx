@@ -139,6 +139,21 @@ export function DepthReplay({
     [depthTexture, videoTexture, width, height],
   )
 
+  // A paused video never pushes its frame to the GPU on its own, which left the replay black
+  // until playback. Upload the current frame whenever one is ready or the video is moved.
+  useEffect(() => {
+    const refresh = () => {
+      if (video.readyState >= 2) videoTexture.needsUpdate = true
+    }
+    refresh()
+    video.addEventListener('loadeddata', refresh)
+    video.addEventListener('seeked', refresh)
+    return () => {
+      video.removeEventListener('loadeddata', refresh)
+      video.removeEventListener('seeked', refresh)
+    }
+  }, [video, videoTexture])
+
   useEffect(
     () => () => {
       geometry.dispose()

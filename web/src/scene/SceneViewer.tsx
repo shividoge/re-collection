@@ -11,7 +11,9 @@ import type { LoadedCapture } from './loadCapture'
 import { CameraTween, FlyControls, PickHandler, PivotMarker, type CameraGoal, type NavMode } from './Navigation'
 import { dominantQuarterTurns, type Vec3 } from './pose'
 import { StaticCloud } from './StaticCloud'
+import { RoomSurfaceMesh } from './RoomSurfaceMesh'
 import { usePlayback } from './usePlayback'
+import { useRoomSurface } from './useRoomSurface'
 import { useSplatSizes } from './useSplatSizes'
 import { useVirtualCursor } from './useVirtualCursor'
 import { selectAlongRay, useRoomIndex, type Selection } from './useRoomIndex'
@@ -72,6 +74,8 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
     setVideoEl(el)
   }, [])
   const [showPath, setShowPath] = useState(true)
+  // The room as one connected surface (fused from the scan's depth frames), or as raw points.
+  const [showSurface, setShowSurface] = useState(true)
   // The video plays all the time (sound, people replay); this only hides or shows its panel.
   const [videoOpen, setVideoOpen] = useState(false)
   const cameraRef = useRef<THREE.Camera | null>(null)
@@ -120,6 +124,8 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
   const canFollow = moment.length > 0
   const indexState = useRoomIndex(interactive ? cloud : null)
   const sizes = useSplatSizes(cloud)
+  const surfaceState = useRoomSurface(capture)
+  const surface = surfaceState.status === 'ready' ? surfaceState.surface : null
   const selectionSizes = useMemo(() => (sizes && selection ? Float32Array.from(selection.points, (i) => sizes[i]) : null), [sizes, selection])
   const room = indexState.status === 'ready' ? indexState.room : null
 
@@ -220,7 +226,11 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
             >
               <color attach="background" args={['#05060a']} />
               <HoleFill />
-              <StaticCloud cloud={cloud} sizes={sizes} dim={selection ? 0.45 : canReplayPeople && playback.playing ? 0.55 : 1} />
+              {surface && showSurface ? (
+                <RoomSurfaceMesh surface={surface} dim={selection ? 0.45 : canReplayPeople && playback.playing ? 0.55 : 1} />
+              ) : (
+                <StaticCloud cloud={cloud} sizes={sizes} dim={selection ? 0.45 : canReplayPeople && playback.playing ? 0.55 : 1} />
+              )}
               {selection && (
                 <>
                   <StaticCloud cloud={selection.cloud} sizes={selectionSizes} pointSize={1.2} tint={ACCENT} tintMix={0.35} renderOrder={1} />
@@ -285,6 +295,8 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
             {interactive && indexState.status === 'building' && <span>Indexing room for selection…</span>}
             {indexState.status === 'failed' && <span className="err">Selection unavailable: {indexState.message}</span>}
             {pickMiss && <span>Nothing scanned there</span>}
+            {surfaceState.status === 'building' && <span>Building the room's surface…</span>}
+            {surfaceState.status === 'failed' && <span className="err">Surface unavailable: {surfaceState.message}</span>}
             {interactive && (
               <span className="help">{HELP[mode]}</span>
             )}
@@ -318,6 +330,7 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
           {fmt(playback.time)} / {fmt(duration)}
         </span>
         <div className="layers">
+          <Layer label="Surface" on={showSurface} disabled={!surface} set={setShowSurface} />
           <Layer label="Path" on={showPath} disabled={!canFollow} set={setShowPath} />
         </div>
         {showVideo && (
