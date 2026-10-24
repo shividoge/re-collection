@@ -6,7 +6,8 @@ import { MuseumScene } from './MuseumScene'
 import type { WalkerHandle } from './Walker'
 import './museum.css'
 
-const STYLE_KEY = 'relive.museum.style'
+// v2: the calm room became everyone's default; earlier choices made while trying styles are dropped.
+const STYLE_KEY = 'relive.museum.style.v2'
 
 /** The room style chosen for an exhibition on this device, else the exhibition's own. */
 function savedStyle(ex: Exhibition): RoomStyle {
@@ -34,7 +35,7 @@ function saveStyle(ex: Exhibition, style: RoomStyle) {
 export function MuseumPage({ id }: { id?: string }) {
   const [exhibitions, setExhibitions] = useState<Exhibition[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [style, setStyle] = useState<RoomStyle>('gallery')
+  const [style, setStyle] = useState<RoomStyle>('calm')
   const [focus, setFocus] = useState(-1)
   const [arrived, setArrived] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -185,7 +186,11 @@ export function MuseumPage({ id }: { id?: string }) {
       </header>
 
       {hint && total > 0 && (
-        <p className="museum-hint">Drag to look around · W A S D or arrows to walk · tap a picture or the floor to go there</p>
+        <p className="museum-hint">
+          {style === 'calm'
+            ? 'Tap a picture, or the arrow, to go to it · drag gently to look around'
+            : 'Drag to look around · W A S D or arrows to walk · tap a picture or the floor to go there'}
+        </p>
       )}
 
       {total === 0 && (

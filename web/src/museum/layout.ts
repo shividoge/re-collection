@@ -7,7 +7,7 @@
 // side walls, alternating left and right from front to back, then on the far wall; Next and
 // Previous follow that order, so the visitor walks forward through the exhibition.
 
-export type RoomStyle = 'gallery' | 'salon' | 'hall'
+export type RoomStyle = 'calm' | 'gallery' | 'salon' | 'hall'
 
 export interface StyleSpec {
   /** Room size in meters. */
@@ -25,6 +25,9 @@ export interface StyleSpec {
 }
 
 export const STYLES: Record<RoomStyle, StyleSpec> = {
+  // The calm room, for the person with dementia (docs/museum.md "Why the calm room"): the
+  // size of a living room, a home-height ceiling, few but large pictures per room.
+  calm: { width: 6.4, depth: 7.2, height: 3.1, perSide: 2, maxW: 1.45, maxH: 1.15, doorW: 1.6, doorH: 2.35 },
   // A bright modern gallery: pale wood, white walls, a skylight.
   gallery: { width: 9, depth: 12, height: 4.4, perSide: 3, maxW: 1.9, maxH: 1.35, doorW: 2.2, doorH: 3 },
   // A warm salon: deep walls, parquet, gilded frames under picture lights.

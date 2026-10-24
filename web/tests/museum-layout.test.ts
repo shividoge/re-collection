@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { HANG_HEIGHT, STYLES, fitPicture, planMuseum, route, slide, walkable, type RoomStyle } from '../src/museum/layout'
 
-const STYLE_NAMES: RoomStyle[] = ['gallery', 'salon', 'hall']
+const STYLE_NAMES: RoomStyle[] = ['calm', 'gallery', 'salon', 'hall']
 
 describe('museum layout', () => {
   it('gives every picture a slot, and adds rooms only as needed', () => {

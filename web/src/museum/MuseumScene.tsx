@@ -34,7 +34,8 @@ export function MuseumScene({
 
   // Tap the floor to walk there (stopping short of a wall).
   const onFloor = (e: ThreeEvent<MouseEvent>) => {
-    if (e.delta > 8 || !walk?.current) return
+    // The calm room only moves where a picture is: no walking off across the floor.
+    if (plan.style === 'calm' || e.delta > 8 || !walk?.current) return
     const from = walk.current.position()
     let to: [number, number] = [e.point.x, e.point.z]
     for (let i = 0; i < 40 && !walkable(plan, to[0], to[1]); i++) to = [to[0] + (from[0] - to[0]) * 0.1, to[1] + (from[1] - to[1]) * 0.1]
@@ -80,12 +81,12 @@ export function MuseumScene({
         plan.slots[i] ? <Artwork key={art.id} art={art} slot={plan.slots[i]} look={look} focused={i === focus} onSelect={onSelect} /> : null,
       )}
 
-      <Walker plan={plan} onArrive={onArrive} ref={walker} />
+      <Walker plan={plan} onArrive={onArrive} ref={walker} guided={plan.style === 'calm'} />
 
       <EffectComposer multisampling={0} enableNormalPass={false}>
-        <N8AO aoRadius={0.55} distanceFalloff={0.6} intensity={handheld ? 1.6 : 2.2} quality={handheld ? 'performance' : 'medium'} halfRes={handheld} color={new THREE.Color('#1a1210')} />
+        <N8AO aoRadius={0.55} distanceFalloff={0.6} intensity={look.occlusion * (handheld ? 0.75 : 1)} quality={handheld ? 'performance' : 'medium'} halfRes={handheld} color={new THREE.Color('#1a1210')} />
         <SMAA />
-        <Vignette offset={0.32} darkness={0.42} />
+        <Vignette offset={0.32} darkness={look.vignette ? 0.42 : 0} />
         <ToneMapping mode={ToneMappingMode.NEUTRAL} />
       </EffectComposer>
     </Canvas>

@@ -12,7 +12,8 @@ export interface Look {
   wainscot: RGB | null
   trim: string
   ceiling: string
-  floor: { kind: 'planks' | 'herringbone' | 'stone'; light: RGB; dark: RGB; metersPerTile: number; mirror: number }
+  /** `mirror` 0: a matte floor with no reflections. */
+  floor: { kind: 'planks' | 'boards' | 'herringbone' | 'stone'; light: RGB; dark: RGB; metersPerTile: number; mirror: number }
   frame: { color: string; metalness: number; roughness: number; border: number; depth: number }
   /** Card around the picture inside the frame (passe-partout), 0 for none. */
   mat: number
@@ -26,9 +27,38 @@ export interface Look {
   titleInk: string
   accent: string
   background: string
+  /** Darkened corners (a photographic look); off where the room should stay evenly lit. */
+  vignette: boolean
+  /** Ambient occlusion strength (contact shadows in corners and under furniture). */
+  occlusion: number
 }
 
 export const LOOKS: Record<RoomStyle, Look> = {
+  // Made for the person with dementia, after the design research in docs/museum.md: warm and
+  // homelike, a plain matte floor (no pattern to read as a step, no shine to read as water),
+  // bright even light without dark corners or glare, and dark frames that stand out clearly
+  // from a light warm wall.
+  calm: {
+    label: 'Calm room',
+    wall: [236, 222, 204],
+    wainscot: null,
+    trim: '#f3e9db',
+    ceiling: '#f7f1e8',
+    floor: { kind: 'boards', light: [196, 160, 122], dark: [170, 134, 98], metersPerTile: 2.6, mirror: 0 },
+    frame: { color: '#4a3326', metalness: 0.05, roughness: 0.6, border: 0.06, depth: 0.05 },
+    mat: 0.09,
+    matColor: '#fbf7ef',
+    light: '#fff3e2',
+    pool: '#fff4e6',
+    poolStrength: 0.14,
+    // Dark cards stand out from the light wall; a light card on it all but disappears.
+    darkLabel: true,
+    titleInk: '#3d2f27',
+    accent: '#ff9d5c',
+    background: '#efe6da',
+    vignette: false,
+    occlusion: 1.1,
+  },
   gallery: {
     label: 'Sunlit gallery',
     wall: [243, 240, 233],
@@ -46,6 +76,8 @@ export const LOOKS: Record<RoomStyle, Look> = {
     titleInk: '#2b2522',
     accent: '#ff9d5c',
     background: '#d9d5cd',
+    vignette: true,
+    occlusion: 2.2,
   },
   salon: {
     label: 'Warm salon',
@@ -64,6 +96,8 @@ export const LOOKS: Record<RoomStyle, Look> = {
     titleInk: '#f6e7cf',
     accent: '#ffb35c',
     background: '#1a1013',
+    vignette: true,
+    occlusion: 2.2,
   },
   hall: {
     label: 'Grand hall',
@@ -82,5 +116,7 @@ export const LOOKS: Record<RoomStyle, Look> = {
     titleInk: '#3a2f27',
     accent: '#c8873e',
     background: '#cfc6b8',
+    vignette: true,
+    occlusion: 2.2,
   },
 }

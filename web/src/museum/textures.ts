@@ -116,19 +116,21 @@ function put(b: ReturnType<typeof makeBuffers>, k: number, c: RGB, height: numbe
 
 /**
  * Wooden floor boards. `pattern` 'planks' are long boards in staggered rows (a modern gallery);
+ * 'boards' are wide, plain, matte boards with barely visible seams (the calm room: a busy or
+ * shiny floor can read as a step, a hole or a wet patch to someone with dementia);
  * 'herringbone' is short blocks at right angles (a classical salon; rotate the texture 45°).
- * The texture covers `meters` × `meters` of floor.
  */
-export function woodFloor(pattern: 'planks' | 'herringbone', light: RGB, dark: RGB, seed = 7, size = 1024): SurfaceMaps {
+export function woodFloor(pattern: 'planks' | 'boards' | 'herringbone', light: RGB, dark: RGB, seed = 7, size = 1024): SurfaceMaps {
   const b = makeBuffers(size)
   const r = rng(seed)
   const grain = fbm(8, 4, seed + 1)
   const fine = fbm(64, 3, seed + 2)
   const blotch = fbm(4, 3, seed + 3)
 
-  if (pattern === 'planks') {
-    // 16 rows of boards across the tile, each row split into boards of random length.
-    const rows = 16
+  if (pattern === 'planks' || pattern === 'boards') {
+    // Rows of boards across the tile, each row split into boards of random length.
+    const plain = pattern === 'boards'
+    const rows = plain ? 9 : 16
     const rowStarts: number[][] = []
     const tone: number[][] = []
     for (let row = 0; row < rows; row++) {
@@ -158,17 +160,20 @@ export function woodFloor(pattern: 'planks' | 'herringbone', light: RGB, dark: R
         const g = grain(u * 0.25 + t, v * 4 + row * 0.37)
         const rings = 0.5 + 0.5 * Math.sin((v * rows * 6 + g * 9 + t * 20) * Math.PI)
         const f = fine(u, v)
-        let c = mix(light, dark, 0.15 + 0.5 * t * 0.6 + (g - 0.5) * 0.5 + rings * 0.08 + (blotch(u, v) - 0.5) * 0.25)
+        // Plain boards: little difference between boards and only a whisper of grain.
+        const variety = plain ? 0.35 : 1
+        let c = mix(light, dark, 0.15 + 0.5 * t * 0.6 * variety + (g - 0.5) * 0.5 * variety + rings * 0.08 * variety + (blotch(u, v) - 0.5) * 0.25 * variety)
         c = c.map((ch) => ch * (0.94 + f * 0.1)) as RGB
         // Seams: the gap between rows and between board ends.
         const endGap = Math.min(along, 1 - along) * size < 1.5 || Math.abs(u - start) * size < 1.5
         const sideGap = Math.min(inRow, 1 - inRow) * (size / rows) < 1.2
         const seam = endGap || sideGap
-        if (seam) c = c.map((ch) => ch * 0.45) as RGB
-        put(b, y * size + x, c, (seam ? -1 : 0) + g * 0.35 + f * 0.1, seam ? 0.85 : 0.3 + (1 - rings) * 0.1 + f * 0.12)
+        if (seam) c = c.map((ch) => ch * (plain ? 0.82 : 0.45)) as RGB
+        const roughness = plain ? 0.78 + f * 0.1 : seam ? 0.85 : 0.3 + (1 - rings) * 0.1 + f * 0.12
+        put(b, y * size + x, c, (seam ? (plain ? -0.3 : -1) : 0) + g * (plain ? 0.15 : 0.35) + f * 0.1, roughness)
       }
     }
-    return finish(size, b, 2.2, [1, 1])
+    return finish(size, b, plain ? 1.2 : 2.2, [1, 1])
   }
 
   // Herringbone: blocks 1 × k plank widths. Cell (cx, cy) belongs to a horizontal block when

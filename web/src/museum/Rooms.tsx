@@ -136,7 +136,12 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
       }),
     [look],
   )
-  const ceilingMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: look.ceiling, roughness: 0.95 }), [look])
+  // The calm room's ceiling glows faintly, as light bounced off the walls would make it: a grey
+  // ceiling above a bright room reads as gloomy.
+  const ceilingMaterial = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: look.ceiling, roughness: 0.95, emissive: look.ceiling, emissiveIntensity: plan.style === 'calm' ? 0.35 : 0 }),
+    [look, plan.style],
+  )
   useEffect(() => () => [wallMaterial, wainscotMaterial, trimMaterial, ceilingMaterial].forEach((m) => m?.dispose()), [wallMaterial, wainscotMaterial, trimMaterial, ceilingMaterial])
 
   // Wall faces, door jambs and the wall above each doorway, as one mesh.
@@ -176,12 +181,13 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
 
   return (
     <group>
-      <hemisphereLight args={[look.light, '#3a2c22', 0.45]} />
+      {/* The calm room is lit brightly and evenly, so the sky light is much stronger there. */}
+      <hemisphereLight args={[look.light, '#3a2c22', plan.style === 'calm' ? 1.1 : 0.45]} />
 
       {/* One floor under every room, so its reflections are rendered once. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, (first.zFront + last.zBack) / 2]} receiveShadow>
         <planeGeometry args={[floorW + WALL * 2, floorD + WALL * 2]} />
-        {reflections > 0 ? (
+        {reflections > 0 && look.floor.mirror > 0 ? (
           <MeshReflectorMaterial
             {...floor}
             normalScale={new THREE.Vector2(0.6, 0.6)}
@@ -299,6 +305,26 @@ function Ceiling({ style, room, width, look }: { style: MuseumPlan['style']; roo
       </group>
     )
   }
+  if (style === 'calm') {
+    // A ceiling at home height with two soft round lamps, and light spread evenly from above:
+    // no bright spots to glare, no dark corners.
+    return (
+      <group>
+        {[-1, 1].map((s) => (
+          <group key={s}>
+            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, h - 0.005, cz + s * depth * 0.22]} material={glow}>
+              <circleGeometry args={[0.32, 48]} />
+            </mesh>
+            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, h - 0.004, cz + s * depth * 0.22]}>
+              <ringGeometry args={[0.32, 0.37, 48]} />
+              <meshStandardMaterial color={look.trim} roughness={0.6} />
+            </mesh>
+          </group>
+        ))}
+        <rectAreaLight args={[look.light, 3.2, width * 0.8, depth * 0.8]} position={[0, h - 0.02, cz]} rotation={[-Math.PI / 2, 0, 0]} />
+      </group>
+    )
+  }
   if (style === 'salon') {
     // A ceiling rose and a warm chandelier in the middle of the room.
     return (
@@ -357,6 +383,27 @@ function Ceiling({ style, room, width, look }: { style: MuseumPlan['style']; roo
 /** Somewhere to sit and look, in the middle of each room. */
 function Bench({ style, room, look }: { style: MuseumPlan['style']; room: Room; look: Look }) {
   const cz = (room.zFront + room.zBack) / 2
+  if (style === 'calm') {
+    // A soft upholstered seat, like a sofa at home, facing the front of the room.
+    return (
+      <group position={[0, 0, cz + 0.9]}>
+        <RoundedBox args={[1.5, 0.2, 0.62]} radius={0.08} smoothness={4} position={[0, 0.42, 0]}>
+          <meshStandardMaterial color="#b98a6c" roughness={0.9} />
+        </RoundedBox>
+        <RoundedBox args={[1.5, 0.42, 0.14]} radius={0.06} smoothness={4} position={[0, 0.66, 0.26]}>
+          <meshStandardMaterial color="#b98a6c" roughness={0.9} />
+        </RoundedBox>
+        {[-0.65, 0.65].flatMap((x) =>
+          [-0.24, 0.24].map((z) => (
+            <mesh key={`${x},${z}`} position={[x, 0.16, z]}>
+              <cylinderGeometry args={[0.025, 0.02, 0.32, 12]} />
+              <meshStandardMaterial color="#5b3f2e" roughness={0.6} />
+            </mesh>
+          )),
+        )}
+      </group>
+    )
+  }
   if (style === 'salon') {
     return (
       <group position={[0, 0, cz + 0.6]}>
