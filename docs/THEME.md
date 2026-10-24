@@ -42,6 +42,28 @@ The song's music video is warm, golden-hour, slightly retro. The product should 
 
 Rules: keep it calm (the Revisit screen is for someone with dementia: high contrast, large type, no flashing). The 3D scans stay in their real colors; only UI chrome takes the warm palette. Prefer the existing `--bd-*` CSS variables in Firdavs's `web/` and change their values rather than adding new class names.
 
+### Editor layers and provenance (plan v3, proposed)
+
+The family's editor (`CLAUDE.md` 7.6) gets a layered timeline and labels for where everything came from (`docs/scene-model.md`). Keep it restrained: four quiet colors on the plum background, thin marks at about 60% opacity, full color only on hover or selection. The amber-to-rose gradient stays reserved for the logo and the main button.
+
+| Layer | What it carries | Color |
+|---|---|---|
+| Visual | frames, when an object was on camera, clearest views | soft amber `#e8b06a` |
+| Audio | speech by speaker, sound events, cleaned-up audio | dusty rose `#e08a98` |
+| Geometry | the recorder's path, scan coverage, measurements, alignment | muted teal `#7fb8b0` |
+| Activity | chapters, facts, events, notes | soft lavender `#b59ad8` |
+
+How each kind of truth looks, everywhere in the editor:
+
+| `source` | Style |
+|---|---|
+| `observed` | Plain. The default look |
+| `computed` | Plain, plus a small outlined `computed` tag in muted text (`#a8999a`); clicking it opens "Where this came from" |
+| `estimated` | Dashed outline or 45° hatching in the layer color, plus an `estimated` tag with its confidence. In 3D, estimated surfaces are drawn fainter than measured points and vanish under "Measured only" |
+| `human` | The author's name and the time, with a small cream initial |
+
+Never use red for "estimated": red stays for errors and failed steps.
+
 ## 4. Words inside the product
 
 Small copy changes carry most of the theme. Keep every claim true: **we do not detect smiles.** "Smile" is the promise and the metaphor, never a measured number.
@@ -56,6 +78,25 @@ Small copy changes carry most of the theme. Keep every claim true: **we do not d
 | Branches list | branches | "Memories it brought back" |
 | Phone home | "Braindance" | "Relive" with the line "Film a visit. Let them relive it." |
 | Phone review screen | "Review the visit" | "Review the visit" (unchanged; plain beats cute here) |
+
+### Editor words (plan v3, proposed)
+
+Same voice: warm, plain, true. Never promise more than the data holds.
+
+| Feature | Words |
+|---|---|
+| Follow an object | **Follow** ("Follow the armchair through the visit") |
+| Best captured frame | **Clearest view** |
+| Annotations | **Notes**, with "Ask a question" and "Mark as a finding". Subline: "Only family can see notes. They're never read to her." |
+| Search | **Find a moment** (placeholder: "the cake, a word someone said, a sign…") |
+| Compare recordings | **Compare visits** |
+| Trace to source | **Where this came from** |
+| Hide estimated geometry | **Measured only** |
+| Measurement with low certainty | "0.81 m, give or take 2 cm. **Check this in person.**" |
+| Cleaned-up audio | "Clearer voice" next to "Original" (original plays by default) |
+| Estimated label | "Claude's guess", with the tag `estimated` |
+| Unseen area | "Not recorded" (never "missing" or "unknown") |
+| Share link | "Share this view" |
 
 ## 5. Rename checklist (user-facing strings only)
 

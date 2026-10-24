@@ -32,6 +32,19 @@ Everything on the public site is real. The four sessions on it are Claude narrat
 
 **Open task briefs (in the repo):** `docs/RENDER-QUALITY.md` (issue #19, Firdavs), `docs/PHOTO-TO-3D.md` (estimated 3D from photos, nobody has started), and `docs/SPONSOR-PLAN.md` (which prizes to aim at, and the work each one needs).
 
+## Plan v3 (proposed, not built)
+
+A docs-only PR on branch `docs/spatial-editor` (from IBS27) proposes turning the family's viewer into a full spatial editor, **keeping the same product, audience and Relive framing**. Nothing in it is built yet, and the contracts only change once Shivin reviews and merges it.
+
+What changes:
+- **Things persist.** Objects, places, read text, sound events, notes and saved views get ids and positions in the room, instead of living only while selected.
+- **Provenance everywhere.** Every item is `observed`, `computed`, `estimated` or `human`, and the UI shows which. A "Measured only" switch hides anything filled in or guessed.
+- **New editor tools for the family:** layered timeline, inspect panel with clearest views and read text, transcript, "Find a moment" search, notes and share links, measurements with "check this in person", "Compare visits" across aligned captures, and "Where this came from".
+- **Guide additions:** SQLite (`node:sqlite`) for editor data, Clerk accounts with per-site roles (owner, family, viewer) plus device tokens for the phone and tablet, a job queue for Claude and computed steps, FTS5 search, and an optional Python audio worker in `worker/` (noise reduction, speakers, sound events).
+- **Unchanged:** the patient's Revisit screen, family approval, grounding, scoring. Notes and estimates never reach the person with dementia.
+
+Where to read: `docs/scene-model.md` (the new shared contract), `docs/guide-api.md` "Editor" routes, `CLAUDE.md` 7.6, and the layer colors and words in `docs/THEME.md`.
+
 ## How to run it yourself
 
 1. Clone: `gh repo clone shividoge/braindance` (the repo is private; Shivin invited `boliyevfirdavs`, and `IBS27`'s invite was pending).

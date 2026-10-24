@@ -33,6 +33,8 @@ From looking at our four public scans (the bear, the Anthropic booth, the Hardwa
 
 Processing may clean, weight, smooth, light and merge what the phone *measured*. It must not invent geometry or colour the sensor never saw. Test: would a viewer come away believing the room contained something we didn't capture? If yes, don't do it.
 
+**Plan v3 (proposed):** any pass that fills gaps or smooths across them (splat growing, screen-space hole filling, surface meshing) produces geometry with `source: "estimated"` (`docs/scene-model.md`, "The four kinds of truth"). It must look different from measured points (a softer, dashed-edge or hatched treatment from `docs/THEME.md` §3), and it disappears when the viewer's **"Measured only"** toggle is on. Measured points never change under that toggle.
+
 ## Candidates, best first
 
 Do them in this order unless you find something better. Each is independent.

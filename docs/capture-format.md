@@ -5,6 +5,7 @@ The contract between the iPhone app (Shivin), the guide server (Shivin) and the 
 Status markers:
 - **[built]**: the phone writes this today. The sample capture has it.
 - **[next]**: on Shivin's list for the next phone build (see TASKS.md). Build against it, but expect it to be missing from the sample.
+- **[planned]**: plan v3 (the editor). Optional; older captures and the sample don't have it.
 
 ## Sample capture
 
@@ -34,6 +35,8 @@ capture-<uuid>/
 ```
 
 Always read file names from `manifest.json` (`video.file`, `room.bin`, and so on) instead of hard-coding them.
+
+The package holds only what the phone recorded. Anything made from it later (objects, read text, clean audio, stills, alignment, notes) lives on the guide (`docs/scene-model.md`) and never goes into the package.
 
 ## Coordinates (everything uses these)
 
@@ -73,6 +76,9 @@ Always read file names from `manifest.json` (`video.file`, `room.bin`, and so on
 - `title` and `attendees` are filled in on the phone's review screen [next]. Until then they're empty. Attendee names come from the family, never from face recognition.
 - Newer captures add `"transcript": { "file": "transcript.json", "locale": "en-US", "onDevice": true }` and `"keyframes": { "dir": "keyframes", "everySec": 1, "count": 29 }` (one per whole second with video). Treat both as optional and check for them; the sample capture has neither.
 - `warnings` lists anything that went wrong during recording, such as dropped frames. Show these to the family, don't hide them.
+- **[planned]** `"site": { "id": "…", "name": "Mom's room at Sunrise" }` or `null`: the place this capture belongs to, picked on the phone's review screen from the sites the guide knows (or typed as a new name). Captures of the same site can be aligned and compared. `null` or missing means "not sorted yet"; the family can assign one on the website.
+- **[planned]** `"hashes": { "room.bin": "<sha256 hex>", "video.mp4": "…", "keyframes/k0000.jpg": "…" }`: a SHA-256 of every other file in the package, computed on the phone after recording finishes (after the transcript and keyframes). `manifest.json` isn't in the list. The guide checks them on `complete` and rejects a mismatch, so everyone can tell the originals haven't changed.
+- Both fields are optional, so the format stays version 1.
 
 ## room.bin [built]
 

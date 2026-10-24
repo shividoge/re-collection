@@ -34,6 +34,20 @@ If the guide has `BRAINDANCE_KEY` set, the gallery asks for the team password on
 - `#/revisit/<id>` **Revisit (patient):** welcome, slow replay with grounded narration, push-to-talk conversation, caregiver corner, goodbye.
 - `#/dashboard/<id>` **Dashboard (family):** recall per session at real times, older memories, distress alerts, next revisits.
 
+## Planned: the editor (plan v3, proposed, not built)
+
+The family's viewer grows into a spatial editor. It reads and writes the shared data in `../docs/scene-model.md` through the guide's "Editor" routes (`../docs/guide-api.md`); nothing here works yet. Colors and words are in `../docs/THEME.md`.
+
+- **Layered timeline:** visual, audio, geometry and activity tracks under the scene; speed, step back, and "back to the recorder's view".
+- **Inspect panel:** for a saved object or place: clearest views, read text, appearances, facts, notes, and its audio.
+- **Transcript:** follows playback; click a line to jump; speaker labels when the audio worker has run.
+- **Search ("Find a moment"):** objects, words someone said, read text, sound events, notes.
+- **Notes:** note, question or finding pinned to an object, a point or a moment; replies; family-only.
+- **Saved views:** "Share this view" links (`#/v/<viewId>`) that reopen the exact camera, time, selection and panel.
+- **Measure:** point-to-point distances with uncertainty and "check this in person".
+- **Compare visits:** two aligned captures of the same site, with changes shown only where both saw.
+- **Where this came from:** every item opens its provenance and the original frames or audio; "Measured only" hides everything estimated.
+
 ## Layout
 
 ```
