@@ -265,6 +265,8 @@ Never cut: real capture, grounded facts with family approval, grounding enforcem
 
 ## Status
 
+> **Sat 16:00–18:00: Shivin is away. Firdavs and IBS27 own all remaining work.** Your task lists, the open branches and starting prompts are in the "Right now" section at the top of `TASKS.md`. Since the notes below were written: PR #25 (`web/orange`: one orange look, no password, includes #17 and the Memory Window #23) is open; new branches `web/video-estimated`, `web/museum` (Memory Museum, 3D hall renders blank) and `tools/video-to-3d` (old videos to 3D with Depth Anything 3) are pushed without PRs. The website only needs to show the scenes we give it, not take public uploads. The Anthropic key committed in `guide/.env.example` (77a8da6) must be revoked (Shivin).
+
 **Last updated:** Sat Oct 24, evening PT, by Shivin's Claude session. Team summary: `docs/TEAM-HANDOFF.md`. Sponsor plan: `docs/SPONSOR-PLAN.md`.
 
 **Done and working** (checked on real hardware or real Claude):
@@ -324,6 +326,7 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 - 2026-10-24 08:20 | Shivin + Claude | handoff written: Shivin switching Claude accounts | next session starts at "Next steps" above
 - 2026-10-24 ~13:00 | Shivin + Claude | PR #8 merged; Revisit screen + dashboard (#9); public site, static export and GitHub Pages (#11, #12, #14); iOS medium-confidence option (#10); four real scans published | decide the web/ tree with Firdavs's #13; tonight's demo capture
 - 2026-10-24 ~19:00 | Shivin + Claude | Firdavs's web/ merged (#13); public site ported onto it (#17); briefs for render quality, photo-to-3D and sponsors; guided phone UI merged (#21) | review #17 and #16; demo capture 20:00; sponsor work
+- 2026-10-24 16:00 | Shivin + Claude | pushed web/museum (WIP) and tools/video-to-3d; handed all remaining work to Firdavs and IBS27 for two hours (TASKS.md "Right now") | Firdavs: #25 + #16, museum; IBS27: video-to-3D, Devpost
 
 ---
 
