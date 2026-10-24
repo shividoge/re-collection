@@ -100,34 +100,6 @@ struct ScanView: View {
                 .controlSize(.large)
             }
 
-        case .savingMoment:
-            HStack(spacing: 12) {
-                ProgressView()
-                Text("Saving the visit…")
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(.ultraThinMaterial, in: Capsule())
-
-        case .momentSaved(let capture):
-            panel {
-                Text("Visit saved: \(Self.formatTime(Int(capture.durationSec.rounded()))), \(capture.frameCount) frames, \(capture.depthCount) depth frames")
-                    .font(.callout.weight(.medium))
-                    .multilineTextAlignment(.center)
-                ForEach(capture.warnings, id: \.self) { warning in
-                    Text(warning).font(.footnote).foregroundStyle(.orange)
-                }
-                HStack(spacing: 16) {
-                    ShareLink(item: capture.zipURL) {
-                        Label("Share capture", systemImage: "square.and.arrow.up")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    Button("Done") { model.stopScan() }
-                        .buttonStyle(.bordered)
-                }
-                .controlSize(.large)
-            }
-
         default:
             HStack(spacing: 12) {
                 Button(model.showsCameraFeed ? "Cloud only" : "Show camera") {

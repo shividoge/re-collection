@@ -24,13 +24,13 @@ capture-<uuid>/
   manifest.json      [built] what's in the folder; read this first
   room.bin           [built] the room's point cloud, compact format for the web
   room.ply           [built] same cloud for MeshLab / CloudCompare
-  video.mov          [built] HEVC + AAC. Becomes video.mp4 (H.264 + AAC) [next], so every browser can play it
+  video.mp4          [built on ios/upload] H.264 + AAC, so every browser can play it. The sample capture predates this and has video.mov (HEVC)
   frames.jsonl       [built] one line per frame: camera pose, intrinsics, depth index
   depth.bin          [built] 10 Hz depth frames, UInt16 millimeters
   confidence.bin     [built] 10 Hz confidence frames, UInt8
   thumb.jpg          [built] one frame about 2 s into the moment
-  transcript.json    [next] on-device speech recognition with word times
-  keyframes/kNNNN.jpg [next] one frame per second of the moment, 1024 wide
+  transcript.json    [built on ios/upload] on-device speech recognition with word times
+  keyframes/kNNNN.jpg [built on ios/upload] one frame per second of the moment, long side 1024
 ```
 
 Always read file names from `manifest.json` (`video.file`, `room.bin`, and so on) instead of hard-coding them.
@@ -71,7 +71,7 @@ Always read file names from `manifest.json` (`video.file`, `room.bin`, and so on
 ```
 
 - `title` and `attendees` are filled in on the phone's review screen [next]. Until then they're empty. Attendee names come from the family, never from face recognition.
-- `[next]` adds `"transcript": { "file": "transcript.json", "locale": "en-US", "onDevice": true }` and `"keyframes": { "dir": "keyframes", "everySec": 1, "count": 28 }`. Treat both as optional and check for them.
+- Newer captures add `"transcript": { "file": "transcript.json", "locale": "en-US", "onDevice": true }` and `"keyframes": { "dir": "keyframes", "everySec": 1, "count": 29 }` (one per whole second with video). Treat both as optional and check for them; the sample capture has neither.
 - `warnings` lists anything that went wrong during recording, such as dropped frames. Show these to the family, don't hide them.
 
 ## room.bin [built]
@@ -118,7 +118,7 @@ Moment lines number exactly `video.frameCount`, one per video frame in order. To
 - `confidence.bin`: same frames × 256 × 192 × `UInt8` (0 low, 1 medium, 2 high). Frame k starts at `k·256·192`.
 - Recorded at 10 Hz during both the scan and the moment, so `d` indices run across both phases. Use range requests to fetch only the frames you need.
 
-## transcript.json [next]
+## transcript.json [built on ios/upload]
 
 Apple's on-device speech recognition, run on the phone right after recording. Times are in moment seconds (same clock as `t`).
 
@@ -134,6 +134,6 @@ Apple's on-device speech recognition, run on the phone right after recording. Ti
 
 If recognition fails or the phone has no on-device model for the locale, the file is missing and the manifest says why in `warnings`. Nothing is guessed.
 
-## keyframes/ [next]
+## keyframes/ [built on ios/upload]
 
 `kNNNN.jpg` where NNNN is the whole second of moment time (`k0000.jpg` = t 0 s). Long side 1024 px, stored the same way as the video. These are what Claude sees when extracting facts, and what the family review screen shows as evidence.

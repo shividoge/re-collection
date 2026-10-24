@@ -54,7 +54,19 @@ Not built yet.
 
 ## Checkpoint 6 (13:30): review, manifest and upload
 
-Not built yet.
+- [ ] Starting a scan asks for speech recognition permission (along with camera and microphone)
+- [ ] After "Stop recording" you see "Making keyframes…", then "Transcribing on the phone…", then the review screen
+- [ ] The review screen plays the clip; tapping a transcript line jumps the video there
+- [ ] The transcript is roughly right, with times that match when things were said
+- [ ] Typing a title and names, then leaving the field, saves them (they appear in manifest.json)
+- [ ] Settings: paste the guide's tunnel URL, tap "Test connection", and see "Connected to the guide."
+- [ ] Wrong key in Settings shows "Connected, but the key is wrong."
+- [ ] "Upload to the guide" shows progress per file and ends with "Uploaded. The guide checked every file."
+- [ ] On the laptop, `curl <guide>/api/captures` lists the capture with its title and `"upload": "done"`
+- [ ] Turning on Airplane mode mid-upload ends in a clear error; "Try again" finishes the upload
+- [ ] "AirDrop the capture (zip)" sends a zip that includes manifest.json with the title, transcript.json and keyframes/
+- [ ] The video plays in Chrome on a laptop (it's H.264 video.mp4 now)
+- [ ] Locking the phone during "Transcribing…" doesn't lose the capture; it finishes when you come back
 
 ## Checkpoint 7 (15:00): coverage hints, thermal and lifecycle edge cases
 
