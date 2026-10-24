@@ -11,6 +11,7 @@ import { CameraTween, FlyControls, PickHandler, PivotMarker, type CameraGoal, ty
 import { dominantQuarterTurns, type Vec3 } from './pose'
 import { StaticCloud } from './StaticCloud'
 import { usePlayback } from './usePlayback'
+import { useSplatSizes } from './useSplatSizes'
 import { useVirtualCursor } from './useVirtualCursor'
 import { selectAlongRay, useRoomIndex, type Selection } from './useRoomIndex'
 import './viewer.css'
@@ -117,6 +118,8 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
   const bounds = useMemo(() => (cloud ? cloudBounds(cloud) : null), [cloud])
   const canFollow = moment.length > 0
   const indexState = useRoomIndex(interactive ? cloud : null)
+  const sizes = useSplatSizes(cloud)
+  const selectionSizes = useMemo(() => (sizes && selection ? Float32Array.from(selection.points, (i) => sizes[i]) : null), [sizes, selection])
   const room = indexState.status === 'ready' ? indexState.room : null
 
   const startCam = bounds
@@ -215,10 +218,10 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
               }}
             >
               <color attach="background" args={['#05060a']} />
-              <StaticCloud cloud={cloud} dim={selection ? 0.45 : canReplayPeople && playback.playing ? 0.55 : 1} />
+              <StaticCloud cloud={cloud} sizes={sizes} dim={selection ? 0.45 : canReplayPeople && playback.playing ? 0.55 : 1} />
               {selection && (
                 <>
-                  <StaticCloud cloud={selection.cloud} pointSize={0.016} tint={ACCENT} tintMix={0.35} renderOrder={1} />
+                  <StaticCloud cloud={selection.cloud} sizes={selectionSizes} pointSize={1.2} tint={ACCENT} tintMix={0.35} renderOrder={1} />
                   <SelectionBox selection={selection} />
                 </>
               )}

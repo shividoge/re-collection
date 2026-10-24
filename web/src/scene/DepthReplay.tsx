@@ -1,10 +1,11 @@
-import { useFrame, useThree } from '@react-three/fiber'
+import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, type MutableRefObject } from 'react'
 import * as THREE from 'three'
 
 import { fetchRange } from '../api'
 import type { Manifest } from '../api'
 import type { FrameRecord } from './formats'
+import { depthMeshIndices } from './gaps'
 import { frameIndexAtTime } from './pose'
 
 type DepthFrame = { data: Float32Array }
@@ -32,9 +33,11 @@ function depthFrameNear(frames: FrameRecord[], frame: number, maxFrames = 3): nu
 }
 
 /**
- * The Braindance effect: each depth frame becomes a 256×192 grid of points, unprojected into
- * the room with that frame's own camera pose and colored from the video, so the people in the
- * visit replay in 3D, in place, in sync with sound.
+ * The Braindance effect: each depth frame becomes a 256×192 grid, unprojected into the room
+ * with that frame's own camera pose and colored from the video, so the people in the visit
+ * replay in 3D, in place, in sync with sound. Neighboring depth pixels on the same surface are
+ * joined into triangles (gaps.ts depthMeshIndices), so people and objects read as solid; the
+ * jump from a person to the wall behind is never bridged.
  *
  * Same math as pose.ts unprojectDepthPixel and docs/capture-format.md: scale K to the depth grid,
  * x = (u − cx')·d/fx', y = (v − cy')·d/fy', z = d, flip to ARKit camera space (x, −y, −z), then T.
@@ -55,7 +58,6 @@ export function DepthReplay({
   minConfidence?: number
 }) {
   const { width, height } = manifest.depth
-  const size = useThree((state) => state.size)
   const cache = useRef(new Map<number, DepthFrame | 'loading'>())
   const shown = useRef(-1)
 
@@ -87,6 +89,10 @@ export function DepthReplay({
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(width * height * 3), 3))
     g.setAttribute('pixel', new THREE.BufferAttribute(pixels, 2))
+    const index = new THREE.BufferAttribute(new Uint32Array((width - 1) * (height - 1) * 6), 1)
+    index.setUsage(THREE.DynamicDrawUsage)
+    g.setIndex(index)
+    g.setDrawRange(0, 0)
     return g
   }, [width, height])
 
@@ -99,49 +105,38 @@ export function DepthReplay({
           uGrid: { value: new THREE.Vector2(width, height) },
           uK: { value: new THREE.Vector4() }, // fx', fy', cx', cy' on the depth grid
           uT: { value: new THREE.Matrix4() }, // camera-to-world for this depth frame
-          uMinConfidence: { value: minConfidence },
-          uSize: { value: 0.022 }, // depth pixels are ~1 cm apart at 1 m; overlap them
-          uScale: { value: 800 },
           uVisible: { value: 0 },
         },
+        side: THREE.DoubleSide,
         vertexShader: /* glsl */ `
           uniform sampler2D uDepth;
           uniform vec2 uGrid;
           uniform vec4 uK;
           uniform mat4 uT;
-          uniform float uMinConfidence;
-          uniform float uSize;
-          uniform float uScale;
           uniform float uVisible;
           attribute vec2 pixel;
           varying vec2 vUv;
           void main() {
             vUv = (pixel + 0.5) / uGrid;
-            vec2 ds = texture2D(uDepth, vUv).rg;   // depth meters, confidence
-            float d = ds.r;
-            if (uVisible < 0.5 || d <= 0.0 || ds.g < uMinConfidence) {
+            float d = texture2D(uDepth, vUv).r;   // meters; unmeasured pixels are never in a triangle
+            if (uVisible < 0.5) {
               gl_Position = vec4(2.0, 2.0, 2.0, 1.0);   // off screen
-              gl_PointSize = 0.0;
               return;
             }
             // Image-camera space (y down, z forward), then ARKit camera space.
             vec3 cam = vec3((pixel.x - uK.z) * d / uK.x, -((pixel.y - uK.w) * d / uK.y), -d);
-            vec4 mv = viewMatrix * (uT * vec4(cam, 1.0));
-            gl_Position = projectionMatrix * mv;
-            gl_PointSize = clamp(uSize * uScale / -mv.z, 1.0, 20.0);
+            gl_Position = projectionMatrix * viewMatrix * (uT * vec4(cam, 1.0));
           }
         `,
         fragmentShader: /* glsl */ `
           uniform sampler2D uVideo;
           varying vec2 vUv;
           void main() {
-            vec2 c = gl_PointCoord - 0.5;
-            if (dot(c, c) > 0.25) discard;
             gl_FragColor = vec4(texture2D(uVideo, vUv).rgb, 1.0);
           }
         `,
       }),
-    [depthTexture, videoTexture, width, height, minConfidence],
+    [depthTexture, videoTexture, width, height],
   )
 
   useEffect(
@@ -168,9 +163,7 @@ export function DepthReplay({
       .catch(() => cache.current.delete(k))
   }
 
-  useFrame(({ camera }) => {
-    // Pixels per meter at distance 1: viewport height / 2 / tan(fov / 2).
-    material.uniforms.uScale.value = (camera.projectionMatrix.elements[5] * size.height) / 2
+  useFrame(() => {
     const frame = depthFrameNear(frames, frameIndexAtTime(frames, timeRef.current))
     if (frame < 0) {
       material.uniforms.uVisible.value = 0
@@ -186,6 +179,9 @@ export function DepthReplay({
     if (shown.current !== k) {
       ;(depthTexture.image.data as Float32Array).set(entry.data)
       depthTexture.needsUpdate = true
+      const index = geometry.getIndex()!
+      geometry.setDrawRange(0, depthMeshIndices(entry.data, width, height, minConfidence, index.array as Uint32Array))
+      index.needsUpdate = true
       const sx = width / manifest.video.width
       const sy = height / manifest.video.height
       material.uniforms.uK.value.set(f.K[0] * sx, f.K[1] * sy, f.K[2] * sx, f.K[3] * sy)
@@ -197,5 +193,5 @@ export function DepthReplay({
     material.uniforms.uVisible.value = 1
   })
 
-  return <points geometry={geometry} material={material} frustumCulled={false} />
+  return <mesh geometry={geometry} material={material} frustumCulled={false} />
 }
