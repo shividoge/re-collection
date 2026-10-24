@@ -265,33 +265,49 @@ Never cut: real capture, grounded facts with family approval, grounding enforcem
 
 ## Status
 
-**Last updated:** Sat Oct 24, 10:30 PT, by Shivin's Claude session
+**Last updated:** Sat Oct 24, 08:20 PT, by Shivin's Claude session (account handoff: Shivin is switching to another Claude account; everything needed to continue is below)
 
-**Done:**
-- iPhone app checkpoints 1–5: live camera, GPU point cloud, `room.ply`/`room.bin` export, visit recording (video, audio, poses, 10 Hz depth) in one session. Built, installed and tested on Shivin's iPhone 16 Pro Max. Two real captures checked: files consistent, scale correct, 30 fps, 10 Hz depth. 25 unit tests pass.
-- Contracts written: `docs/capture-format.md`, `docs/guide-api.md`.
-- Sample capture on GitHub release `sample-capture-1`.
-- Guide server step 1 (branch `guide/server`): storage, phone uploads, validation against the manifest, Range file serving, `npm run import`. 18 tests pass; the real sample capture imports, uploads (175 MB, byte-identical) and serves with correct Range responses.
+**Done and working** (all checked on real hardware or real Claude, not just tests):
+- **iPhone app** (`ios/`, on `main`): live GPU point cloud room scan, `room.bin`/`room.ply` export, visit recording in the same ARKit session (H.264 video + audio, a pose per frame, 10 Hz depth/confidence), on-device transcript, one keyframe per second, review screen (title, attendees), upload to the guide, AirDrop zip. Installed on Shivin's iPhone 16 Pro Max. 31 unit tests.
+- **Guide server** (`guide/`): uploads, validation, Range file serving, `npm run import`; Claude fact extraction (Opus 5.5) with the grounding check; family review routes; revisit sessions with reply grounding, distress, branches, Opus recall scoring, `/api/progress`, `/api/person`. 43 tests. Steps 1–3 on `main`; step 4 on branch `guide/sessions`, **PR #8 open, not merged yet**.
+- **Website** (`web/`, served by the guide at `/`, on `main`): gallery with zip drag-and-drop upload, 3D room viewer, camera path, synced video, people replayed in 3D from depth (DepthReplay), Orbit / Phone's view, family fact review panel.
+- **Real data:** one good capture (MLH Hardware Lab table, id `aa8ba104…`) in `guide/data/captures/` with keyframes and 16 facts that Shivin reviewed in the web app (no transcript; nobody spoke). Also on the GitHub release `sample-capture-1` (without keyframes).
 
-- Web viewer (branch `web/viewer`): gallery, zip drop upload (unzips in the browser, uploads file by file, validates), 3D room cloud, camera path, synced video, Orbit / Phone's view, DepthReplay (people in 3D from 10 Hz depth). Served by the guide at `/`. Checked in a browser on the real capture: room renders, phone's view lines up with the video, depth frames stream at 10 Hz.
-- iPhone step 2 (branch `ios/upload`, PR #4): H.264 video, on-device transcript, keyframes, review screen, upload. Builds and is installed; not yet tested on the phone.
-- Anthropic API key in `guide/.env` (not committed), verified against the API.
-- Guide step 3, fact extraction (branch `guide/facts`): Opus 5.5 with structured outputs, effort high, server-side fallbacks; grounding check keeps only evidence Claude was shown; background worker; review routes (`GET /api/moments/:id`, `PATCH .../facts/:factId`, `POST .../extract`). 30 tests. Real run on the sample capture: 10 facts, all citing real keyframes, none dropped.
+**Not done yet:**
+- Patient **Revisit screen** (CLAUDE.md 7.4) and family **dashboard** (7.5) on the website. The guide routes for both are done (PR #8).
+- A scan of the Cal Hacks sign came out much worse than the table. Not diagnosed yet: the capture isn't on the Mac. Likely causes: distance (the app keeps only high-confidence depth under 4.5 m), bright light, glossy/dark/LED letters. A possible fix is a "far mode" that keeps medium-confidence points out to ~5 m.
+- **The demo capture** (tonight 20:00): scan the room before people arrive, then 1–2 minutes of family talking about specific things (a named dish, gift, story, place) so Claude gets quotes and the replay shows people.
+- Clap test (audio/video sync) with hands in frame.
+- Public URL for judges: cloudflared tunnel. Claude Code's safety rules block it from starting a tunnel, so Shivin runs it himself (below).
+- IBS27's role (proposed in TASKS.md) isn't confirmed, and he hasn't accepted the GitHub invite.
 
-- Family fact review screen (branch `web/review`): facts panel beside the video in the viewer; approve/reject/edit/don't bring up, evidence thumbnails and quotes that seek the video, chapters, grounding log, re-extract, live status while Claude works. Checked in the browser on the real capture (review state reset afterwards).
+**Next steps, in order:**
+1. Merge PR #8 (`gh pr merge 8 --repo shividoge/braindance --merge`), then `git switch main && git pull`.
+2. Diagnose the sign scan once Shivin AirDrops the zip (point count, depth confidence and distance stats, tracking) and add a far mode to the app if distance is the cause.
+3. Build the Revisit screen and the dashboard in `web/` (branch `web/revisit`), against the session routes in `docs/guide-api.md`.
+4. Help plan and then check the 20:00 demo capture.
 
-- Guide step 4 (branch `guide/sessions`): revisit sessions (welcome, chapter narration, conversation, distress with a code-level phrase backstop, branches), the grounding check on every reply, Opus recall scoring with code deciding unprompted vs after-cue, `/api/progress`, `/api/person`. 43 tests. Real run with Claude: narration cited only approved facts; a shared memory got a warm follow-up question; "I want to go home, where is everyone" got reassurance and an alert; scoring was right. Re-extract now tells Claude which facts are already reviewed, to avoid duplicates.
+**Open questions:** IBS27's role; where tonight's filming happens and who plays the grandparent; consent from everyone filmed.
 
-**In progress:** nothing running.
+### Local machine notes (Shivin's MacBook Air)
 
-**Not done yet:** revisit / dashboard screens, a public URL for judges (cloudflared; Shivin runs it himself), the web app polish (nothing in `web/`), phone transcript/keyframes/review/upload, the clap test (hands weren't in frame).
-
-**Next step:** see `TASKS.md`. Shivin: better scans (see TASKS) and the demo capture at 20:00. Firdavs: viewer and review-panel polish, then the revisit session screen (needs guide step 4). Firdavs: web scaffold + StaticCloud on the sample capture.
-
-**Open questions:**
-- IBS27's new role (see TASKS.md); he hasn't accepted the GitHub invite yet.
-- Anthropic API key or credits: Shivin to get one from the Anthropic booth.
-- Where to film tonight and who plays the grandparent; consent forms.
+- **Repo:** `~/Developer/braindance` (GitHub `shividoge/braindance`, private). Teammates: `boliyevfirdavs` (Firdavs, web; accepted), `IBS27` (invite pending).
+- **Run the guide + website:** `npm --prefix guide start` from the repo root → http://127.0.0.1:8787. After changing `web/`, run `npm --prefix web run build` (the guide serves `web/dist`). Dev with hot reload: `npm --prefix web run dev` (port 5173, proxies to the guide).
+- **Secrets:** `guide/.env` (gitignored) holds `ANTHROPIC_API_KEY` (Shivin's Claude Console credits, verified working) and `BRAINDANCE_KEY` (the team password the website asks for once). Never print, commit or paste either. The website stores the password in the browser after the first unlock.
+- **Who the sessions are for:** `guide/data/people.json` = `{"displayName": "Grandma", "preferredAddress": "Mom"}` (placeholder; change with `PUT /api/person`).
+- **Public URL for judges** (Shivin runs this himself; Claude Code is blocked from opening tunnels): `cloudflared tunnel --url http://127.0.0.1:8787`, then share the printed `https://….trycloudflare.com` URL plus the team password. The URL changes every restart.
+- **iPhone builds:** Xcode 27.1 at `/Applications/Xcode.app`. Phone UDID `00008140-001825992212801C`, signing team `AK3HPCD97G` (free Personal Team, set in `ios/project.yml`; installs expire after 7 days, so reinstall then). Build + install + launch with the phone plugged in and unlocked:
+  ```bash
+  cd ios && xcodegen generate
+  xcodebuild -project BraindanceCapture.xcodeproj -scheme BraindanceCapture -destination 'id=00008140-001825992212801C' -derivedDataPath /tmp/bd-device -allowProvisioningUpdates build
+  xcrun devicectl device install app --device 00008140-001825992212801C /tmp/bd-device/Build/Products/Debug-iphoneos/BraindanceCapture.app
+  xcrun devicectl device process launch --device 00008140-001825992212801C com.shividoge.braindance.capture
+  ```
+  Unit tests: `xcodebuild test` with any iPhone simulator destination.
+- **Getting captures off the phone:** review screen → "AirDrop the capture (zip)" → drop the zip on the website (or `npm --prefix guide run import -- <unzipped folder>`).
+- **Gotchas:** the in-app browser preview tool reads `~/.claude/launch.json` (another project), not the repo's, so run the guide in a terminal instead. Mac-made zips contain `._` files; the website skips them. `~/Downloads/CLAUDE.md` belongs to a different project (Echo Sight); ignore it.
+- **Commits:** credited to Shivin only, no AI attribution lines in commits or PRs. Work on a branch, open a PR, and merge only when Shivin says so. Never push to `main` directly.
+- **Test data hygiene:** if you run test sessions or test review clicks against real captures, undo them afterwards (delete the session file in `guide/data/sessions/`, reset the facts) so nothing fake reaches the dashboard.
 
 ## Work log
 
@@ -300,11 +316,12 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 - 2026-10-24 05:40 | Shivin + Claude | repo created, plan v1 committed | iOS checkpoint 1
 - 2026-10-24 06:45 | Shivin + Claude | iOS checkpoints 1–5 built, installed, two real captures verified; fixed 60 fps / 12 Hz depth bug | send room.bin to Firdavs, capture to guide
 - 2026-10-24 07:15 | Shivin + Claude | plan v2: dropped the GX10 pipeline for a Node guide server; wrote contracts and TASKS | guide server, web scaffold
-- 2026-10-24 07:30 | Shivin + Claude | guide server step 1 on branch guide/server (uploads, validation, Range, import, 18 tests) | phone step 2, guide step 3
-- 2026-10-24 08:30 | Shivin + Claude | phone step 2 (PR #4); web viewer with people replay, served by the guide (branch web/viewer) | guide step 3 (facts); Firdavs: viewer polish + review screen
-- 2026-10-24 09:15 | Shivin + Claude | guide step 3: Claude fact extraction with grounding, worker, review routes; real run OK | guide step 4 (sessions, grounding, scoring)
-- 2026-10-24 09:45 | Shivin + Claude | family fact review panel in the viewer (branch web/review) | guide step 4; revisit screen
-- 2026-10-24 10:30 | Shivin + Claude | guide step 4: sessions, reply grounding, distress, scoring, progress; fixes from a real Claude run | revisit screen + dashboard (web); better scans
+- 2026-10-24 07:30 | Shivin + Claude | guide server step 1 (uploads, validation, Range, import) | phone step 2, guide step 3
+- 2026-10-24 ~07:45 | Shivin + Claude | phone step 2 (transcript, keyframes, review, upload); web viewer with people replay, served by the guide | guide step 3
+- 2026-10-24 ~07:55 | Shivin + Claude | guide step 3: Claude fact extraction with grounding; real run OK | review screen
+- 2026-10-24 ~08:00 | Shivin + Claude | family fact review panel in the viewer | guide step 4
+- 2026-10-24 08:15 | Shivin + Claude | guide step 4: sessions, reply grounding, distress, scoring, progress; fixes from a real Claude run (PR #8) | merge PR #8; sign scan diagnosis; Revisit screen + dashboard
+- 2026-10-24 08:20 | Shivin + Claude | handoff written: Shivin switching Claude accounts | next session starts at "Next steps" above
 
 ---
 

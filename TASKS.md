@@ -2,7 +2,7 @@
 
 Read `CLAUDE.md` first. The contracts are `docs/capture-format.md` (the phone's files) and `docs/guide-api.md` (the guide server's routes). Build against them, and ask the owner before changing one.
 
-**Update 08:30 Sat:** the web viewer exists (`web/`, built by Shivin's Claude while the team slept): drop a capture zip on the page, see it in the gallery, orbit the 3D room, play the visit with people replayed in 3D from depth, and switch to the phone's view. The guide serves it at `/`. The main path for demo captures is **phone → AirDrop zip → drop on the website**; phone-to-guide upload also works but is optional.
+**Update ~07:45 Sat:** the web viewer exists (`web/`, built by Shivin's Claude while the team slept): drop a capture zip on the page, see it in the gallery, orbit the 3D room, play the visit with people replayed in 3D from depth, and switch to the phone's view. The guide serves it at `/`. The main path for demo captures is **phone → AirDrop zip → drop on the website**; phone-to-guide upload also works but is optional.
 
 **What changed at 07:00 Sat:** the Python pipeline on the ASUS GX10 is cut. Shivin now owns a small Node guide server that makes every Claude call, so the product is built by two people: Shivin (phone + guide) and Firdavs (web). IBS27's role is proposed below.
 
@@ -146,6 +146,6 @@ docs/devpost and open a PR.
 
 - **Now** Shivin → Firdavs: the sample capture (release `sample-capture-1`) and the working viewer in `web/`.
 - **11:00** Shivin → Firdavs: guide server tunnel URL serving the sample capture. If late, Firdavs keeps loading from `web/public/sample/`.
-- **Done (09:15)** Shivin → Firdavs: real facts in `/api/moments/:id` (the sample capture has them), plus `PATCH .../facts/:factId` and `POST .../extract`.
-- **Done (10:30)** Shivin → Firdavs: session routes with grounding, distress and scoring, plus `/api/progress` and `/api/person`.
+- **Done (~08:00)** Shivin → Firdavs: real facts in `/api/moments/:id` (the sample capture has them), plus `PATCH .../facts/:factId` and `POST .../extract`.
+- **Done (08:15, PR #8)** Shivin → Firdavs: session routes with grounding, distress and scoring, plus `/api/progress` and `/api/person`.
 - **20:00** Shivin → everyone: the demo capture. Everything after depends on this one, so protect it (keep the zip, upload it twice).
