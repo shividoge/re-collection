@@ -268,18 +268,19 @@ Never cut: real capture, grounded facts with family approval, grounding enforcem
 
 ## Status
 
-**Last updated:** Sat Oct 24, 07:15 PT, by Shivin's Claude session
+**Last updated:** Sat Oct 24, 07:30 PT, by Shivin's Claude session
 
 **Done:**
 - iPhone app checkpoints 1–5: live camera, GPU point cloud, `room.ply`/`room.bin` export, visit recording (video, audio, poses, 10 Hz depth) in one session. Built, installed and tested on Shivin's iPhone 16 Pro Max. Two real captures checked: files consistent, scale correct, 30 fps, 10 Hz depth. 25 unit tests pass.
 - Contracts written: `docs/capture-format.md`, `docs/guide-api.md`.
 - Sample capture on GitHub release `sample-capture-1`.
+- Guide server step 1 (branch `guide/server`): storage, phone uploads, validation against the manifest, Range file serving, `npm run import`. 18 tests pass; the real sample capture imports, uploads (175 MB, byte-identical) and serves with correct Range responses.
 
 **In progress:** nothing running.
 
-**Not done yet:** the guide server (nothing in `guide/`), the web app (nothing in `web/`), phone transcript/keyframes/review/upload, the clap test (hands weren't in frame).
+**Not done yet:** guide steps 3–4 (facts, grounding, sessions, scoring; needs an Anthropic key), the cloudflared tunnel, the web app (nothing in `web/`), phone transcript/keyframes/review/upload, the clap test (hands weren't in frame).
 
-**Next step:** see `TASKS.md`. Shivin: start the guide server (TASKS "Shivin, step 1"). Firdavs: web scaffold + StaticCloud on the sample capture.
+**Next step:** see `TASKS.md`. Shivin: phone step 2 (H.264, transcript, keyframes, review, upload) or guide step 3 (facts) once there's an API key. Firdavs: web scaffold + StaticCloud on the sample capture.
 
 **Open questions:**
 - IBS27's new role (see TASKS.md); he hasn't accepted the GitHub invite yet.
@@ -293,6 +294,7 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 - 2026-10-24 05:40 | Shivin + Claude | repo created, plan v1 committed | iOS checkpoint 1
 - 2026-10-24 06:45 | Shivin + Claude | iOS checkpoints 1–5 built, installed, two real captures verified; fixed 60 fps / 12 Hz depth bug | send room.bin to Firdavs, capture to guide
 - 2026-10-24 07:15 | Shivin + Claude | plan v2: dropped the GX10 pipeline for a Node guide server; wrote contracts and TASKS | guide server, web scaffold
+- 2026-10-24 07:30 | Shivin + Claude | guide server step 1 on branch guide/server (uploads, validation, Range, import, 18 tests) | phone step 2, guide step 3
 
 ---
 
