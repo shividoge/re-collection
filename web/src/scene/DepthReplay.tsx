@@ -34,10 +34,10 @@ function depthFrameNear(frames: FrameRecord[], frame: number, maxFrames = 3): nu
   return -1
 }
 
-/** The voxels the room explains, as a 3D texture the shaders test world positions against. */
+/** The voxels the replay skips, as a 3D texture the shaders test world positions against. */
 function roomTexture(t: VisitTimeline): THREE.Data3DTexture {
   const { nx, ny, nz } = t.grid
-  const texture = new THREE.Data3DTexture(t.room, nx, ny, nz)
+  const texture = new THREE.Data3DTexture(t.skip, nx, ny, nz)
   texture.format = THREE.RedFormat
   texture.type = THREE.UnsignedByteType
   texture.minFilter = THREE.NearestFilter
@@ -55,11 +55,11 @@ const MEMORY_SPLAT = 0.03
  * stable room surface.
  *
  * - Live: each depth frame becomes a 256×192 grid, unprojected with that frame's own camera
- *   pose and colored from the video. Pixels the room surface already explains are left out
- *   (the room is drawn once, from the fused scan, so it never flickers); what's left is what
- *   the video adds: people, things brought in or moved, corners the scan missed. Neighboring
- *   depth pixels on the same surface are joined into triangles (gaps.ts depthMeshIndices); the
- *   jump from a person to the wall behind is never bridged.
+ *   pose and colored from the video. Only solid blobs in space the room scan saw are kept
+ *   (gaps.ts movingPixels): people and things brought in or moved. The room itself is drawn
+ *   once, from the scan, so it never flickers, and walls the scan missed aren't redrawn from
+ *   each noisy frame. Neighboring depth pixels on the same surface are joined into triangles
+ *   (gaps.ts depthMeshIndices); the jump from a person to the wall behind is never bridged.
  * - Remembered: what the video added, from when it was first seen until later frames saw
  *   through that spot (timeline.ts), colored from the keyframes. It stays while the camera
  *   looks elsewhere, so the scene at any moment shows everything seen so far from every angle.
@@ -186,7 +186,7 @@ export function DepthReplay({
           varying vec3 vWorld;
           ${SELECTION_GLSL}
           void main() {
-            // The room surface already shows this spot.
+            // The room surface already shows this spot, or the scan never saw it.
             if (uRoomOn > 0.5) {
               vec3 c = (floor((vWorld - uRoomOrigin) / uRoomVoxel) + 0.5) / uRoomDims;
               if (all(greaterThanEqual(c, vec3(0.0))) && all(lessThanEqual(c, vec3(1.0))) && texture(uRoom, c).r > 0.0) discard;
@@ -202,7 +202,7 @@ export function DepthReplay({
   const isRoom = useMemo(() => {
     if (!ready) return () => false
     const { nx, ny, nz, origin, voxel } = ready.grid
-    const room = ready.room
+    const room = ready.skip
     return (x: number, y: number, z: number) => {
       const ix = Math.floor((x - origin[0]) / voxel)
       const iy = Math.floor((y - origin[1]) / voxel)

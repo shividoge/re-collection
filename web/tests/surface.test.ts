@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assignKeyframes, colorFromPoints, createFusion, finishSurface, finishVolume, fuseTSDF, fuseViews, knownEmpty, marchingCubes, type DepthView } from '../src/scene/surface'
+import { assignKeyframes, colorFromPoints, createFusion, finishSurface, fuseTSDF, fuseViews, marchingCubes, type DepthView } from '../src/scene/surface'
 import { lookAtPose } from './fixture'
 
 // The phone's real depth resolution: rays land ~1 cm apart at 2 m, finer than the 2 cm voxels.
@@ -127,28 +127,17 @@ describe('TSDF fusion and marching cubes', () => {
     for (let c = 0; c < 6; c++) expect(a.uv[f * 6 + c]).toBeLessThanOrEqual(1)
   })
 
-  it('adds what the scan missed from the visit, but nothing in space the scan saw empty', () => {
-    // The scan measured only the left half of the wall (and the empty space in front of it).
-    const scan = [0, 0.05, -0.05].map((dx) => wallView([dx, 0.8, 0], (u) => u < W / 2))
-    // The visit sees the whole wall, and a box 1 m out on the left, where the scan saw empty space.
-    const visit = [0, 0.05, -0.05].map((dx) => {
-      const v = wallView([dx, 0.8, 0])
-      for (let y = 70; y < 120; y++) for (let u = 30; u < 90; u++) v.depth[y * W + u] = 1000
-      return v
-    })
-    const read = { depthW: W, depthH: H, ...VIDEO, minConfidence: 2 }
+  it('marks the space the views reached, and nothing they never saw', () => {
+    // Only the left half of each image measures the wall.
+    const views = [wallView([0, 0.8, 0], (u) => u < W / 2), wallView([0, 0.8, -0.1], (u) => u < W / 2)]
     const fu = createFusion(box.min, box.max, 0.02)
-    fuseViews(fu, scan, read)
-    fuseViews(fu, visit, { ...read, blocked: knownEmpty(fu) })
-    const mesh = marchingCubes(finishVolume(fu), 3)
-    let rightHalf = 0
-    for (let i = 0; i < mesh.positions.length; i += 3) {
-      // Nothing where the box was: it stood in space the scan saw empty.
-      expect(Math.abs(mesh.positions[i + 2] + 1)).toBeGreaterThan(0.2)
-      if (mesh.positions[i] > 0.2 && Math.abs(mesh.positions[i + 2] + 2) < 0.03) rightHalf++
-    }
-    // The half of the wall the scan missed comes from the visit.
-    expect(rightHalf).toBeGreaterThan(100)
+    fuseViews(fu, views, { depthW: W, depthH: H, ...VIDEO, minConfidence: 2 })
+    const at = (x: number, y: number, z: number) =>
+      fu.reached[(Math.floor((z - fu.origin[2]) / 0.02) * fu.ny + Math.floor((y - fu.origin[1]) / 0.02)) * fu.nx + Math.floor((x - fu.origin[0]) / 0.02)]
+    // In front of the measured (left) half, up to the wall: reached. Right half: never measured.
+    expect(at(-0.3, 0.8, -1)).toBe(1)
+    expect(at(-0.3, 0.8, -1.95)).toBe(1)
+    expect(at(0.4, 0.8, -1)).toBe(0)
   })
 
   it('colors the surface from nearby scan points, grey where there are none', () => {

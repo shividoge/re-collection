@@ -1,5 +1,6 @@
 // Builds the room's surface (surface.ts), then the visit's timeline (timeline.ts), off the
 // main thread. Posts the surface as soon as it's ready, then the timeline.
+import { alignToRoom, indexPoints } from './align'
 import { buildRoomSurface, type DepthView, type Grid, type KeyView, type RoomMesh } from './surface'
 import { buildTimeline, meshMask, type MomentView, type Timeline } from './timeline'
 
@@ -33,7 +34,12 @@ export interface SurfaceJob {
 /** Voxels the room explains: its surface, grown by this many voxels for tracking drift. */
 export const ROOM_MARGIN_VOXELS = 3
 
-export type SurfaceMessage = { kind: 'surface'; surface: RoomMesh } | { kind: 'timeline'; timeline: Timeline; grid: Grid; room: Uint8Array }
+/**
+ * `skip` marks the voxels where the replay draws nothing: the room surface (grown a little for
+ * drift), which is drawn from the scan, and space the scan never reached, where there's no
+ * room to tell a person from a wall the scan missed.
+ */
+export type SurfaceMessage = { kind: 'surface'; surface: RoomMesh } | { kind: 'timeline'; timeline: Timeline; grid: Grid; skip: Uint8Array }
 
 self.onmessage = (e: MessageEvent<SurfaceJob>) => {
   const job = e.data
@@ -58,10 +64,17 @@ self.onmessage = (e: MessageEvent<SurfaceJob>) => {
     return best >= 0 && Math.abs(visit[best].t - t) <= 0.06 ? best : -1
   })
   const noDepth = { depth: new Uint16Array(px), confidence: new Uint8Array(px) }
-  const keys: KeyView[] = keyframes.map((k, j) => ({ T: k.T, K: k.K, ...(nearest[j] >= 0 ? visit[nearest[j]] : noDepth) }))
+  // Each keyframe's pose lined up with the room (align.ts), using the depth taken with it.
+  const roomIndex = indexPoints(job.points)
+  const keys: KeyView[] = keyframes.map((k, j) => {
+    if (nearest[j] < 0) return { T: k.T, K: k.K, ...noDepth }
+    const d = visit[nearest[j]]
+    return { T: alignToRoom({ ...d, T: k.T, K: k.K }, roomIndex, job), K: k.K, depth: d.depth, confidence: d.confidence }
+  })
 
-  const { mesh, grid } = buildRoomSurface(viewsOf(job.scan), visit, keys, job)
-  const room = meshMask(mesh.positions, grid, ROOM_MARGIN_VOXELS)
+  const { mesh, grid, reached } = buildRoomSurface(viewsOf(job.scan), keys, job)
+  const skip = meshMask(mesh.positions, grid, ROOM_MARGIN_VOXELS)
+  for (let i = 0; i < skip.length; i++) if (!reached[i]) skip[i] = 1
   post({ kind: 'surface', surface: mesh }, [mesh.positions.buffer, mesh.normals.buffer, mesh.colors.buffer, mesh.uvs.buffer, mesh.layers.buffer])
   if (!job.moment) return
 
@@ -75,6 +88,6 @@ self.onmessage = (e: MessageEvent<SurfaceJob>) => {
     }
     k.small.close()
   })
-  const timeline = buildTimeline(visit, grid, room, job)
-  post({ kind: 'timeline', timeline, grid, room }, [timeline.positions.buffer, timeline.colors.buffer, timeline.start.buffer, timeline.end.buffer, room.buffer])
+  const timeline = buildTimeline(visit, grid, skip, job)
+  post({ kind: 'timeline', timeline, grid, skip }, [timeline.positions.buffer, timeline.colors.buffer, timeline.start.buffer, timeline.end.buffer, skip.buffer])
 }

@@ -79,8 +79,9 @@ interface Thing {
 }
 
 /**
- * Builds the timeline from the visit's depth frames, in time order. `room` marks voxels the
- * room surface explains: its mesh voxels, grown by a few centimeters for tracking drift.
+ * Builds the timeline from the visit's depth frames, in time order. `room` marks voxels left
+ * out: the room surface's (grown by a few centimeters for tracking drift), and space the room
+ * scan never reached, where a wall it missed can't be told from something new.
  */
 export function buildTimeline(views: MomentView[], g: Grid, room: Uint8Array, o: TimelineOptions): Timeline {
   const voxel = g.voxel

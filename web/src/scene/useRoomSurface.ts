@@ -18,8 +18,8 @@ export interface KeyframeImages {
 export type RoomSurface = { mesh: RoomMesh; keyframes: KeyframeImages | null }
 export type SurfaceState = { status: 'none' } | { status: 'building' } | { status: 'ready'; surface: RoomSurface } | { status: 'failed'; message: string }
 
-/** The visit's timeline, plus the voxels the room explains (the live replay leaves those out). */
-export type VisitTimeline = Timeline & { grid: Grid; room: Uint8Array }
+/** The visit's timeline, plus the voxels where the replay draws nothing (surfaceWorker.ts `skip`). */
+export type VisitTimeline = Timeline & { grid: Grid; skip: Uint8Array }
 export type TimelineState = { status: 'none' } | { status: 'building' } | { status: 'ready'; timeline: VisitTimeline } | { status: 'failed'; message: string }
 
 /** Fetches the depth frames of `frames` as one contiguous run of depth.bin and confidence.bin. */
@@ -128,7 +128,7 @@ export function useRoomSurface(capture: LoadedCapture): { surface: SurfaceState;
         if (cancelled) return
         const m = e.data
         if (m.kind === 'surface') setSurface({ status: 'ready', surface: { mesh: m.surface, keyframes: keyframes?.images ?? null } })
-        else setTimeline({ status: 'ready', timeline: { ...m.timeline, grid: m.grid, room: m.room } })
+        else setTimeline({ status: 'ready', timeline: { ...m.timeline, grid: m.grid, skip: m.skip } })
       }
       worker.onerror = (e) => fail(e.message || 'the surface worker failed')
       const transfer: Transferable[] = [scanRun.depth, scanRun.confidence, job.points.buffer, job.colors.buffer, ...(keyframes?.infos ?? []).map((k) => k.small)]

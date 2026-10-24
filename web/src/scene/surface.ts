@@ -40,8 +40,6 @@ export interface ViewOptions {
   stride?: number
   /** Use every n-th depth pixel for free-space votes (they only need to cover each voxel). */
   freeStride?: number
-  /** Voxels these views may not add surface to (they can still see through them). */
-  blocked?: Uint8Array | null
 }
 
 export interface FuseOptions extends ViewOptions {
@@ -89,6 +87,8 @@ export interface Fusion extends Grid {
   free: Uint8Array
   seenBy: Uint16Array
   freeBy: Uint16Array
+  /** Space some view's rays reached: seen through, or up to and just behind a surface. */
+  reached: Uint8Array
   views: number
 }
 
@@ -132,18 +132,18 @@ export function createFusion(min: Vec3, max: Vec3, voxel = 0.02, truncation = vo
     free: new Uint8Array(n),
     seenBy: new Uint16Array(n).fill(NO_VIEW),
     freeBy: new Uint16Array(n).fill(NO_VIEW),
+    reached: new Uint8Array(n),
     views: 0,
   }
 }
 
 /** Adds depth views to the fusion. */
 export function fuseViews(fu: Fusion, views: Iterable<DepthView>, o: ViewOptions) {
-  const { nx, ny, nz, voxel, truncation: trunc, tsdf, rays, seen, free, seenBy, freeBy } = fu
+  const { nx, ny, nz, voxel, truncation: trunc, tsdf, rays, seen, free, seenBy, freeBy, reached } = fu
   const minConf = o.minConfidence ?? 1
   const maxDepth = o.maxDepth ?? 4.5
   const stride = o.stride ?? 1
   const freeStride = o.freeStride ?? 4
-  const blocked = o.blocked ?? null
   const [ox, oy, oz] = fu.origin
   const sx = o.depthW / o.videoW
   const sy = o.depthH / o.videoH
@@ -176,14 +176,16 @@ export function fuseViews(fu: Fusion, views: Iterable<DepthView>, o: ViewOptions
         const len = Math.hypot(rx, ry, 1)
         if (freeRay) {
           // Free space: everything from the camera to well in front of the surface was seen
-          // through. Stops a full truncation band short, so the surface's own voxels are safe.
-          for (let t = 0.2; t < d - 2 * trunc; t += voxel / len) {
+          // through. Counts stop a full truncation band short, so the surface's own voxels are
+          // safe; the space up to the surface is still marked as reached.
+          for (let t = 0.2; t < d; t += voxel / len) {
             const x = Math.floor((T[12] + wx * t - ox) / voxel)
             const y = Math.floor((T[13] + wy * t - oy) / voxel)
             const z = Math.floor((T[14] + wz * t - oz) / voxel)
             if (x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz) continue
             const i = (z * ny + y) * nx + x
-            if (freeBy[i] === viewId) continue
+            reached[i] = 1
+            if (t >= d - 2 * trunc || freeBy[i] === viewId) continue
             freeBy[i] = viewId
             if (free[i] < 255) free[i]++
           }
@@ -197,7 +199,7 @@ export function fuseViews(fu: Fusion, views: Iterable<DepthView>, o: ViewOptions
           const z = Math.floor((T[14] + wz * t - oz) / voxel)
           if (x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz) continue
           const i = (z * ny + y) * nx + x
-          if (blocked && blocked[i]) continue
+          reached[i] = 1
           const w = rays[i]
           const value = Math.max(-1, Math.min(1, sdf / trunc))
           tsdf[i] = (tsdf[i] * w + value) / (w + 1)
@@ -210,16 +212,6 @@ export function fuseViews(fu: Fusion, views: Iterable<DepthView>, o: ViewOptions
       }
     }
   }
-}
-
-/**
- * Space the views so far saw as empty: seen through by at least two views, and by more views
- * than measured a surface there.
- */
-export function knownEmpty(fu: Fusion): Uint8Array {
-  const out = new Uint8Array(fu.free.length)
-  for (let i = 0; i < out.length; i++) if (fu.free[i] >= 2 && fu.free[i] > fu.seen[i]) out[i] = 1
-  return out
 }
 
 /** Settles which voxels hold a surface: free space wins, and ghost layers are dropped. */
@@ -495,6 +487,9 @@ export function assignKeyframes(mesh: Mesh, keys: KeyView[], o: { videoW: number
   }
   const sx = o.depthW / o.videoW
   const sy = o.depthH / o.videoH
+  // Near a depth edge (an object's outline) a centimeter of error moves color across it, so
+  // keyframe pixels there aren't used.
+  const nearEdge = keys.map((k) => maxFilter2D(edgePixels(k.depth, o.depthW, o.depthH), o.depthW, o.depthH, 1))
   // Every keyframe's score for every triangle (0: can't be used).
   const nk = keys.length
   const score = new Float32Array(tris * nk)
@@ -538,9 +533,9 @@ export function assignKeyframes(mesh: Mesh, keys: KeyView[], o: { videoW: number
       const du = Math.min(o.depthW - 1, Math.floor(px * sx))
       const dv = Math.min(o.depthH - 1, Math.floor(py * sy))
       const k = dv * o.depthW + du
-      if (keys[j].confidence[k] < 1) continue
+      if (keys[j].confidence[k] < 1 || nearEdge[j][k]) continue
       const measured = keys[j].depth[k] / 1000
-      if (Math.abs(measured - d) > 0.03 + 0.02 * d) continue
+      if (Math.abs(measured - d) > 0.02 + 0.02 * d) continue
       score[f * nk + j] = facing / Math.max(d, 0.5)
     }
     let best = -1
@@ -584,6 +579,22 @@ export function assignKeyframes(mesh: Mesh, keys: KeyView[], o: { videoW: number
     }
   }
   return { layer, uv }
+}
+
+/** The largest value within `r` pixels (a box max) of a w×h image. */
+function maxFilter2D(src: Uint8Array, w: number, h: number, r: number): Uint8Array {
+  const out = new Uint8Array(src.length)
+  for (let v = 0; v < h; v++)
+    for (let u = 0; u < w; u++) {
+      if (!src[v * w + u]) continue
+      for (let dv = -r; dv <= r; dv++)
+        for (let du = -r; du <= r; du++) {
+          const uu = u + du
+          const vv = v + dv
+          if (uu >= 0 && vv >= 0 && uu < w && vv < h) out[vv * w + uu] = 1
+        }
+    }
+  return out
 }
 
 /**
@@ -673,33 +684,24 @@ export interface RoomSurfaceInput {
 
 /**
  * The room's surface, with the same settings for every capture: 2 cm voxels, high-confidence
- * depth only, at least three views agreeing.
- *
- * The room scan comes first. The visit's depth frames then add what the scan missed, but only
- * where the scan didn't see empty space: space the scan saw empty is where people and things
- * brought in appear later, and those must stay out of the room (the replay shows them). What
- * the visit adds is textured from its keyframes, as is everything they see well; the rest keeps
- * the scan points' colors. Triangles with neither are left out, as are specks.
+ * depth only, at least three views agreeing. Its shape comes from the room scan alone, as the
+ * phone measured it; the visit only lends it texture. Parts the keyframes see well (with their
+ * poses aligned to the room first, see align.ts) show keyframe pixels; the rest keep the scan
+ * points' colors. Triangles with neither are left out, as are specks. Also returns the space
+ * the scan's rays reached: the replay only draws there, never where the scan has no data.
  */
-export function buildRoomSurface(
-  scan: DepthView[],
-  visit: DepthView[],
-  keys: KeyView[],
-  o: RoomSurfaceInput,
-): { mesh: RoomMesh; grid: Grid; empty: Uint8Array } {
+export function buildRoomSurface(scan: DepthView[], keys: KeyView[], o: RoomSurfaceInput): { mesh: RoomMesh; grid: Grid; reached: Uint8Array } {
   const voxel = 0.02
-  const fu = createFusion(roomExtent(o.points).min, roomExtent(o.points).max, voxel)
-  const read = { depthW: o.depthW, depthH: o.depthH, videoW: o.videoW, videoH: o.videoH, minConfidence: 2 }
-  fuseViews(fu, scan, read)
-  const empty = knownEmpty(fu)
-  if (visit.length > 0) fuseViews(fu, visit, { ...read, blocked: empty })
+  const { min, max } = roomExtent(o.points)
+  const fu = createFusion(min, max, voxel)
+  fuseViews(fu, scan, { depthW: o.depthW, depthH: o.depthH, videoW: o.videoW, videoH: o.videoH, minConfidence: 2 })
   const volume = finishVolume(fu)
   const mesh = marchingCubes(volume, 3)
   // 1 cm cells (the phone's point spacing): colors average over ~3 cm, not 6, so they stay crisper.
   const { colors, colored } = colorFromPoints(mesh.positions, o.points, o.colors, 0.01)
   const assignment = assignKeyframes(mesh, keys, o)
   const { nx, ny, nz, origin } = volume
-  return { mesh: finishSurface({ ...mesh, colors }, colored, assignment, MIN_PIECE_AREA), grid: { nx, ny, nz, origin, voxel }, empty }
+  return { mesh: finishSurface({ ...mesh, colors }, colored, assignment, MIN_PIECE_AREA), grid: { nx, ny, nz, origin, voxel }, reached: fu.reached }
 }
 
 /** Pieces smaller than this (m²) are dropped: about a 7 × 7 cm patch. */
