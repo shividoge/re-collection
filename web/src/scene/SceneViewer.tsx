@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { CameraPath, FollowCamera } from './CameraPath'
 import { cloudBounds } from './cloudBounds'
 import { DepthReplay } from './DepthReplay'
+import { HoleFill } from './HoleFill'
 import type { FrameRecord } from './formats'
 import type { LoadedCapture } from './loadCapture'
 import { CameraTween, FlyControls, PickHandler, PivotMarker, type CameraGoal, type NavMode } from './Navigation'
@@ -218,6 +219,7 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
               }}
             >
               <color attach="background" args={['#05060a']} />
+              <HoleFill />
               <StaticCloud cloud={cloud} sizes={sizes} dim={selection ? 0.45 : canReplayPeople && playback.playing ? 0.55 : 1} />
               {selection && (
                 <>

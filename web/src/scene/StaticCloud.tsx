@@ -26,11 +26,10 @@ const fragmentShader = /* glsl */ `
   varying vec3 vColor;
   void main() {
     vec2 c = gl_PointCoord * 2.0 - 1.0;
-    float r2 = dot(c, c);
-    if (r2 > 1.0) discard;
-    // Soft round sprite: gentle falloff toward the rim instead of a hard disc.
-    float shade = mix(1.0, 0.72, r2);
-    gl_FragColor = vec4(vColor * shade, uOpacity);
+    if (dot(c, c) > 1.0) discard;
+    // Flat color: overlapping points then read as one continuous surface (a darker rim
+    // made every point stand out as a dot, which looked like holes).
+    gl_FragColor = vec4(vColor, uOpacity);
   }
 `
 
