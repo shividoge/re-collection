@@ -257,3 +257,9 @@
 }
 
 .site .lane-error { position: absolute; left: 0; right: 0; bottom: 24px; text-align: center; color: #ffb4a8; font-size: 14px; z-index: 2; }
+
+/* Every room, grouped by how it was made */
+.site .room-group { margin-top: 28px; }
+.site .room-group-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin-bottom: 14px; }
+.site .room-group-head h3 { margin: 0; font-size: 20px; }
+.site .room-group-head p { margin: 0; max-width: 64ch; font-size: 15px; }
