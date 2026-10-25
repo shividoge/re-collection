@@ -252,6 +252,37 @@ type Upload = { id: string; kind: 'photo' | 'video'; type: string; name: string;
 - **Delete:** removes the file and its index entry. While the saved arrangement still hangs it → 409 (take it off the walls and save first).
 - Uploads are written only by these routes and never appear under `/public`.
 
+### Live visit (family join the Memory Palace and talk)
+
+The palace link (`#/palace`) asks "Who's visiting?" each time it opens: the person the palace is for, or family (with a name). The patient leads; family follow where they walk and which memory they step into, and everyone talks. One live visit per guide (one palace), in memory only (`guide/src/live.mjs`); a restart ends it.
+
+```
+POST /api/palace/live/join     ← { role: "patient" | "family", name? }            → { me: { id }, iceServers, live: Live }
+POST /api/palace/live/leave    ← { id }                                            → { ok: true }
+GET  /api/palace/live?id=&since=&audioAfter=                                       → Live & { signals, audio }, or 204 when nothing changed
+POST /api/palace/live/view     ← { id, view: View }   (the patient only)            → { ok: true, rev }
+POST /api/palace/live/signal   ← { id, to, data }     (WebRTC call setup)            → { ok: true }
+POST /api/palace/live/audio?id=&seq=  ← audio bytes (application/octet-stream)       → { ok: true, seq }
+```
+
+```ts
+type Member = { id: string; role: 'patient' | 'family'; name: string };
+type View = {
+  x: number; z: number; yaw: number; pitch: number;            // where the patient stands and looks (meters, radians)
+  inside: { index: number; stage: 'diving' | 'here' | 'leaving' } | null;   // stepping into memory `index`
+  music: boolean;
+};
+type Live = { version: number; members: Member[]; view: (View & { rev: number; updatedAt: string }) | null };
+// In a poll answer: signals = [{ from, data }] addressed to this member (each delivered once);
+// audio = [{ seq, from, data }] (base64) from other members with seq > audioAfter.
+```
+
+- **Presence:** `join` makes a member with a new id; every poll with that `id` keeps it present. A member not heard from for 8 s is dropped (`version` goes up). `name` is at most 40 characters; a patient with no name gets the name from `GET /api/person` (`displayName`).
+- **Polling:** each screen polls about 5 times a second (event streams don't get through a cloudflared quick tunnel). `since` equal to `version`, with no signals or audio waiting, answers 204 with no body. An unknown `id` answers 404: the screen joins again.
+- **View:** sent by the patient's screen about 5 times a second; `rev` goes up with each. A view from a member that isn't a patient → 403. Numbers must be finite; `index` a whole number from 0 to 999. When the last patient leaves, `view` becomes null.
+- **Call setup:** `signal` passes WebRTC offers, answers and ICE candidates (`data`, any JSON up to 16 KB) to one member, unread. `iceServers` comes from the guide's `.env` (`ICE_SERVERS`, a JSON array as `RTCPeerConnection` takes it), defaulting to a public STUN server. A TURN server can be added there; nothing else changes.
+- **Audio relay:** when a direct call can't connect, screens send their voice through the guide instead: 16 kHz mono μ-law, about 250 ms per POST (at most 64 KB). The guide keeps the last 10 s, numbered by `seq` (one counter for the visit), and hands each screen the chunks from others it hasn't had yet. Never written to disk.
+
 ## Public routes (visitors, no key)
 
 For the site's front page. Nothing here needs `X-Braindance-Key`, nothing writes, and nothing calls Claude. A capture is visible only after the family marks it public; a private capture answers 404, the same as one that doesn't exist.
