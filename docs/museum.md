@@ -30,7 +30,7 @@ edges. The painting stays on through the dive and the arrival; then it lifts awa
 seconds, leaving the photo or video exactly as it was taken, while the picture's own sound rises
 at the same time (`Painted.tsx`). For a visit, the 3D room takes over once the paint has lifted.
 
-**‹ Museum** (or Escape) runs the same journey backwards: the world smears away into the warp,
+**‹ Palace** (or Escape) runs the same journey backwards: the world smears away into the warp,
 and the view pulls back out of the frame to where the visitor stood. The picture becomes a
 painting again on the way out.
 
