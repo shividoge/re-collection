@@ -98,7 +98,8 @@ function useLocalCaptureAssets(id: string | null): AssetsState {
   return state && state.id === id ? state.state : { status: 'loading' }
 }
 
-const localDev = import.meta.env.DEV && new URLSearchParams(location.search).has('local')
+const localDev =
+  import.meta.env.DEV && typeof location !== 'undefined' && new URLSearchParams(location.search).has('local')
 
 /**
  * One capture's assets, kept up to date in live mode (a finished bake swaps in `derived`).
