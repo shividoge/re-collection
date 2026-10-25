@@ -9,7 +9,7 @@ import { Artwork } from '../museum/Artwork'
 import { Furniture, Sconces, Window } from '../museum/Classic'
 import type { Artwork as Art } from '../museum/exhibitions'
 import { fitPicture, planMuseum, route, type MuseumPlan } from '../museum/layout'
-import { LOOKS } from '../museum/looks'
+import { LOOK } from '../museum/looks'
 import { Rooms } from '../museum/Rooms'
 import { EYE } from '../museum/Walker'
 import { coverDistance } from '../museum/warp'
@@ -150,8 +150,8 @@ export default function MemoryLane({ captures, diveId }: { captures: PublicCaptu
     return k >= 0 ? [...sorted.slice(0, k), ...sorted.slice(k + 1), sorted[k]] : sorted
   }, [captures, diveId])
   const items = useMemo(() => hallItems(moments), [moments])
-  const plan = useMemo(() => planMuseum(items.length, 'classic'), [items.length])
-  const look = LOOKS.classic
+  const plan = useMemo(() => planMuseum(items.length), [items.length])
+  const look = LOOK
   const [sizes, setSizes] = useState<{ w: number; h: number }[]>([])
   const onMeasure = useCallback((slot: number, w: number, h: number) => {
     setSizes((prev) => {
