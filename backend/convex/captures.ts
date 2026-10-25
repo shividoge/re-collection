@@ -2,10 +2,11 @@ import { ConvexError, v } from 'convex/values'
 import { parseManifest } from '../../shared/manifest'
 import { internal } from './_generated/api'
 import type { Doc } from './_generated/dataModel'
-import { action, internalAction, internalMutation, mutation, query } from './_generated/server'
+import { action, internalAction, internalMutation, mutation, query, type MutationCtx } from './_generated/server'
 import { conflict, getCapture, getFile, getMomentDoc, initialStatus, invalid, listFiles, manifestOf, requireCapture } from './lib/data'
 import { abortMultipart, deletePrefix, r2Config, r2ConfigOrNull, stableGetUrl, type R2Config } from './lib/r2'
 import { completeUpload } from './lib/stages'
+import { isSourceName } from './lib/validate'
 import { captureStatus, derived, fileUrl } from './validators'
 
 export const namedFile = v.object({ name: v.string(), ...fileUrl.fields })
@@ -31,6 +32,8 @@ export const captureDetail = v.object({
   derived: v.union(derived, v.null()),
   /** Derived files (names as in derived.files), presigned GET URLs. */
   derivedFiles: v.array(namedFile),
+  /** A video capture's uploaded source (`source.<ext>` under videos/<id>/), or null. */
+  sourceVideo: v.union(namedFile, v.null()),
 })
 
 /** Presigned, day-stable GET URLs for files (architecture-v3.md §6.4). */
@@ -135,7 +138,8 @@ export const get = query({
     if (!capture) return null
     const raw = await listFiles(ctx, capture.captureId, 'raw')
     const derivedRows = await listFiles(ctx, capture.captureId, 'derived')
-    const cfg = raw.length || derivedRows.length ? r2Config() : null
+    const videoRows = (await listFiles(ctx, capture.captureId, 'video')).filter((f) => isSourceName(f.name))
+    const cfg = raw.length || derivedRows.length || videoRows.length ? r2Config() : null
     return {
       id: capture.captureId,
       manifestJson: capture.manifestJson,
@@ -144,6 +148,7 @@ export const get = query({
       files: cfg ? signFiles(cfg, raw) : [],
       derived: capture.derived,
       derivedFiles: cfg ? signFiles(cfg, derivedRows) : [],
+      sourceVideo: cfg ? (signFiles(cfg, videoRows)[0] ?? null) : null,
     }
   },
 })
@@ -166,25 +171,62 @@ export const remove = mutation({
   args: { captureId: v.string() },
   returns: v.object({ ok: v.literal(true) }),
   handler: async (ctx, { captureId }) => {
-    const capture = await requireCapture(ctx, captureId)
-    const id = capture.captureId
-    const openUploads: { key: string; uploadId: string }[] = []
-    for (const u of await ctx.db.query('uploads').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()) {
-      if (u.status === 'open' && u.r2UploadId) openUploads.push({ key: u.key, uploadId: u.r2UploadId })
-      await ctx.db.delete(u._id)
-    }
-    for (const f of await listFiles(ctx, id)) await ctx.db.delete(f._id)
-    for (const j of await ctx.db.query('jobs').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()) await ctx.db.delete(j._id)
-    for (const s of await ctx.db.query('sessions').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()) await ctx.db.delete(s._id)
-    const moment = await getMomentDoc(ctx, id)
-    if (moment) await ctx.db.delete(moment._id)
-    const arrangement = await ctx.db.query('museumArrangement').first()
-    if (arrangement?.items.some((i) => i.capture === id)) {
-      await ctx.db.patch(arrangement._id, { items: arrangement.items.filter((i) => i.capture !== id), updatedAt: new Date().toISOString() })
-    }
-    await ctx.db.patch(capture._id, { deleting: true })
-    await ctx.scheduler.runAfter(0, internal.captures.purge, { captureId: id, openUploads })
+    await removeCapture(ctx, await requireCapture(ctx, captureId))
     return { ok: true as const }
+  },
+})
+
+/** Deletes a capture's rows, leaves the tombstone and schedules the purge (captures.remove, the abandoned sweep). */
+async function removeCapture(ctx: MutationCtx, capture: Doc<'captures'>): Promise<void> {
+  const id = capture.captureId
+  const openUploads: { key: string; uploadId: string }[] = []
+  for (const u of await ctx.db.query('uploads').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()) {
+    if (u.status === 'open' && u.r2UploadId) openUploads.push({ key: u.key, uploadId: u.r2UploadId })
+    await ctx.db.delete(u._id)
+  }
+  for (const f of await listFiles(ctx, id)) await ctx.db.delete(f._id)
+  for (const j of await ctx.db.query('jobs').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()) await ctx.db.delete(j._id)
+  for (const s of await ctx.db.query('sessions').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()) await ctx.db.delete(s._id)
+  const moment = await getMomentDoc(ctx, id)
+  if (moment) await ctx.db.delete(moment._id)
+  const arrangement = await ctx.db.query('museumArrangement').first()
+  if (arrangement?.items.some((i) => i.capture === id)) {
+    await ctx.db.patch(arrangement._id, { items: arrangement.items.filter((i) => i.capture !== id), updatedAt: new Date().toISOString() })
+  }
+  await ctx.db.patch(capture._id, { deleting: true })
+  await ctx.scheduler.runAfter(0, internal.captures.purge, { captureId: id, openUploads })
+}
+
+/** An upload nobody has touched for this long is abandoned. */
+export const ABANDONED_MS = 7 * 24 * 3600_000
+
+/**
+ * The daily sweep: removes captures whose upload was started but abandoned (still receiving, no
+ * file, upload or status change for 7 days, nothing queued or running). Never one with a session,
+ * reviewed facts, or (video) an uploaded source, since those hold someone's work.
+ */
+export const sweepAbandoned = internalMutation({
+  args: {},
+  returns: v.array(v.string()),
+  handler: async (ctx) => {
+    const cutoff = Date.now() - ABANDONED_MS
+    const removed: string[] = []
+    for (const c of await ctx.db.query('captures').collect()) {
+      if (c.deleting || c.status.upload !== 'receiving' || c.status.updatedAt > cutoff) continue
+      const id = c.captureId
+      const files = await listFiles(ctx, id)
+      if (files.some((f) => f.createdAt > cutoff || f.area === 'video')) continue
+      const uploads = await ctx.db.query('uploads').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()
+      if (uploads.some((u) => u.createdAt > cutoff)) continue
+      const jobs = await ctx.db.query('jobs').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()
+      if (jobs.some((j) => j.status === 'queued' || j.status === 'leased')) continue
+      if (await ctx.db.query('sessions').withIndex('by_capture', (q) => q.eq('captureId', id)).first()) continue
+      if ((await getMomentDoc(ctx, id))?.facts.some((f) => f.status !== 'pending')) continue
+      await removeCapture(ctx, c)
+      removed.push(id)
+    }
+    if (removed.length) console.log(`Removed ${removed.length} abandoned upload(s): ${removed.join(', ')}`)
+    return removed
   },
 })
 

@@ -3,7 +3,8 @@
 import { ConvexError } from 'convex/values'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { goodReply } from './lib/facts.fixture'
-import { CAPTURE_ID, api, bucket, claude, internal, runScheduled, setup, statusOf, tinyCapture, upload, uploadCapture } from './test.helpers'
+import { moment } from './lib/grounding.fixture'
+import { CAPTURE_ID, api, bucket, claude, internal, putMoment, runScheduled, setup, statusOf, tinyCapture, upload, uploadCapture } from './test.helpers'
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -252,6 +253,68 @@ describe('capture removal (tombstone)', () => {
     await runScheduled(t)
     expect(bucket.size).toBe(0)
     expect(await t.run(async (ctx) => ctx.db.query('captures').collect())).toEqual([])
+  })
+})
+
+test("captures.get lists a video capture's uploaded source", async () => {
+  const t = setup()
+  const { captureId } = await t.mutation(api.videos.create, { title: 'Clip', attendees: [], fileName: 'clip.mov', bytes: 6 })
+  expect((await t.query(api.captures.get, { captureId }))?.sourceVideo).toBeNull()
+  const target = await t.action(api.uploads.start, { captureId, name: 'source.mov', bytes: 6, contentType: 'video/quicktime' })
+  await fetch(target.single!.url, { method: 'PUT', headers: target.single!.headers, body: new Uint8Array(6) })
+  await t.action(api.uploads.finish, { uploadId: target.uploadId })
+  const detail = await t.query(api.captures.get, { captureId })
+  expect(detail?.sourceVideo).toMatchObject({ name: 'source.mov', bytes: 6, rev: 1 })
+  expect(detail?.sourceVideo?.url).toContain(`/videos/${captureId}/source.mov`)
+  expect(detail?.files).toEqual([])
+})
+
+describe('abandoned uploads', () => {
+  const DAY = 24 * 3600_000
+  test('a week without activity removes an unfinished upload (rows, then its objects); everything else stays', async () => {
+    const t = setup()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const ids = (n: number) => `11111111-2222-4333-8444-${String(n).padStart(12, '0')}`
+      // 1: abandoned phone upload. 2: completed. 3: abandoned but someone reviewed a fact. 4: video whose source arrived.
+      // 5: abandoned video (source never finished). 6: abandoned, then touched again recently.
+      await uploadCapture(t, tinyCapture({ id: ids(1) }), { skip: ['video.mov'] })
+      await uploadCapture(t, tinyCapture({ id: ids(2) }))
+      await t.action(api.captures.complete, { captureId: ids(2) })
+      await uploadCapture(t, tinyCapture({ id: ids(3) }), { skip: ['video.mov'] })
+      await putMoment(t, { ...moment, captureId: ids(3) })
+      const video = await t.mutation(api.videos.create, { title: 'Clip', attendees: [], fileName: 'a.mp4', bytes: 4 })
+      const src = await t.action(api.uploads.start, { captureId: video.captureId, name: 'source.mp4', bytes: 4, contentType: 'video/mp4' })
+      await fetch(src.single!.url, { method: 'PUT', headers: src.single!.headers, body: new Uint8Array(4) })
+      await t.action(api.uploads.finish, { uploadId: src.uploadId })
+      await t.run(async (ctx) => {
+        const job = (await ctx.db.query('jobs').collect()).find((j) => j.kind === 'convert')!
+        await ctx.db.patch(job._id, { status: 'failed' }) // no worker took it; nothing active
+      })
+      const lost = await t.mutation(api.videos.create, { title: 'Lost', attendees: [], fileName: 'b.mp4', bytes: 4 })
+      await t.action(api.uploads.start, { captureId: lost.captureId, name: 'source.mp4', bytes: 4, contentType: 'video/mp4' })
+      await uploadCapture(t, tinyCapture({ id: ids(6) }), { skip: ['video.mov'] })
+      await t.run(async (ctx) => {
+        for (const j of await ctx.db.query('jobs').collect()) if (j.status !== 'done') await ctx.db.patch(j._id, { status: 'failed' })
+      })
+
+      vi.setSystemTime(Date.now() + 6 * DAY)
+      expect(await t.mutation(internal.captures.sweepAbandoned, {})).toEqual([])
+      await upload(t, ids(6), 'video.mov', tinyCapture().files['video.mov'])
+      vi.setSystemTime(Date.now() + 2 * DAY)
+      const removed = await t.mutation(internal.captures.sweepAbandoned, {})
+      expect(removed.sort()).toEqual([ids(1), lost.captureId].sort())
+      const left = (await t.query(api.captures.list, {})).map((c) => c.id)
+      expect(left.sort()).toEqual([ids(2), ids(3), video.captureId, ids(6)].sort())
+      vi.useRealTimers()
+      await runScheduled(t)
+      expect([...bucket.keys()].some((k) => k.includes(ids(1)))).toBe(false)
+      expect([...bucket.keys()].some((k) => k.includes(ids(2)))).toBe(true)
+      // The tombstones are gone, so the same id could be uploaded again.
+      expect(await t.run(async (ctx) => (await ctx.db.query('captures').collect()).filter((c) => c.deleting))).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
