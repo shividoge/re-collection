@@ -24,6 +24,8 @@ export interface WalkerHandle {
   walkTo: (to: [number, number], look?: [number, number, number]) => void
   /** Where the visitor stands now (x, z). */
   position: () => [number, number]
+  /** The on-screen box (page pixels) around these world points, as the camera sees them now. */
+  screenBox: (points: [number, number, number][]) => { left: number; top: number; width: number; height: number }
 }
 
 /** Shortest signed angle from a to b. */
@@ -52,7 +54,9 @@ export function Walker({
   hung = 0,
   ref,
   guided = false,
+  frozen = false,
 }: {
+  frozen?: boolean
   plan: MuseumPlan
   onArrive?: () => void
   onLook?: (slot: number) => void
@@ -75,6 +79,11 @@ export function Walker({
     look.current = onLook
   }, [onArrive, onLook])
   const lookedAt = useRef(-2)
+  const frozenRef = useRef(frozen)
+  useEffect(() => {
+    frozenRef.current = frozen
+    if (frozen) keys.current.clear()
+  }, [frozen])
   const lookTimer = useRef(0)
 
   // A new museum (another exhibition or style): start again at the entrance.
@@ -98,6 +107,19 @@ export function Walker({
       } else lookGoal.current = null
     },
     position: () => [pos.current[0], pos.current[1]],
+    screenBox(points) {
+      const r = gl.domElement.getBoundingClientRect()
+      const xs: number[] = []
+      const ys: number[] = []
+      for (const p of points) {
+        const v = new THREE.Vector3(...p).project(camera)
+        xs.push(r.left + ((v.x + 1) / 2) * r.width)
+        ys.push(r.top + ((1 - v.y) / 2) * r.height)
+      }
+      const left = Math.min(...xs)
+      const top = Math.min(...ys)
+      return { left, top, width: Math.max(...xs) - left, height: Math.max(...ys) - top }
+    },
   }))
 
   // Drag to look.
@@ -140,7 +162,7 @@ export function Walker({
       return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')
     }
     const down = (e: KeyboardEvent) => {
-      if (typing(e) || guided) return
+      if (typing(e) || guided || frozenRef.current) return
       keys.current.add(e.code)
       if (e.code.startsWith('Arrow')) e.preventDefault()
     }
@@ -225,7 +247,7 @@ export function Walker({
       const dp = g.pitch - pitch.current
       yaw.current += dy * ease
       pitch.current += dp * ease
-      if (Math.abs(dy) < 0.01 && Math.abs(dp) < 0.01) {
+      if (Math.abs(dy) < 0.02 && Math.abs(dp) < 0.02) {
         lookGoal.current = null
         arrive.current?.()
       }

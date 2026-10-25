@@ -13,6 +13,21 @@ piece framed on a wall, lit, and labelled. Not XR yet; it runs in any browser (l
   walk up to it.
 - A guided walk goes through the doorways and ends facing the piece, with its caption below.
 
+## Stepping into a picture, and the music
+
+Tap the picture you're standing at, or press **Step in** on its label (Enter on a keyboard; from
+elsewhere it walks you there first). The museum recedes into a dimmed, rounded card while the
+picture lifts out of its frame and grows to fill the view over a soft blur of its own colours,
+Apple-style; a photo shows still, a video plays with its sound, and a visit offers "Walk around
+this visit in 3D". **‹ Museum** (or Escape) runs it all backwards, back into the frame.
+
+Quiet music plays while walking: Erik Satie's *Gymnopédie No. 1*, a public domain recording by
+Robin Alciatore for Musopen (`web/public/museum/audio/`, credits there). It starts softly on the
+first click (browsers allow no sound before one), dips when you step into a picture (out of the
+way entirely for a video's own sound), and rises again slowly when you come back. **♪ Music**
+turns it off and on (remembered on the device). The step-in and step-out sounds, rising and
+falling air with a soft chime, are synthesized in the browser (`web/src/museum/sound.ts`).
+
 ## Rooms
 
 Five styles, chosen per exhibition with the buttons at the top (remembered on the device). The

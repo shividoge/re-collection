@@ -22,7 +22,9 @@ export function MuseumScene({
   onSelect,
   onArrive,
   onLook,
+  onMeasure,
   walker,
+  frozen = false,
 }: {
   exhibition: Exhibition
   plan: MuseumPlan
@@ -31,7 +33,10 @@ export function MuseumScene({
   onArrive: () => void
   /** The piece the visitor is looking at while walking freely (−1: none). */
   onLook: (slot: number) => void
+  onMeasure: (slot: number, w: number, h: number) => void
   walker: Ref<WalkerHandle>
+  /** While stepped into a picture: the museum holds still and ignores walking keys. */
+  frozen?: boolean
 }) {
   const look = LOOKS[plan.style]
   const walk = (walker as { current: WalkerHandle | null }) ?? null
@@ -89,10 +94,10 @@ export function MuseumScene({
       </mesh>
 
       {exhibition.items.map((art, i) =>
-        plan.slots[i] ? <Artwork key={art.id} art={art} slot={plan.slots[i]} look={look} focused={i === focus} onSelect={onSelect} /> : null,
+        plan.slots[i] ? <Artwork key={art.id} art={art} slot={plan.slots[i]} look={look} focused={i === focus} onSelect={onSelect} onMeasure={onMeasure} /> : null,
       )}
 
-      <Walker plan={plan} onArrive={onArrive} onLook={onLook} hung={exhibition.items.length} ref={walker} guided={look.guided} />
+      <Walker plan={plan} onArrive={onArrive} onLook={onLook} hung={exhibition.items.length} ref={walker} guided={look.guided} frozen={frozen} />
 
       <EffectComposer multisampling={0} enableNormalPass={false}>
         <N8AO aoRadius={0.55} distanceFalloff={0.6} intensity={look.occlusion * (handheld ? 0.75 : 1)} quality={handheld ? 'performance' : 'medium'} halfRes={handheld} color={new THREE.Color('#1a1210')} />

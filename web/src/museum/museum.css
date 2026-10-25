@@ -271,3 +271,155 @@
     text-align: center;
   }
 }
+
+/* Stepping into a picture: the museum recedes into a rounded, dimmed card while the picture
+   lifts out of its frame (StepIn.tsx), Apple-style: a long soft settle, frosted glass, the
+   picture's own colours glowing behind it. */
+.museum-stage {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 46%;
+  transition:
+    transform 950ms cubic-bezier(0.32, 0.72, 0, 1),
+    filter 950ms cubic-bezier(0.32, 0.72, 0, 1),
+    border-radius 950ms cubic-bezier(0.32, 0.72, 0, 1);
+  overflow: hidden;
+}
+.museum.inside .museum-stage {
+  transform: scale(0.88);
+  border-radius: 34px;
+  filter: brightness(0.45) saturate(0.85) blur(6px);
+}
+.museum-top,
+.museum-bottom,
+.museum-hint {
+  transition: opacity 450ms ease;
+}
+.museum.inside .museum-top,
+.museum.inside .museum-bottom,
+.museum.inside .museum-hint {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.stepin {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', system-ui, sans-serif;
+}
+.stepin-backdrop {
+  position: absolute;
+  inset: -60px;
+  background-color: rgba(12, 10, 12, 0.55);
+  background-size: cover;
+  background-position: center;
+  filter: blur(60px) saturate(1.5) brightness(0.55);
+  opacity: 0;
+}
+.stepin-media {
+  position: absolute;
+  overflow: hidden;
+  transform-origin: 0 0;
+  background: #000;
+  will-change: transform;
+}
+.stepin-media img,
+.stepin-media video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+}
+.stepin-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+.stepin-ui.shown {
+  opacity: 1;
+}
+.stepin-ui.shown > * {
+  pointer-events: auto;
+}
+.stepin-back {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  height: 44px;
+  padding: 0 18px 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(40, 36, 38, 0.5);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.stepin-back span {
+  font-size: 26px;
+  line-height: 1;
+  margin-top: -3px;
+}
+.stepin-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  max-width: min(620px, calc(100% - 32px));
+  padding: 14px 22px;
+  border-radius: 20px;
+  background: rgba(40, 36, 38, 0.45);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  color: #fff;
+  text-align: center;
+  display: grid;
+  gap: 3px;
+}
+.stepin-caption strong {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.stepin-caption span {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.stepin-caption p {
+  margin: 4px 0 0;
+  font-size: 15px;
+  line-height: 1.4;
+}
+.stepin-action {
+  margin-top: 6px;
+  color: #ffd29a;
+  font-size: 14px;
+  text-decoration: none;
+}
+.museum-stepin {
+  padding: 6px 16px !important;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ffb35c, #ff7a8a) !important;
+  color: #2a1418 !important;
+  font-weight: 600;
+  text-decoration: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .museum-stage {
+    transition: filter 250ms ease;
+  }
+  .museum.inside .museum-stage {
+    transform: none;
+    border-radius: 0;
+  }
+}
