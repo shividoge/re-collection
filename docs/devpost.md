@@ -46,9 +46,11 @@ Alternatives:
 
 ## Inspiration
 
-In our HOSA public service announcement, a son sits by a fire on his graduation night and tells the man next to him he always wanted to be a doctor, but can't anymore because of his father's medical bills. The man answers: *"Your father must be proud."* He **is** the father. He just doesn't know it.
+Re:Collection started at home. My grandfather lived with Alzheimer's, and our family watched the visits that meant the most to us slip away from him, sometimes by the next morning. We'd show him photos and tell him the story again, but a photo only reminds you that something happened. It can't put you back in the room.
 
-That is what Alzheimer's does to families. The visit happened, it mattered, and by the next morning it's gone for the person who needed it most. Research on reviewing recordings of real events (the SenseCam study, Woodberry et al., 2015) found people with Alzheimer's recalled more after reviewing images of an event than after reviewing a written diary. Photos help. We wanted more than photos: a way to **walk back into the room**, see the family where they stood, and hear the story told gently, by a guide that never tests them and never makes anything up.
+We wanted to give him an environment he could actually step back into: the room, the people in it, what they said, so he could relive the moment instead of just hearing about it. Research backs this up. Reviewing recordings of real events helped people with Alzheimer's recall more of them than reviewing a written diary (the SenseCam study, Woodberry et al., 2015), and reminiscence work is widely used in dementia care (Woods et al., 2018, Cochrane review).
+
+When we looked at what exists, most of it needed too much: VR headsets, powerful computers, or a constant connection to a big server. That isn't realistic for a family visiting a parent in memory care. So we set out to make it **cheap and attainable**: an iPhone the family already has captures the visit, and anyone can relive it on an ordinary iPad or laptop browser. No headset, no special hardware, and nothing for the person with Alzheimer's to learn. The heavy 3D work happens once, so viewing a memory is as simple as opening a link.
 
 ## What it does
 
