@@ -3,7 +3,7 @@
 import { v } from 'convex/values'
 import { action, mutation } from './_generated/server'
 import { getMomentDoc, invalid, patchStatus, requireCapture } from './lib/data'
-import { requireToken } from './lib/jobs'
+import { activeJob, requireToken, supersede } from './lib/jobs'
 import { shown } from './lib/errors'
 import { listKeys, r2Config } from './lib/r2'
 import { moment, session } from './validators'
@@ -37,6 +37,27 @@ export const importSession = mutation({
     if (existing) await ctx.db.replace(existing._id, s)
     else await ctx.db.insert('sessions', s)
     return { ok: true as const, replaced: existing !== null }
+  },
+})
+
+/**
+ * Lets a video capture be converted again with the current converter: upload its source video
+ * next (uploads.start "source.<ext>", scripts/reconvert-video.ts), which queues the conversion.
+ * The new package replaces the files it writes; facts, the review and sessions stay. A splat of
+ * the old conversion is dropped (a new one is trained after the conversion).
+ */
+export const reconvertVideo = mutation({
+  args: { token: v.string(), captureId: v.string() },
+  returns: v.object({ ok: v.literal(true) }),
+  handler: async (ctx, { token, captureId }) => {
+    requireToken(token)
+    const capture = await requireCapture(ctx, captureId)
+    if (capture.status.source !== 'video') throw invalid('Only a capture made from a video can be converted again.')
+    if (await activeJob(ctx, captureId, 'convert')) throw invalid('This video is already being converted.')
+    await supersede(ctx, captureId, 'splat', 'The video is being converted again.')
+    const fresh = (await ctx.db.get(capture._id)) ?? capture
+    await patchStatus(ctx, fresh, { convert: 'not_started', splat: 'not_started' })
+    return { ok: true as const }
   },
 })
 

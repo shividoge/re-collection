@@ -142,7 +142,7 @@ type CaptureStatus = {
   convert: Stage        // video only: the GPU worker's points capture; 'skipped' for phone captures
   facts: Stage
   bake: Stage
-  splat: Stage          // video only (and later LiDAR captures); 'skipped' when not requested
+  splat: Stage          // every capture with a room; 'skipped' only on captures from before splats (splats:backfill queues them)
   errors: { convert?: string; facts?: string; bake?: string; splat?: string }
   progress: { stage: string; fraction: number | null; message: string } | null   // from the running job
   updatedAt: number     // ms
@@ -151,7 +151,7 @@ type CaptureStatus = {
 
 Stage triggers (all in mutations, so they're transactional):
 1. **Facts** is queued as soon as the inputs Claude needs are registered: `manifest.json`, every keyframe the manifest lists, and `transcript.json` if the manifest lists one. It doesn't wait for video or depth.
-2. **Upload complete** (`captures.complete`) validates sizes against the manifest (from registered file sizes; `frames.jsonl` line count is checked by the bake). Valid → `upload: done`, **bake** queued. Invalid → `upload: invalid` with specific `uploadErrors`.
+2. **Upload complete** (`captures.complete`) validates sizes against the manifest (from registered file sizes; `frames.jsonl` line count is checked by the bake). Valid → `upload: done`, **bake** queued, and for a phone capture without a splat, **splat** queued (GPU; trained on its own video frames, high-confidence LiDAR depth and ARKit poses; `source: "trained-from-lidar-capture"`). Invalid → `upload: invalid` with specific `uploadErrors`. A manifest the phone sends again keeps the `room.splat` the splat job added.
 3. **Bake done** → derived manifest registered; the web switches from "processing" to the room.
 4. **Video:** `videos.create` → `convert` queued (GPU). Convert done registers the raw package exactly like a phone upload (→ facts, then complete → bake) and queues `splat`. Splat done → manifest updated with `room.splat`.
 
@@ -316,7 +316,7 @@ Worker functions take `token` (env `WORKER_TOKEN` in Convex; workers read it fro
 
 - A cron every 30 s re-queues jobs whose lease expired (`attempts += 1`; at 3 → `failed` with "The worker stopped responding three times.").
 - On worker startup, nothing special: expired leases come back on their own.
-- Routing: `convert` jobs set `needs.frames` from the video duration (the converter's own frame-count formula: `min(240, max(16, floor(durationSec × 10) + 1))`, `tools/video2capture/convert.py frames_needed`); `splat` jobs need no frames (training uses at most 240 views). The Fedora worker advertises `maxFrames` ≈ 67 (16 GB), the GX10 ≈ 240. A job no live worker can take stays queued and the web says so ("Waiting for a GPU worker that can handle a 4-minute video").
+- Routing: `convert` jobs set `needs.frames` from the video duration (the converter's own frame-count formula: `min(240, max(16, floor(durationSec × 10) + 1))`, `tools/video2capture/convert.py frames_needed`); `splat` jobs need no frames (training uses at most 240 views; a 30 s phone capture peaked at 9.5 GB on the 16 GB card). The Fedora worker advertises `maxFrames` ≈ 67 (16 GB), the GX10 ≈ 240. A job no live worker can take stays queued and the web says so ("Waiting for a GPU worker that can handle a 4-minute video").
 - The `workers` table records `{ workerId, kinds, gpu, maxFrames, lastSeen }` from claims/heartbeats so the web can show which workers are online.
 
 ## 8. Static site export
