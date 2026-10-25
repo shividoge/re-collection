@@ -159,7 +159,7 @@ extension ConvexClient {
     }
 
     func complete(captureId: String) async throws {
-        let _: ConvexAPI.OK = try await call(.mutation, "captures:complete", ConvexAPI.Complete(captureId: captureId))
+        let _: ConvexAPI.OK = try await call(.action, "captures:complete", ConvexAPI.Complete(captureId: captureId))
     }
 
     /// `system:health`, for "Test connection" in Settings.

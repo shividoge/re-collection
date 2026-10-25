@@ -79,14 +79,14 @@ export async function runLoop(o: LoopOptions): Promise<void> {
 
 /** One job, start to finish. Never throws: every outcome is reported to the backend (or logged). */
 export async function runJob(claim: Claim, o: LoopOptions, log: (line: string) => void): Promise<void> {
-  const { jobId } = claim
+  const { jobId, attempt } = claim
   const cancel = new AbortController()
   const shutdown = new AbortController()
   const signal = AbortSignal.any([cancel.signal, shutdown.signal])
   let progress: Progress = { stage: 'bake', fraction: 0, message: 'Downloading the capture' }
   const beat = async () => {
     try {
-      const r = await o.api.heartbeat({ jobId, progress })
+      const r = await o.api.heartbeat({ jobId, attempt, progress })
       if (r.cancelled) cancel.abort(new Cancelled('The job was cancelled.'))
     } catch (e) {
       log(`heartbeat failed: ${(e as Error).message}`)
@@ -151,7 +151,7 @@ export async function runJob(claim: Claim, o: LoopOptions, log: (line: string) =
       progress = { stage: 'bake', fraction: 0.8 + 0.2 * (sent / totalUp), message: `Uploaded ${Math.round(sent / 1e6)} of ${Math.round(totalUp / 1e6)} MB` }
     })
     signal.throwIfAborted()
-    await o.api.complete({ jobId, result: { kind: 'bake', derived: result.derived } })
+    await o.api.complete({ jobId, attempt, result: { kind: 'bake', derived: result.derived } })
     log(`job ${jobId}: done in ${result.derived.stats.bakeMs} ms of baking`)
   } catch (e) {
     const reason = signal.aborted ? signal.reason : e
@@ -167,7 +167,7 @@ export async function runJob(claim: Claim, o: LoopOptions, log: (line: string) =
             : `The bake failed: ${(reason as Error)?.message ?? String(reason)}`
       log(`job ${jobId}: ${error}`)
       try {
-        await o.api.fail({ jobId, error, retryable: !validation })
+        await o.api.fail({ jobId, attempt, error, retryable: !validation })
       } catch (err) {
         log(`reporting the failure failed (the lease will expire and re-queue it): ${(err as Error).message}`)
       }

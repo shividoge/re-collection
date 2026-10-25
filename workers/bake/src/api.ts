@@ -3,36 +3,15 @@
 import { ConvexHttpClient } from 'convex/browser'
 import { anyApi, type FunctionArgs, type FunctionReturnType } from 'convex/server'
 import type { api as Api } from '../../../backend/convex/_generated/api'
-import type { UploadTarget } from '../../../backend/convex/validators'
 
 // The generated api.js is just `anyApi`; importing it at run time would need backend/'s packages.
 const api = anyApi as unknown as typeof Api
 type W = typeof Api.worker
 type Name = 'claim' | 'heartbeat' | 'inputs' | 'outputUrls' | 'finishOutput' | 'complete' | 'fail'
 
-// Return shapes, as the `returns` validators in backend/convex/worker.ts declare them. (While the
-// handlers are stubs, the generated types say `never`; the check below catches drift once they're real.)
-export interface Claim {
-  jobId: FunctionArgs<W['heartbeat']>['jobId']
-  kind: 'facts' | 'bake' | 'convert' | 'splat'
-  captureId: string
-  attempt: number
-}
-export interface Inputs {
-  manifestJson: string | null
-  files: { name: string; area: 'raw' | 'derived' | 'video'; url: string; bytes: number }[]
-}
-interface Returns {
-  claim: Claim | null
-  heartbeat: { ok: boolean; cancelled: boolean }
-  inputs: Inputs
-  outputUrls: { name: string; target: UploadTarget }[]
-  finishOutput: { ok: true; bytes: number }
-  complete: { ok: true }
-  fail: { ok: true }
-}
-type Assignable<A extends B, B> = A
-export type GeneratedReturnsFit = { [K in Name]: Assignable<FunctionReturnType<W[K]>, Returns[K]> }
+export type Claim = NonNullable<FunctionReturnType<W['claim']>>
+export type Inputs = FunctionReturnType<W['inputs']>
+type Returns = { [K in Name]: FunctionReturnType<W[K]> }
 
 export type WorkerApi = { [K in Name]: (args: Omit<FunctionArgs<W[K]>, 'token'>) => Promise<Returns[K]> }
 

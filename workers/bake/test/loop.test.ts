@@ -147,6 +147,7 @@ describe('a job', () => {
     await runJob(claim, options(b), quiet)
     expect(b.calls.find((c) => c.fn === 'fail')!.args).toEqual({
       jobId: 'job1',
+      attempt: 1,
       error: "The capture can't be baked: frames.jsonl has 3 moment lines, but manifest.video.frameCount is 4.",
       retryable: false,
     })
@@ -207,7 +208,7 @@ describe('the loop', () => {
       return untilAborted(o.signal!)
     }
     await runLoop({ ...options(killed), bake: stuck, stop: stop2.signal, kill: kill.signal })
-    expect(killed.calls.find((c) => c.fn === 'fail')!.args).toEqual({ jobId: 'job1', error: 'The worker was stopped before the bake finished.', retryable: true })
+    expect(killed.calls.find((c) => c.fn === 'fail')!.args).toEqual({ jobId: 'job1', attempt: 1, error: 'The worker was stopped before the bake finished.', retryable: true })
     await rm(dir, { recursive: true, force: true })
   })
 })
