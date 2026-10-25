@@ -18,7 +18,7 @@ export interface MuseumHandle {
  * Her museum: walk through the pictures the caretaker hung, in real-looking rooms, and step into
  * any of them. This is the patient's page, so it changes nothing: no adding, no taking down, no
  * other exhibitions and no way out to the rest of the site. The caretaker arranges it at
- * `#/museum/edit` (MuseumEditor). `#/museum/<id>` links from before land here too.
+ * `#/palace/edit` (MuseumEditor). `#/museum` and `#/museum/<id>` links from before land here too.
  *
  * The editor shows this same museum as its preview: `preview` is the arrangement being edited
  * (instead of the saved one), `onFocus` says which picture the visitor is at, and `ref` walks to one.
@@ -29,7 +29,6 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
   const [error, setError] = useState<string | null>(null)
   const [focus, setFocus] = useState(-1)
   const [arrived, setArrived] = useState(false)
-  const [hint, setHint] = useState(true)
   const walker = useRef<WalkerHandle>(null)
   // Stepping into a picture: which one, and how far: diving in, inside, leaving, or (`surfacing`)
   // back through the frame and pulling out of it to where the visitor stood.
@@ -61,18 +60,12 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
   const count = Math.max(1, exhibition?.items.length ?? 1)
   const plan = useMemo(() => planMuseum(count), [count])
 
-  useEffect(() => {
-    const t = setTimeout(() => setHint(false), 9000)
-    return () => clearTimeout(t)
-  }, [])
-
   const goTo = useCallback(
     (i: number) => {
       if (!exhibition || i < 0 || i >= exhibition.items.length) return
       const slot = plan.slots[i]
       setFocus(i)
       setArrived(false)
-      setHint(false)
       walker.current?.walkTo(slot.view, slot.center)
     },
     [exhibition, plan],
@@ -113,7 +106,6 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
       sound.musicTo(0, 1.6)
       sound.warp('in', IN_MS / 1000)
       setWarp({ dir: 'in', cross: now + IN_MS })
-      setHint(false)
       setInside({ index: i, stage: 'diving' })
     },
     [exhibition, inside, plan, sound],
@@ -190,7 +182,7 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
   }, [focus, arrived, inside, goTo, stepIn])
 
   if (error) return <div className="museum-message">{error}</div>
-  if (exhibition === undefined) return <div className="museum-message">Opening the museum…</div>
+  if (exhibition === undefined) return <div className="museum-message">Opening your Memory Palace…</div>
   if (exhibition === null) return <div className="museum-message">The museum is being set up. Nothing hangs here yet.</div>
 
   // The label shows once the visitor has arrived at a piece or is looking at one.
@@ -248,11 +240,6 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
         </button>
       </header>
 
-      {hint && total > 0 && (
-        <p className="museum-hint">
-          Drag to look around · W A S D or arrows to walk · tap a picture or the floor to go there
-        </p>
-      )}
 
       {total === 0 && (
         <div className="museum-empty">

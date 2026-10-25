@@ -39,9 +39,9 @@ const toArrangement = (d: Draft): Omit<Arrangement, 'updatedAt'> => ({
 type Transfer = { key: number; name: string; progress: number; error?: string }
 
 /**
- * The caretaker's side of the museum (`#/museum/edit`): choose which pictures hang, put them in
+ * The caretaker's side of the Memory Palace (`#/palace/edit`): choose which pictures hang, put them in
  * order, and write a title and a few words for each one's label, with the museum itself as a live
- * preview. Saving stores it on the guide, and the patient's museum (`#/museum`) shows exactly that.
+ * preview. Saving stores it on the guide, and the patient's Memory Palace (`#/palace`) shows exactly that.
  */
 export function MuseumEditor() {
   const [visits, setVisits] = useState<Visit[] | null>(null)
@@ -194,10 +194,10 @@ export function MuseumEditor() {
     }
   }
 
-  const patientLink = `${location.origin}${location.pathname}#/museum`
+  const patientLink = `${location.origin}${location.pathname}#/palace`
 
   if (status?.kind === 'error' && !draft) return <div className="museum-message">{status.text}</div>
-  if (!draft || !visits || !exhibition) return <div className="museum-message">Opening the museum…</div>
+  if (!draft || !visits || !exhibition) return <div className="museum-message">Opening the Memory Palace…</div>
 
   return (
     <div className={`museum museum-editor${folded ? ' folded' : ''}`}>
@@ -256,7 +256,7 @@ export function MuseumEditor() {
               On the walls <span>{rows.length}</span>
             </h2>
             <button className="me-add-toggle" onClick={() => setAdding(!adding)} aria-expanded={adding}>
-              {adding ? 'Done adding' : '+ Add pictures'}
+              {adding ? 'Done adding' : '+ Add memories'}
             </button>
           </div>
 
@@ -339,7 +339,7 @@ export function MuseumEditor() {
             </div>
           )}
 
-          {rows.length === 0 && <p className="me-empty">Nothing hangs yet. Press “+ Add pictures”.</p>}
+          {rows.length === 0 && <p className="me-empty">Nothing hangs yet. Press “+ Add memories”.</p>}
           <ol className="me-rows">
             {rows.map((row, i) => {
               const v = row.capture ? byId.get(row.capture) : undefined

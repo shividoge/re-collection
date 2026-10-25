@@ -27,10 +27,10 @@ const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
   // Your memories: every moment as a picture frame in a calm hall; tap one to step into its
   // Memory Window. #/memories?join=CODE is a helper's phone joining the iPad's walk ("Visit together").
   [/^#\/memories(\?join=[A-Za-z]*)?$/i, (join) => <Museum key={join ?? ''} join={join?.slice('?join='.length)} />],
-  // The walkable museum: #/museum, or #/museum/<exhibition id>.
-  [/^#\/museum(?:\/([\w-]+))?$/, (id) => <MuseumPage key="museum" id={id} />],
-  // The caretaker's editor for that museum (after the line above, so it wins over an exhibition id).
-  [/^#\/museum\/edit$/, () => <MuseumEditor />],
+  // Her Memory Palace: #/palace (#/museum and #/museum/<old exhibition id> from before still work).
+  [/^#\/(?:palace|museum)(?:\/([\w-]+))?$/, (id) => <MuseumPage key="museum" id={id} />],
+  // The caretaker's editor for it (after the line above, so it wins over an exhibition id).
+  [/^#\/(?:palace|museum)\/edit$/, () => <MuseumEditor />],
 ]
 
 export default function App() {

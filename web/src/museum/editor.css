@@ -1,8 +1,9 @@
-/* The caretaker's museum editor: the list on the left, the museum itself as a live preview. */
+/* The caretaker's editor: the museum itself as a live preview, the list on the right (where
+   "Edit" brings it back from). */
 
 .museum-editor {
   display: grid;
-  grid-template-columns: minmax(340px, 440px) 1fr;
+  grid-template-columns: 1fr minmax(340px, 440px);
   user-select: auto;
   touch-action: auto;
 }
@@ -59,12 +60,13 @@
   display: none;
 }
 .me-panel {
+  order: 2;
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
   background: #1a1118;
-  border-right: 1px solid var(--m-line);
+  border-left: 1px solid var(--m-line);
 }
 .me-head {
   padding: 20px 22px 8px;
@@ -501,7 +503,7 @@
   .me-panel {
     display: block;
     overflow: visible;
-    border-right: 0;
+    border-left: 0;
   }
   .me-preview-label {
     display: none;
