@@ -1,4 +1,6 @@
 // Downloads from and uploads to presigned R2 URLs, with retries. `fetch` is injectable for tests.
+import { open, mkdir } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import type { UploadTarget } from '../../../backend/convex/validators'
 
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>
@@ -56,11 +58,26 @@ async function ok(res: Response, what: string): Promise<Response> {
   throw new Error(`${what}: HTTP ${res.status}${body ? ` ${body}` : ''}`)
 }
 
-/** Streams `url` to `path` and checks the size. */
+/**
+ * Streams `url` to `path` and checks the size. Reads the body chunk by chunk itself: Bun.write(path,
+ * response) (Bun 1.4) can hang forever on a large R2 response and ignores the abort signal.
+ */
 export async function download(url: string, path: string, bytes: number, o: RetryOptions = {}): Promise<void> {
+  await mkdir(dirname(path), { recursive: true })
   await withRetry(`Downloading ${path.split('/').at(-1)}`, o, bytes, async (f) => {
     const res = await ok(await f(url), 'GET')
-    const written = await Bun.write(path, res)
+    if (!res.body) throw new Error('no response body')
+    const file = await open(path, 'w')
+    let written = 0
+    try {
+      for await (const chunk of res.body) {
+        written += chunk.byteLength
+        if (written > bytes) throw new Error(`got more than the ${bytes} bytes expected`)
+        await file.write(chunk)
+      }
+    } finally {
+      await file.close()
+    }
     if (written !== bytes) throw new Error(`got ${written} bytes, expected ${bytes}`)
   })
 }

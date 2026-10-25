@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { rm } from 'node:fs/promises'
 import { download, inParallel, transferTimeoutMs, type Fetch } from '../src/transfer'
 
 test('a stalled download is abandoned and retried instead of hanging the job', async () => {
@@ -52,4 +53,28 @@ test('inParallel: a parent abort stops it the same way', async () => {
   parent.abort(new Error('shutting down'))
   expect(((await done.catch((e: Error) => e)) as Error).message).toBe('shutting down')
   expect(started).toEqual(['a'])
+})
+
+test('a body that stalls mid-stream is abandoned at the per-try timeout and retried, into a folder made for it', async () => {
+  let calls = 0
+  const fetch: Fetch = (_url, init) => {
+    calls++
+    const first = calls === 1
+    // Like a real fetch: headers arrive, then the body stalls until the request's signal aborts it.
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new Uint8Array([1]))
+        if (!first) {
+          c.enqueue(new Uint8Array([2, 3]))
+          c.close()
+        } else init?.signal?.addEventListener('abort', () => c.error(init.signal!.reason), { once: true })
+      },
+    })
+    return Promise.resolve(new Response(body))
+  }
+  const dir = `/tmp/bd-transfer-test-${process.pid}`
+  await download('https://example.invalid/x', `${dir}/keyframes/k0000.jpg`, 3, { fetch, timeoutMs: 50, backoffMs: 1 })
+  expect(calls).toBe(2)
+  expect(new Uint8Array(await Bun.file(`${dir}/keyframes/k0000.jpg`).arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]))
+  await rm(dir, { recursive: true, force: true })
 })
