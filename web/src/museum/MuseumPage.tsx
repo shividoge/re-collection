@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { guide } from '../data'
+import { useGuide } from './guide/useGuide'
 import type * as THREE from 'three'
 import { followIndex, visits, type Exhibition } from './exhibitions'
 import { planMuseum, walkTarget } from './layout'
@@ -63,6 +65,9 @@ export function MuseumPage({ join }: { id?: string; join?: string }) {
   // Leaving the museum stops its music and lets its audio engine go.
   useEffect(() => () => sound.dispose(), [sound])
   const [musicOn, setMusicOn] = useState(sound.musicOn)
+  // The AI guide: off until the person (or whoever is with them) turns it on.
+  const [guideOn, setGuideOn] = useState(false)
+  const said = useGuide({ on: guideOn, exhibition, focus, arrived, inside, sound })
 
   useEffect(() => {
     visits()
@@ -303,7 +308,26 @@ export function MuseumPage({ join }: { id?: string; join?: string }) {
         >
           {musicOn ? '♪ Music on' : '♪ Music off'}
         </button>
+        {guide.available() && (
+          <button
+            className={`museum-chip${guideOn ? ' on' : ''}`}
+            onClick={() => {
+              sound.wake()
+              setGuideOn(!guideOn)
+            }}
+            aria-pressed={guideOn}
+            title="A voice that tells you about each picture, and answers when you ask"
+          >
+            {guideOn ? (said.listening ? '🗣 Guide on · listening' : '🗣 Guide on') : '🗣 Guide off'}
+          </button>
+        )}
       </header>
+
+      {guideOn && (said.saying || said.thinking || said.problem) && (
+        <div className="guide-caption" aria-live="polite">
+          {said.saying ? <p>{said.saying}</p> : said.thinking ? <p className="quiet">…</p> : <p className="quiet">{said.problem}</p>}
+        </div>
+      )}
 
       {hint && total > 0 && (
         <p className="museum-hint">

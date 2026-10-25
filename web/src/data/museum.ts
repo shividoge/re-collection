@@ -104,3 +104,33 @@ export const rooms = {
     })
   },
 }
+
+/** One memory's words from the AI guide (backend guide.ts): `intro` at the frame, `story` inside. */
+export type GuideWords = { key: string; status: 'preparing' | 'ready' | 'failed'; intro: string; story: string; error: string | null }
+/** What the guide says back to something the person said. */
+export type GuideAnswer = { say: string; distress: boolean; retrieval: 'moss' | 'all'; mossMs: number; dropped: number }
+
+/**
+ * The AI guide (live mode only: it needs Convex, Moss, Claude and Cartesia). A memory is keyed
+ * "<capture>/<piece>", like the arrangement item it comes from.
+ */
+export const guide = {
+  available: () => dataMode === 'live',
+  key: (item: { capture: string; piece: string }) => `${item.capture}/${item.piece}`,
+  /** Every memory's guide words, kept up to date as the caretaker saves. Returns a stop function. */
+  watch(onWords: (words: GuideWords[]) => void): () => void {
+    const watch = convex().watchQuery(api.guide.narration, {})
+    const read = () => {
+      try {
+        const words = watch.localQueryResult()
+        if (words) onWords(words)
+      } catch {
+        /* a failed query: the guide stays quiet */
+      }
+    }
+    read()
+    return watch.onUpdate(read)
+  },
+  ask: (key: string, question: string): Promise<GuideAnswer> => convex().action(api.guideNode.ask, { key, question }),
+  voiceToken: (): Promise<{ token: string; expiresAt: number; voice: string; version: string }> => convex().action(api.guideNode.voiceToken, {}),
+}

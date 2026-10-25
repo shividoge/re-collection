@@ -25,6 +25,8 @@ export interface Artwork {
   t?: number
   /** From a visit rebuilt from an ordinary video: its room is estimated, not measured. */
   estimated?: boolean
+  /** Which arrangement item this is ("<capture>/<piece>"), for the AI guide's words about it. */
+  guideKey?: string
 }
 
 export interface Exhibition {
@@ -97,7 +99,7 @@ export function arrangedExhibition(a: Arrangement, visits: Visit[]): Exhibition 
   const items = a.items.flatMap((item, n) => {
     const v = byId.get(item.capture)
     const art = v ? pieceArtwork(v, item.piece, item.title, item.caption, n) : null
-    return art ? [art] : []
+    return art ? [{ ...art, guideKey: `${item.capture}/${item.piece}` }] : []
   })
   return { id: 'visits', title: a.title || 'Our visits', subtitle: a.subtitle || undefined, items }
 }

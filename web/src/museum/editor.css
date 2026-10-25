@@ -357,3 +357,48 @@
     display: none;
   }
 }
+
+/* What the caretaker tells the AI guide, and what it will say. */
+.me-guide {
+  margin-top: 2px;
+  font-size: 13px;
+}
+.me-guide summary {
+  cursor: pointer;
+  color: #ffc58a;
+  list-style: none;
+}
+.me-guide summary::-webkit-details-marker {
+  display: none;
+}
+.me-guide[open] summary {
+  margin-bottom: 6px;
+}
+.me-guide textarea,
+.me-guide input {
+  width: 100%;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.me-guide-status {
+  margin: 0;
+  color: var(--m-muted);
+  font-size: 12px;
+}
+.me-guide-status.error {
+  color: #ff8f8f;
+}
+.me-guide-preview {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 179, 92, 0.07);
+  border: 1px solid var(--m-line);
+}
+.me-guide-preview p {
+  margin: 0 0 4px;
+  line-height: 1.4;
+}
+.me-guide-preview strong {
+  color: #ffc58a;
+  font-weight: 600;
+}
