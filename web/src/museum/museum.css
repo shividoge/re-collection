@@ -425,3 +425,37 @@
 .museum .together-open {
   bottom: 150px;
 }
+
+/* What the AI guide is saying, large and plain, above the label (and over a memory's world). */
+.guide-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 150px;
+  transform: translateX(-50%);
+  z-index: 24;
+  width: min(760px, calc(100% - 32px));
+  padding: 14px 22px;
+  border-radius: 20px;
+  background: rgba(20, 13, 20, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--m-line);
+  text-align: center;
+  pointer-events: none;
+  animation: museum-caption-in 400ms ease both;
+}
+.guide-caption p {
+  margin: 0;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  font-size: 24px;
+  line-height: 1.35;
+  color: #f6eee4;
+}
+.guide-caption p.quiet {
+  font-family: inherit;
+  font-size: 15px;
+  color: var(--m-muted);
+}
+.museum.inside .guide-caption {
+  bottom: 40px;
+}

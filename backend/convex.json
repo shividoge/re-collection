@@ -1,0 +1,5 @@
+{
+  "node": {
+    "externalPackages": ["@moss-js/moss"]
+  }
+}

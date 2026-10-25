@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react'
+import { guide } from '../data'
+import { useGuide } from './guide/useGuide'
 import type * as THREE from 'three'
 import { followIndex, visits, type Exhibition } from './exhibitions'
 import { planMuseum, walkTarget } from './layout'
@@ -110,6 +112,10 @@ export function MuseumPage({
   const othersHere = inVisit && snapshot.members.some((m) => m.id !== snapshot.me)
   // Pictures measured so far: family can only dive into one once its size is known.
   const [measured, setMeasured] = useState(0)
+
+  // The AI guide: off until the person (or whoever is with them) turns it on.
+  const [guideOn, setGuideOn] = useState(false)
+  const said = useGuide({ on: guideOn, exhibition, focus, arrived, inside, sound })
 
   useEffect(() => {
     if (preview) return
@@ -394,7 +400,26 @@ export function MuseumPage({
         >
           {musicOn ? '♪ Music on' : '♪ Music off'}
         </button>
+        {guide.available() && (
+          <button
+            className={`museum-chip${guideOn ? ' on' : ''}`}
+            onClick={() => {
+              sound.wake()
+              setGuideOn(!guideOn)
+            }}
+            aria-pressed={guideOn}
+            title="A voice that tells you about each picture, and answers when you ask"
+          >
+            {guideOn ? (said.listening ? '🗣 Guide on · listening' : '🗣 Guide on') : '🗣 Guide off'}
+          </button>
+        )}
       </header>
+
+      {guideOn && (said.saying || said.thinking || said.problem) && (
+        <div className="guide-caption" aria-live="polite">
+          {said.saying ? <p>{said.saying}</p> : said.thinking ? <p className="quiet">…</p> : <p className="quiet">{said.problem}</p>}
+        </div>
+      )}
 
       {total === 0 && (
         <div className="museum-empty">

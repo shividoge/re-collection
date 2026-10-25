@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { dataMode, errorMessage, palaceLive, type Arrangement, type ArrangementItem } from '../data'
+import { dataMode, errorMessage, guide, palaceLive, type Arrangement, type ArrangementItem, type GuideWords } from '../data'
 import {
   arrangedExhibition,
   automaticArrangement,
@@ -30,8 +30,18 @@ const toDraft = (a: Arrangement): Draft => ({ title: a.title, subtitle: a.subtit
 const toArrangement = (d: Draft): Omit<Arrangement, 'updatedAt'> => ({
   title: d.title.trim(),
   subtitle: d.subtitle.trim(),
-  items: d.rows.map(({ capture, piece, title, caption }) => ({ capture, piece, title: title.trim(), caption: caption.trim() })),
+  items: d.rows.map(({ capture, piece, title, caption, notes, avoid }) => ({
+    capture,
+    piece,
+    title: title.trim(),
+    caption: caption.trim(),
+    ...(notes?.trim() ? { notes: notes.trim() } : {}),
+    ...(avoid?.trim() ? { avoid: avoid.trim() } : {}),
+  })),
 })
+/** What the caretaker may tell the AI guide about one memory (backend lib/guide.ts). */
+const NOTES_MAX = 2000
+const AVOID_MAX = 400
 
 /**
  * Her link with the live visit's key: the same for her iPad and for family joining her visits.
@@ -88,6 +98,12 @@ function VisitLink() {
 export function MuseumEditor() {
   const [visits, setVisits] = useState<Visit[] | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
+  // The AI guide's words for each memory, rewritten after each save (live mode only).
+  const [guideWords, setGuideWords] = useState<Map<string, GuideWords>>(new Map())
+  useEffect(() => {
+    if (!guide.available()) return
+    return guide.watch((words) => setGuideWords(new Map(words.map((w) => [w.key, w]))))
+  }, [])
   const [savedJson, setSavedJson] = useState('')
   const [custom, setCustom] = useState(false)
   const [status, setStatus] = useState<{ kind: 'ok' | 'error' | 'busy'; text: string } | null>(null)
@@ -297,6 +313,7 @@ export function MuseumEditor() {
                         {row.caption.length}/{CAPTION_MAX}
                       </span>
                     )}
+                    {guide.available() && <GuideFields row={row} words={guideWords.get(guide.key(row))} onChange={(patch) => change(i, patch)} onFocus={() => show(i)} />}
                   </div>
                   <div className="me-tools">
                     <button onClick={(e) => (e.stopPropagation(), move(i, i - 1))} disabled={i === 0} aria-label="Move up">
@@ -352,5 +369,53 @@ export function MuseumEditor() {
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * What the caretaker tells the AI guide about one memory: the story behind it (the guide's only
+ * source, with the approved facts), and anything it must never bring up. Below, what the guide
+ * will say, once it has written it after a save.
+ */
+function GuideFields({ row, words, onChange, onFocus }: { row: ArrangementItem; words?: GuideWords; onChange: (patch: Partial<ArrangementItem>) => void; onFocus: () => void }) {
+  const has = Boolean(row.notes?.trim())
+  return (
+    <details className="me-guide" open={has}>
+      <summary>{has ? 'For the AI guide ✓' : '+ Tell the AI guide about this memory'}</summary>
+      <textarea
+        value={row.notes ?? ''}
+        maxLength={NOTES_MAX}
+        rows={4}
+        placeholder="Who is in it, where and when, what happened, what they loved about it. The guide says only what's written here and the approved facts."
+        onChange={(e) => onChange({ notes: e.target.value })}
+        onFocus={onFocus}
+        aria-label="Notes for the AI guide"
+      />
+      <input
+        value={row.avoid ?? ''}
+        maxLength={AVOID_MAX}
+        placeholder="Never bring up (e.g. someone who has passed away)"
+        onChange={(e) => onChange({ avoid: e.target.value })}
+        onFocus={onFocus}
+        aria-label="Never bring up"
+      />
+      {words?.status === 'preparing' && <p className="me-guide-status">The guide is writing what it will say…</p>}
+      {words?.status === 'failed' && <p className="me-guide-status error">The guide couldn't write this one: {words.error}</p>}
+      {words?.status === 'ready' && (words.intro || words.story) && (
+        <div className="me-guide-preview">
+          {words.intro && (
+            <p>
+              <strong>At the frame:</strong> {words.intro}
+            </p>
+          )}
+          {words.story && (
+            <p>
+              <strong>Inside:</strong> {words.story}
+            </p>
+          )}
+          {words.error && <p className="me-guide-status">{words.error}</p>}
+        </div>
+      )}
+    </details>
   )
 }

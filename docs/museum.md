@@ -44,6 +44,34 @@ browser once, offline (`web/src/museum/sound.ts`): rushing air climbing with the
 rumble, a soft shimmer rising an octave, and the air parting in a sweep at the crossing, in a
 wide hall. Stepping out plays it backwards. Nothing rings on at the end.
 
+## The AI guide (voice)
+
+**🗣 Guide** next to the music turns on a voice that tells the person about each memory and
+answers what they ask. In the editor, each picture has "+ Tell the AI guide about this memory":
+the story behind it (who, where, when, what happened) and a "Never bring up" line. The guide says
+only what's written there and the visit's approved facts.
+
+- **At the frame:** a short intro (one or two sentences) when they arrive at a picture.
+- **Inside:** the fuller story (three or four sentences) once they've stepped in and the paint has
+  lifted.
+- **Questions, any time:** the microphone is on while the guide is; they just talk. The guide stops
+  the moment they start, and answers about the memory in front of them.
+- **The music fades down gradually while it speaks, never to silence,** and rises again after.
+- What it says is shown large at the bottom of the screen too.
+
+How it works (contract: `docs/architecture-v3.md` §6.6.1):
+- **Cartesia** is the voice and the ears: **Sonic** speaks, streamed as it's generated, a little slower
+  than conversation; **Ink-2** listens, and its turn detection says when the person starts (the guide
+  stops) and finishes (the guide answers). The browser gets a 10-minute token from Convex; the API
+  key never leaves the backend.
+- **Moss** is the guide's memory: each memory's notes and approved facts are indexed in one Moss
+  index, tagged with the memory, and a question searches only that memory's notes, in milliseconds.
+- **Claude** writes the intro and story when the caretaker saves (so they play instantly) and answers
+  questions from only what Moss found. Code (`backend/convex/lib/guide.ts`) drops any sentence that
+  cites nothing it was given, or touches what the family asked never to bring up.
+- **Convex** holds the notes and the written words (reactive, so a saved edit reaches the palace at
+  once) and makes every call out with the keys kept server-side.
+
 ## Visit together and the Memory Window
 
 On the iPad, **Visit together** shows a code and a link; a helper who opens

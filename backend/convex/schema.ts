@@ -173,4 +173,19 @@ export default defineSchema({
     items: v.array(arrangementItem),
     updatedAt: v.string(),
   }),
+  /**
+   * The AI guide's words for one memory (a capture's piece on the wall, key "capture/piece"),
+   * written by Claude from the caretaker's notes and the approved facts, already grounded.
+   * `fingerprint` says what they were written from; `mossDocs` are this memory's Moss documents.
+   */
+  guideNarration: defineTable({
+    key: v.string(),
+    fingerprint: v.string(),
+    status: v.union(v.literal('preparing'), v.literal('ready'), v.literal('failed')),
+    intro: v.string(),
+    story: v.string(),
+    mossDocs: v.array(v.string()),
+    error: v.union(v.string(), v.null()),
+    updatedAt: v.string(),
+  }).index('by_key', ['key']),
 })

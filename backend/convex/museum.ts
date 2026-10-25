@@ -3,6 +3,7 @@
 import { v } from 'convex/values'
 import type { Doc } from './_generated/dataModel'
 import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
+import { refreshGuide } from './guide'
 import { getCapture, invalid, notFound } from './lib/data'
 import {
   CLIENT_PATTERN,
@@ -149,6 +150,8 @@ export const setArrangement = mutation({
     const row = await ctx.db.query('museumArrangement').first()
     if (row) await ctx.db.replace(row._id, value)
     else await ctx.db.insert('museumArrangement', value)
+    // The AI guide rewrites its words for memories whose notes changed.
+    await refreshGuide(ctx)
     return value
   },
 })
@@ -160,6 +163,7 @@ export const clearArrangement = mutation({
   handler: async (ctx) => {
     const row = await ctx.db.query('museumArrangement').first()
     if (row) await ctx.db.delete(row._id)
+    await refreshGuide(ctx)
     return null
   },
 })

@@ -2,6 +2,8 @@
 // guide/src/museum.mjs and guide/src/arrangement.mjs (docs/guide-api.md). In v3 a room is a Convex
 // row read with a reactive query; screens heartbeat every 5 s instead of SSE + polling.
 
+import { AVOID_MAX, NOTES_MAX } from './guide'
+
 /** Consonants only (no vowels, no Y), so a code never spells a word. */
 export const CODE_LETTERS = 'BCDFGHJKLMNPQRSTVWXZ'
 const CODE_PATTERN = new RegExp(`^[${CODE_LETTERS}]{4}$`)
@@ -92,13 +94,16 @@ export const CAPTION_MAX = 240
 const PIECE = /^(video|thumb|k\d{4})$/
 
 const text = (value: unknown, max: number) => (typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) : '')
+/** Like `text`, but keeps line breaks (the guide's notes can be a few paragraphs). */
+const longText = (value: unknown, max: number) =>
+  typeof value === 'string' ? value.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, max) : ''
 
-export type ArrangementItem = { capture: string; piece: string; title: string; caption: string }
+export type ArrangementItem = { capture: string; piece: string; title: string; caption: string; notes?: string; avoid?: string }
 export type Arrangement = { title: string; subtitle: string; items: ArrangementItem[] }
 
 /** Checks the editor's arrangement against the captures that exist; cleaned value or an error. */
 export function validateArrangement(
-  body: { title?: unknown; subtitle?: unknown; items: readonly { capture: unknown; piece: unknown; title?: unknown; caption?: unknown }[] },
+  body: { title?: unknown; subtitle?: unknown; items: readonly { capture: unknown; piece: unknown; title?: unknown; caption?: unknown; notes?: unknown; avoid?: unknown }[] },
   captureIds: Set<string>,
 ): { value: Arrangement } | { error: string } {
   if (body.items.length > MAX_ITEMS) return { error: `At most ${MAX_ITEMS} pictures.` }
@@ -106,14 +111,26 @@ export function validateArrangement(
   for (const [i, item] of body.items.entries()) {
     if (!isCaptureId(item.capture) || !captureIds.has(item.capture)) return { error: `Item ${i + 1} points at a capture that doesn't exist.` }
     if (typeof item.piece !== 'string' || !PIECE.test(item.piece)) return { error: `Item ${i + 1}: "piece" must be video, thumb or kNNNN.` }
-    items.push({ capture: item.capture, piece: item.piece, title: text(item.title, TITLE_MAX), caption: text(item.caption, CAPTION_MAX) })
+    const notes = longText(item.notes, NOTES_MAX)
+    const avoid = text(item.avoid, AVOID_MAX)
+    items.push({
+      capture: item.capture,
+      piece: item.piece,
+      title: text(item.title, TITLE_MAX),
+      caption: text(item.caption, CAPTION_MAX),
+      ...(notes ? { notes } : {}),
+      ...(avoid ? { avoid } : {}),
+    })
   }
   return { value: { title: text(body.title, TITLE_MAX) || 'Our visits', subtitle: text(body.subtitle, TITLE_MAX), items } }
 }
 
-/** What a visitor may see: only the pictures from captures the family made public. */
+/** What a visitor may see: only the pictures from captures the family made public, without the guide's notes. */
 export function publicArrangement<A extends Arrangement>(arrangement: A | null, publicIds: Iterable<string>): A | null {
   if (!arrangement) return null
   const visible = new Set(publicIds)
-  return { ...arrangement, items: arrangement.items.filter((item) => visible.has(item.capture)) }
+  return {
+    ...arrangement,
+    items: arrangement.items.filter((item) => visible.has(item.capture)).map(({ notes: _n, avoid: _a, ...item }) => item),
+  }
 }
