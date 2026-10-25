@@ -9,6 +9,8 @@ const node = (globalThis as unknown as { process: { env: Record<string, string |
 
 export default defineConfig({
   plugins: [react()],
+  // Like vite.config.ts: backend/ and shared/ have no node_modules; their `convex` imports use web's copy.
+  resolve: { dedupe: ['convex'] },
   server: {
     fs: { allow: [searchForWorkspaceRoot(node.cwd()), ...(node.env.BD_LOCAL_DIRS ?? '').split(':').filter(Boolean)] },
   },
