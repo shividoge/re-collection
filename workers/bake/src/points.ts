@@ -123,7 +123,11 @@ export function kthNeighbor(positions: Float32Array, m: number, samples: ArrayLi
 const mean = (a: Float64Array) => {
   let s = 0
   let n = 0
-  for (const x of a) if (Number.isFinite(x)) (s += x), n++
+  for (const x of a)
+    if (Number.isFinite(x)) {
+      s += x
+      n++
+    }
   return n ? s / n : NaN
 }
 

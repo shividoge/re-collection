@@ -65,7 +65,10 @@ describe('level of detail', () => {
       let bestJ = -1
       for (let j = 0; j < quarter; j++) {
         const d = (ordered[j * 3] - ordered[i * 3]) ** 2 + (ordered[j * 3 + 1] - ordered[i * 3 + 1]) ** 2 + (ordered[j * 3 + 2] - ordered[i * 3 + 2]) ** 2
-        if (d < best) (best = d), (bestJ = j)
+        if (d < best) {
+          best = d
+          bestJ = j
+        }
       }
       if (Math.sqrt(best) <= (sizes[bestJ] * scale) / 2) covered++
     }
