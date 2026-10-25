@@ -1,0 +1,163 @@
+/* Visit together: the iPad's code panel and the helper's phone overlays. Same calm museum look. */
+.together-corner {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 3;
+}
+.together-button,
+.together-quiet {
+  font: inherit;
+  font-size: 18px;
+  min-height: 52px;
+  padding: 12px 22px;
+  border-radius: 999px;
+  cursor: pointer;
+  border: 1px solid rgba(246, 238, 228, 0.25);
+  background: rgba(46, 36, 30, 0.85);
+  color: #f6eee4;
+}
+.together-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.together-quiet {
+  background: transparent;
+  font-size: 16px;
+  color: #d9cbbb;
+}
+.together-button:focus-visible,
+.together-quiet:focus-visible {
+  outline: 3px solid #f6eee4;
+  outline-offset: 3px;
+}
+.together-with {
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: rgba(255, 92, 58, 0.9);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.together-panel,
+.together-form,
+.together-open {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  width: min(520px, calc(100vw - 40px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 24px;
+  border-radius: 20px;
+  background: rgba(27, 21, 18, 0.96);
+  border: 1px solid rgba(246, 238, 228, 0.18);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  color: #f6eee4;
+  text-align: center;
+}
+.together-panel p,
+.together-form p,
+.together-open p {
+  margin: 0;
+  font-size: 18px;
+  color: #d9cbbb;
+}
+.together-link {
+  font-size: 17px;
+  word-break: break-all;
+  color: #f6eee4;
+}
+.together-code {
+  font-size: clamp(64px, 14vw, 104px);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  margin-right: -0.18em; /* letter-spacing adds space after the last letter */
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.together-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.together-form h2 {
+  margin: 0 0 4px;
+  font-size: 26px;
+}
+.together-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  font-size: 17px;
+  color: #d9cbbb;
+}
+.together-form input {
+  font: inherit;
+  font-size: 22px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(246, 238, 228, 0.3);
+  background: #2b211c;
+  color: #f6eee4;
+  text-align: center;
+}
+.together-form .together-code-input {
+  font-size: 40px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.together-open {
+  top: auto;
+  bottom: 24px;
+  transform: translateX(-50%);
+}
+.together-open strong {
+  font-size: 24px;
+}
+
+.together-helper-bar {
+  position: absolute;
+  top: 118px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  border-radius: 14px;
+  background: rgba(27, 21, 18, 0.8);
+  font-size: 15px;
+  color: #d9cbbb;
+  text-align: center;
+  max-width: calc(100vw - 40px);
+}
+.together-problem {
+  color: #ffb38a;
+}
+.together-retry {
+  font: inherit;
+  min-height: 44px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: 1px solid #ffb38a;
+  background: transparent;
+  color: #ffb38a;
+  cursor: pointer;
+}

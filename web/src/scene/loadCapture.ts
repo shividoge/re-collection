@@ -38,7 +38,8 @@ export async function loadGuideCapture(id: string): Promise<LoadedCapture> {
     attempt(FRAMES_FILE, async () => parseFramesJsonl(await fetchText(id, FRAMES_FILE))),
   ])
   if (!manifest.room) errors.push('This capture has no room scan (room.bin).')
-  for (const w of manifest.warnings ?? []) errors.push(`Warning from the phone: ${w}`)
+  const from = manifest.source === 'video' ? 'Note' : 'Warning from the phone'
+  for (const w of manifest.warnings ?? []) errors.push(`${from}: ${w}`)
   return {
     id,
     label: manifest.title || 'Untitled visit',

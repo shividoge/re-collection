@@ -15,6 +15,8 @@ export type CaptureStatus = {
 }
 
 export type CaptureSummary = {
+  /** \"video\" for scenes rebuilt from an ordinary video (estimated). */
+  source?: string | null
   id: string
   title: string
   createdAt: string | null
@@ -29,7 +31,9 @@ export type Manifest = {
   title: string
   attendees: string[]
   video: { file: string; width: number; height: number; fps: number; durationSec: number; frameCount: number }
-  depth: { file: string; confidenceFile: string; width: number; height: number; rateHz: number; count: number }
+  depth: { file: string; confidenceFile: string; width: number; height: number; rateHz: number; count: number; estimated?: boolean; model?: string }
+  /** "video" when rebuilt from an ordinary video (estimated); absent for LiDAR scans. */
+  source?: string
   room?: { bin: string; ply: string; points: number; voxelMeters: number }
   transcript?: { file: string; locale: string }
   keyframes?: { dir: string; everySec: number; count: number }
@@ -293,4 +297,52 @@ export async function fetchText(id: string, name: string): Promise<string> {
   const response = await fetch(url(`/files/${id}/${name}`), { headers: headers() })
   if (!response.ok) throw new GuideError(response.status, `${name}: HTTP ${response.status}`)
   return response.text()
+}
+
+/** "Visit together" (docs/guide-api.md "Visit together (museum rooms)"). */
+export type RoomRole = 'patient' | 'helper'
+export type RoomState = { at: number; atId: string | null; window: string | null; by: RoomRole; name: string | null; rev: number; updatedAt: string }
+export type RoomChange = { at: number; atId: string | null; window: string | null; by: RoomRole; name?: string | null }
+export type RoomPeers = { patient: number; helpers: string[] }
+/** `version` goes up on any change to state or peers; a poll sends it back as `since`. */
+export type Room = { code: string; state: RoomState; peers: RoomPeers; version: number }
+/** Who a listening or polling screen is: `client` is one id per browser tab. */
+export type RoomWho = { as: RoomRole; name: string | null; client: string }
+
+function whoQuery({ as, name, client }: RoomWho): URLSearchParams {
+  const query = new URLSearchParams({ as, client })
+  if (name) query.set('name', name)
+  return query
+}
+
+export const museumRooms = {
+  create: (at: number) => request<Room>('/api/museum/rooms', post({ at })),
+  get: (code: string) => request<Room>(`/api/museum/rooms/${encodeURIComponent(code)}`),
+  setState: (code: string, change: RoomChange) =>
+    request<{ ok: true; state: RoomState }>(`/api/museum/rooms/${encodeURIComponent(code)}/state`, post(change)),
+  /**
+   * The polling fallback (the event stream doesn't get through a quick tunnel). Counts this screen
+   * as present for 10 s. Resolves null when nothing changed since `since` (the guide answers 204).
+   */
+  poll: async (code: string, who: RoomWho, since: number | null, signal?: AbortSignal): Promise<Room | null> => {
+    const query = whoQuery(who)
+    if (since !== null) query.set('since', String(since))
+    let response: Response
+    try {
+      response = await fetch(url(`/api/museum/rooms/${encodeURIComponent(code)}?${query}`), { headers: headers(), cache: 'no-store', signal })
+    } catch (error) {
+      if (signal?.aborted) throw error
+      throw new GuideError(0, "Can't reach the guide server.")
+    }
+    if (response.status === 204) return null
+    const body = (await response.json().catch(() => ({}))) as Partial<Room> & { error?: string }
+    if (!response.ok) throw new GuideError(response.status, body.error ?? `HTTP ${response.status}`)
+    return body as Room
+  },
+  /** EventSource can't send headers, so the key rides as ?key= here too. */
+  eventsUrl: (code: string, who: RoomWho) => {
+    const query = whoQuery(who)
+    if (memoryKey) query.set('key', memoryKey)
+    return `${base}/api/museum/rooms/${encodeURIComponent(code)}/events?${query}`
+  },
 }

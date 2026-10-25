@@ -9,6 +9,7 @@ import { guideRoot, loadConfig } from './config.mjs';
 import { CORS_HEADERS, readJsonBody, sendError, sendFile, sendJson } from './http.mjs';
 import { ClaudeError, createClaude } from './claude.mjs';
 import { extractFacts } from './facts.mjs';
+import { createMuseumRooms } from './museum.mjs';
 import { createPublic } from './public.mjs';
 import { createSessions, SessionError } from './session.mjs';
 import { Store, StoreError } from './store.mjs';
@@ -22,7 +23,7 @@ const MAX_UPLOAD_BYTES = 2 * 1024 ** 3;
  * Builds the request handler. Routes and JSON shapes are the contract in
  * docs/guide-api.md; change that doc first if a route changes.
  */
-export function createApp(config, { claude = createClaude(config), log = console } = {}) {
+export function createApp(config, { claude = createClaude(config), log = console, museum: museumOptions = {} } = {}) {
   const store = new Store(config.dataDir);
   const started = Date.now();
   const worker = createFactsWorker({
@@ -41,6 +42,7 @@ export function createApp(config, { claude = createClaude(config), log = console
   const webDir = config.webDir ?? join(guideRoot, '..', 'web', 'dist');
 
   const publicRoutes = createPublic({ store, sessions });
+  const museum = createMuseumRooms({ store, ...museumOptions });
 
   const routes = [
     ['PUT', /^\/api\/captures\/([^/]+)\/public$/, setPublic],
@@ -60,6 +62,7 @@ export function createApp(config, { claude = createClaude(config), log = console
     ['GET', /^\/api\/progress$/, json((query) => sessions.progress(query))],
     ['GET', /^\/api\/person$/, json(() => sessions.person())],
     ['PUT', /^\/api\/person$/, json((body) => sessions.setPerson(body))],
+    ...museum.routes,
     ['GET', /^\/files\/([^/]+)\/(.+)$/, getFile],
     ['HEAD', /^\/files\/([^/]+)\/(.+)$/, getFile],
   ];
@@ -93,6 +96,7 @@ export function createApp(config, { claude = createClaude(config), log = console
       title: manifest.title ?? '',
       createdAt: manifest.createdAt ?? null,
       durationSec: manifest.video?.durationSec ?? null,
+      source: manifest.source ?? null,
       thumb: files.includes('thumb.jpg') ? `/files/${id}/thumb.jpg` : null,
       status: await store.status(id),
     };
@@ -236,8 +240,9 @@ export function createApp(config, { claude = createClaude(config), log = console
   function authorized(req, url) {
     if (!config.key) return true;
     if (req.headers['x-braindance-key'] === config.key) return true;
-    // <video> and <img> can't send headers, so /files also accepts ?key=.
-    return url.pathname.startsWith('/files/') && url.searchParams.get('key') === config.key;
+    // <video>, <img> and EventSource can't send headers, so these also accept ?key=.
+    const headerless = url.pathname.startsWith('/files/') || /^\/api\/museum\/rooms\/[^/]+\/events$/.test(url.pathname);
+    return headerless && url.searchParams.get('key') === config.key;
   }
 
   // Pick up anything queued before a restart.
@@ -282,6 +287,8 @@ export function createApp(config, { claude = createClaude(config), log = console
 
   /** Captures imported with `npm run import` while the guide runs are found by this. */
   handle.kickFacts = () => worker.kick();
+  /** Ends open museum event streams so a server can close (tests). */
+  handle.close = () => museum.close();
   return handle;
 }
 

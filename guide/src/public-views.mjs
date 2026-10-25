@@ -40,6 +40,7 @@ export function createPublicViews({ store, sessions }) {
         summary: moment?.moment?.summary ?? '',
         createdAt: manifest.createdAt ?? null,
         durationSec: manifest.video?.durationSec ?? null,
+        source: manifest.source ?? null,
         thumb: files.includes('thumb.jpg') ? `${filesBase}/${id}/thumb.jpg` : null,
         facts: moment ? allowedFacts(moment).size : 0,
       });
