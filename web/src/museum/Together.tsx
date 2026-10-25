@@ -4,7 +4,7 @@ import './together.css'
 
 /** The link a helper opens on their phone. */
 function joinLink(code: string): string {
-  return `${location.origin}${location.pathname}#/memories?join=${code}`
+  return `${location.origin}${location.pathname}#/museum?join=${code}`
 }
 
 /** "Priya is with you" on the iPad, while a helper is connected. Nothing at all otherwise. */
@@ -158,7 +158,7 @@ function CodeForm({ initial, problem }: { initial: string; problem?: string }) {
   const code = normalizeRoomCode(value)
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    if (code) location.hash = `#/memories?join=${code}`
+    if (code) location.hash = `#/museum?join=${code}`
   }
   return (
     <form className="together-form" onSubmit={submit}>
