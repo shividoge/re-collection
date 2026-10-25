@@ -68,6 +68,8 @@ export const evidence = v.union(
   v.object({ type: v.literal('transcript'), tStart: v.number(), tEnd: v.number(), quote: v.string() }),
 )
 
+export type Evidence = Infer<typeof evidence>
+
 export const fact = v.object({
   id: v.string(),
   text: v.string(),
@@ -150,6 +152,28 @@ export const sessionFields = {
 }
 export const session = v.object({ sessionId: v.string(), ...sessionFields })
 export type Session = Infer<typeof session>
+
+/** A finished session as visitors see it: no person details, no alerts, no focus (guide-api.md "Public routes"). */
+export const publicSession = v.object({
+  sessionId: v.string(),
+  captureId: v.string(),
+  startedAt: v.string(),
+  endedAt: v.string(),
+  endReason: v.union(endReason, v.null()),
+  turns: v.array(
+    v.object({
+      t: v.string(),
+      speaker: v.union(v.literal('claude'), v.literal('patient')),
+      text: v.string(),
+      kind: v.optional(v.union(v.literal('welcome'), v.literal('narration'), v.literal('reply'))),
+      factIds: v.optional(v.array(v.string())),
+    }),
+  ),
+  dropped: v.array(v.object({ t: v.string(), sentence: v.string(), reason: v.string() })),
+  branches: v.array(branch),
+  scores: v.array(score),
+  note: v.string(),
+})
 
 export const endSummary = v.object({
   scores: v.array(score),

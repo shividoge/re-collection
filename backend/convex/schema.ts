@@ -42,6 +42,9 @@ export default defineSchema({
     contentEncoding: v.optional(v.string()),
     rev: v.number(),
     createdAt: v.number(),
+    /** depth.index.json only: total chunk bytes and frame count it lists (checked by captures.complete). */
+    indexedBytes: v.optional(v.number()),
+    indexedCount: v.optional(v.number()),
   })
     .index('by_capture', ['captureId', 'area', 'name']),
 
