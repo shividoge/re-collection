@@ -1,4 +1,6 @@
+import { ConvexError } from 'convex/values'
 import { describe, expect, it } from 'vitest'
+import type { UploadsApi } from '../src/data'
 import type { UploadTarget } from '../src/data/types'
 import {
   alreadyThere,
@@ -10,11 +12,14 @@ import {
   partRange,
   pendingParts,
   pool,
+  SAVED_MAX_AGE_MS,
   skipFile,
   uploadOrder,
   type SavedUpload,
+  videoKey,
+  type SavedVideo,
 } from '../src/data/uploadPlan'
-import { RESUMES, uploadFile, type UploadDeps } from '../src/upload'
+import { RESUMES, uploadFile, uploadVideo, type UploadDeps } from '../src/upload'
 
 describe('upload plan', () => {
   it('sends what facts need first, then the room, then video and depth', () => {
@@ -83,23 +88,40 @@ describe('upload plan', () => {
 })
 
 /** A storage + Convex double: part URLs fail while `broken` holds them, and resume reissues URLs. */
-function fakes({ bytes = 25, partSize = 10, broken = new Set<string>(), saved = [] as SavedUpload[] } = {}) {
+function fakes({ bytes = 25, partSize = 10, broken = new Set<string>(), saved = [] as SavedUpload[], videos = [] as SavedVideo[] } = {}) {
   const puts: string[] = []
   const finished: { uploadId: string; parts?: { partNumber: number; etag: string }[] }[] = []
+  const started: string[] = []
+  const resumed: string[] = []
+  const created: string[] = []
+  /** Captures removed on the server: start and resume answer not_found. */
+  const deleted = new Set<string>()
   const store = new Map(saved.map((s) => [s.uploadId, s]))
+  const videoStore = new Map(videos.map((v) => [v.key, v]))
+  const gone = () => new ConvexError({ code: 'not_found', message: 'No capture.' })
   let round = 0
-  const target = (): UploadTarget => ({
-    uploadId: 'up1',
+  let uploads = 0
+  const uploadCapture = new Map<string, string>()
+  const target = (uploadId = 'up1'): UploadTarget => ({
+    uploadId,
     key: 'captures/c/raw/video.mp4',
     partSize,
     parts: Array.from({ length: Math.ceil(bytes / partSize) }, (_, i) => ({ partNumber: i + 1, url: `r${round}-p${i + 1}` })),
   })
   const deps: UploadDeps = {
     api: {
-      start: async () => target(),
-      resume: async () => {
+      start: async ({ captureId }) => {
+        if (deleted.has(captureId)) throw gone()
+        started.push(captureId)
+        const uploadId = `up${++uploads}`
+        uploadCapture.set(uploadId, captureId)
+        return target(uploadId)
+      },
+      resume: async (uploadId) => {
+        if (deleted.has(uploadCapture.get(uploadId) ?? '')) throw gone()
+        resumed.push(uploadId)
         round++
-        return { target: target(), done: [] }
+        return { target: target(uploadId), done: [] }
       },
       finish: async (uploadId, parts) => {
         finished.push({ uploadId, parts })
@@ -116,9 +138,24 @@ function fakes({ bytes = 25, partSize = 10, broken = new Set<string>(), saved = 
       put: async (u) => void store.set(u.uploadId, { ...u, parts: [...u.parts] }),
       remove: async (id) => void store.delete(id),
     },
+    videos: {
+      all: async () => [...videoStore.values()],
+      put: async (v) => void videoStore.set(v.key, { ...v }),
+      remove: async (key) => void videoStore.delete(key),
+    },
     sleep: async () => {},
   }
-  return { deps, puts, finished, store }
+  const api: UploadsApi = {
+    ...deps.api,
+    begin: async () => ({ captureId: 'zip' }),
+    complete: async () => ({ ok: true }),
+    registered: async () => [],
+    createVideo: async () => {
+      created.push(`cap${created.length + 1}`)
+      return { captureId: created.at(-1)! }
+    },
+  }
+  return { deps, api, puts, finished, store, videoStore, started, resumed, created, deleted }
 }
 
 const blob = (n: number) => new Blob([new Uint8Array(n)])
@@ -163,5 +200,66 @@ describe('uploadFile', () => {
     await uploadFile(deps, { captureId: 'c', name: 'thumb.jpg', body: blob(7) }, () => {})
     expect(puts).toEqual(['single:7'])
     expect(finished).toEqual([{ uploadId: 's1', parts: undefined }])
+  })
+})
+
+const video = (lastModified = 1000, size = 25) => new File([new Uint8Array(size)], 'Birthday.MP4', { lastModified })
+const meta = { title: 'Birthday', attendees: ['Priya'] }
+/** Part 3 fails through every round of fresh URLs, so the first try gives up after parts 1 and 2. */
+const brokenPart3 = () => new Set(Array.from({ length: RESUMES }, (_, r) => `r${r}-p3`))
+
+describe('uploadVideo', () => {
+  it('dropping the same video again after a failure reuses its capture and resumes the upload', async () => {
+    const broken = brokenPart3()
+    const f = fakes({ broken })
+    await expect(uploadVideo(video(), meta, () => {}, f.deps, f.api)).rejects.toThrow('Drop the same video again')
+    expect(f.created).toEqual(['cap1'])
+    const firstPuts = f.puts.length
+
+    broken.clear()
+    const result = await uploadVideo(video(), meta, () => {}, f.deps, f.api)
+    expect(result).toEqual({ captureId: 'cap1' })
+    expect(f.created).toEqual(['cap1'])
+    expect(f.started).toEqual(['cap1'])
+    expect(f.resumed.at(-1)).toBe('up1')
+    expect(f.puts.slice(firstPuts)).toEqual([`r${RESUMES}-p3:5`])
+    expect(f.finished).toEqual([{ uploadId: 'up1', parts: [1, 2, 3].map((n) => ({ partNumber: n, etag: `etag-${n}` })) }])
+    expect(f.store.size).toBe(0)
+    expect(f.videoStore.size).toBe(0)
+  })
+
+  it('a different file (or a changed title) gets a new capture', async () => {
+    const broken = brokenPart3()
+    const f = fakes({ broken })
+    await expect(uploadVideo(video(1000), meta, () => {}, f.deps, f.api)).rejects.toThrow()
+    broken.clear()
+    await uploadVideo(video(2000), meta, () => {}, f.deps, f.api)
+    await uploadVideo(video(1000, 30), meta, () => {}, f.deps, f.api)
+    await uploadVideo(video(1000), { ...meta, title: 'Sunday' }, () => {}, f.deps, f.api)
+    expect(f.created).toEqual(['cap1', 'cap2', 'cap3', 'cap4'])
+    expect(f.started).toEqual(['cap1', 'cap2', 'cap3', 'cap4'])
+  })
+
+  it('makes a new capture when the saved one was deleted on the server', async () => {
+    const broken = brokenPart3()
+    const f = fakes({ broken })
+    await expect(uploadVideo(video(), meta, () => {}, f.deps, f.api)).rejects.toThrow()
+    broken.clear()
+    f.deleted.add('cap1')
+    expect(await uploadVideo(video(), meta, () => {}, f.deps, f.api)).toEqual({ captureId: 'cap2' })
+    expect(f.store.size).toBe(0)
+    expect(f.videoStore.size).toBe(0)
+  })
+
+  it('forgets saved uploads and videos older than the limit', async () => {
+    const old = Date.now() - SAVED_MAX_AGE_MS - 1
+    const file = video()
+    const f = fakes({
+      saved: [{ uploadId: 'stale', captureId: 'x', name: 'video.mp4', bytes: 25, parts: [], updatedAt: old }],
+      videos: [{ key: videoKey(file, meta), captureId: 'x', updatedAt: old }],
+    })
+    expect(await uploadVideo(file, meta, () => {}, f.deps, f.api)).toEqual({ captureId: 'cap1' })
+    expect(f.store.size).toBe(0)
+    expect(f.videoStore.size).toBe(0)
   })
 })
