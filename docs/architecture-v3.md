@@ -227,7 +227,7 @@ Env: `ANTHROPIC_API_KEY`, `MODEL_OFFLINE` (default `claude-opus-5-5`), `MODEL_LI
 
 Family join the patient's palace from anywhere: she leads, their screens follow where she walks and which memory she steps into, and everyone talks. One live visit per deployment (one palace). Ported from the guide's `live.mjs` (PR #57) onto Convex: reactive queries replace polling.
 
-**The visit key.** Every live function takes `key`, the palace's secret (32 characters, base64url, 192 random bits). Her link and the family's link are the same: `#/museum?visit=<key>`, and the page asks "Who's visiting?" each time it opens. The caretaker gets the key in the editor and can make a new one, which ends the current visit and stops the old link working (her iPad too). A wrong or old key → `not_found` "This visit link no longer works…". The key is only as private as the editor, which has no login (the team's decision for family tools). The static site has no live visit.
+**The visit key.** Every live function takes `key`, the palace's secret (32 characters, base64url, 192 random bits). Her link and the family's link are the same: `#/museum?visit=<key>`, and the page asks "Who's visiting?" each time it opens. The caretaker gets the key in the editor and can make a new one, which ends the current visit and stops the old link working (her iPad too). A wrong or old key → code `bad_key` ("This visit link no longer works…"); the screen forgets it. The key is only as private as the editor, which has no login (the team's decision for family tools). The static site has no live visit.
 
 | Function | Kind | Args | Returns |
 |---|---|---|---|

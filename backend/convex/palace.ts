@@ -1,7 +1,7 @@
 // The live visit: family join her Memory Palace from anywhere, follow her walk and talk
 // (docs/architecture-v3.md §6.6 "Live visit"). Reactive queries replace the guide's polling.
 // Every function needs the palace's visit key; rules in lib/palace.ts.
-import { v } from 'convex/values'
+import { ConvexError, v } from 'convex/values'
 import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import { action, internalMutation, mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
@@ -36,7 +36,7 @@ async function palaceRow(ctx: QueryCtx) {
 /** Throws unless `key` is the palace's current visit key. */
 async function requireKey(ctx: QueryCtx, key: string): Promise<void> {
   const row = await palaceRow(ctx)
-  if (!row || !KEY_PATTERN.test(key) || !sameKey(row.key, key)) throw notFound(BAD_KEY)
+  if (!row || !KEY_PATTERN.test(key) || !sameKey(row.key, key)) throw new ConvexError({ code: 'bad_key', message: BAD_KEY })
 }
 
 /** The caretaker's editor shows the link (no login, like the rest of the family's tools). */
