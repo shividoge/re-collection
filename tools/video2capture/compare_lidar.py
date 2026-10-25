@@ -27,6 +27,32 @@ def rotation_angle(R: np.ndarray) -> float:
     return float(np.degrees(np.arccos(np.clip((np.trace(R) - 1) / 2, -1, 1))))
 
 
+def roll(k: int) -> np.ndarray:
+    """4x4: k quarter turns about the camera's viewing axis."""
+    c, s = [(1, 0), (0, 1), (-1, 0), (0, -1)][k % 4]
+    T = np.eye(4)
+    T[:2, :2] = [[c, -s], [s, c]]
+    return T
+
+
+def world_rotation(ours: np.ndarray, ref: np.ndarray) -> np.ndarray:
+    """The rotation taking our world to the reference's (average of the per-frame differences)."""
+    M = sum(b[:3, :3] @ a[:3, :3].T for a, b in zip(ours, ref))
+    U, _, Vt = np.linalg.svd(M)
+    return U @ np.diag([1, 1, np.sign(np.linalg.det(U @ Vt))]) @ Vt
+
+
+def unturn_depth(mm: np.ndarray, turn: int, shape: tuple[int, int]) -> np.ndarray:
+    """Our depth grids turned back by `turn` quarter turns and resampled (nearest) to the reference
+    grid's shape: the grid is always 256x192, so a turned portrait video's grid is stretched."""
+    if turn % 4 == 0:
+        return mm
+    turned = np.rot90(mm, -turn, axes=(1, 2))
+    rows = np.minimum((np.arange(shape[0]) + 0.5) * turned.shape[1] / shape[0], turned.shape[1] - 1).astype(int)
+    cols = np.minimum((np.arange(shape[1]) + 0.5) * turned.shape[2] / shape[1], turned.shape[2] - 1).astype(int)
+    return turned[:, rows][:, :, cols]
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--lidar", type=Path, required=True)
@@ -45,10 +71,13 @@ def main() -> None:
         lines = [l for l in package.read_frames(folder / "frames.jsonl") if l.get("d") is not None and l["i"] in ref_lines]
         ours = np.stack([package.pose_of(l)[0] for l in lines])
         ref = np.stack([package.pose_of(ref_lines[l["i"]])[0] for l in lines])
-        M = sum(b[:3, :3] @ a[:3, :3].T for a, b in zip(ours, ref))
-        U, _, Vt = np.linalg.svd(M)
-        R = U @ np.diag([1, 1, np.sign(np.linalg.det(U @ Vt))]) @ Vt
-        mm = package.read_depth(folder, manifest)
+        # The converter may have turned the frames upright (upright.py): then its cameras are rolled a
+        # quarter turn against the phone's, and its depth maps are turned too. Undo whichever roll fits.
+        turn, R = min(((k, world_rotation(ours @ roll(k), ref)) for k in range(4)),
+                      key=lambda kr: np.median([rotation_angle(kr[1] @ a[:3, :3] @ roll(kr[0])[:3, :3] @ b[:3, :3].T)
+                                                for a, b in zip(ours, ref)]))
+        ours = ours @ roll(turn)
+        mm = unturn_depth(package.read_depth(folder, manifest), turn, ref_depth.shape[1:])
         ratios, pairs = [], []
         for l in lines:
             dref = ref_lines[l["i"]]["d"]
