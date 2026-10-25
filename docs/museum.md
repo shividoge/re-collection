@@ -96,32 +96,15 @@ herati field, navy corner pieces, a layered medallion with pendants, a palmette-
 border on a gold vine, a cotton fringe) on the herringbone. Visitors walk around all
 of it, and guided walks step round it.
 
-## Putting things in an exhibition
+## What hangs in it
 
-1. **Drop** photos or videos anywhere on the museum page (or press "Add photos or videos" on an
-   iPad). They hang in the exhibition that's open and stay on that device (IndexedDB). "Take down"
-   removes one again.
-2. **Our visits** is what the caretaker set up in the editor (`#/museum/edit`: pictures, order, titles, captions), or, until they do, fills itself from the guide: each finished capture hangs once, as its video (a still
-   if it has none), with the title and date the family gave it, so every frame is a different
-   memory. Stepping into it opens the visit's 3D room.
-3. **Curated exhibitions** come from `web/public/museum/exhibitions.json`:
+The museum is the patient's page, so it changes nothing: no adding or taking down pictures, no
+other exhibitions and no link back to the rest of the site. Only music, previous / next, stepping
+into a picture, the Memory Window and Visit together.
 
-```json
-{
-  "exhibitions": [
-    {
-      "id": "grandma-80",
-      "title": "Grandma's 80th",
-      "subtitle": "The garden party, June 2024",
-      "items": [
-        { "kind": "photo", "src": "/museum/grandma-80/cake.jpg", "title": "The mango cake", "date": "June 14, 2024", "caption": "Priya baked it the night before." },
-        { "kind": "video", "src": "/museum/grandma-80/song.mp4", "poster": "/museum/grandma-80/song.jpg", "title": "Everyone singing" }
-      ]
-    }
-  ]
-}
-```
-
-Items hang in the order listed. Put the files under
-`web/public/museum/` (they're served from `/museum/...`). Only real photos and videos the family
-shared: nothing in the museum is invented.
+It shows **Our visits**: what the caretaker set up in the editor (`#/museum/edit`: pictures,
+order, titles, captions), or, until they do, an automatic arrangement from the finished
+captures: each visit hangs once, as its video (a still if it has none), with the title and date
+the family gave it, then stills from the visits fill a second room. Stepping into a visit's
+picture opens its 3D room. With no finished visits yet, the page says the museum is being set
+up. Only real visits the family filmed: nothing in the museum is invented.

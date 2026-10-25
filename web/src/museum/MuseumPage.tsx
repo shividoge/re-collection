@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type * as THREE from 'three'
-import { addFiles, followIndex, kindOf, loadExhibitions, MY_EXHIBITION, removeLocal, type Exhibition } from './exhibitions'
+import { followIndex, visits, type Exhibition } from './exhibitions'
 import { planMuseum, walkTarget } from './layout'
 import { MuseumScene } from './MuseumScene'
 import { paintToCanvas } from './painter'
-import { museumHash, roomHash } from './roomSync'
+import { roomHash } from './roomSync'
 import { MuseumSound } from './sound'
 import { StepIn, type Stage } from './StepIn'
 import { Streaks } from './Streaks'
@@ -17,24 +17,23 @@ import { IN_MS, LEAVE_MS, OUT_MS, type Dive } from './warp'
 import './museum.css'
 
 /**
- * The museum: walk through an exhibition of photos and videos hung in real-looking rooms.
- * `#/museum` opens the first exhibition, `#/museum/<id>` a given one. Drop photos or videos on
- * the page (or use "Add photos or videos") to hang them in the exhibition that's open.
+ * Her museum: walk through the pictures the caretaker hung, in real-looking rooms, and step into
+ * any of them. This is the patient's page, so it changes nothing: no adding, no taking down, no
+ * other exhibitions and no way out to the rest of the site. The caretaker arranges it at
+ * `#/museum/edit` (MuseumEditor). `#/museum/<id>` links from before land here too.
  *
  * Visit together: the iPad opens a room; a helper who opens `#/museum?join=CODE` on their phone
  * walks with them (`join` is set only on the helper's phone). Either can open a visit's Memory
  * Window on the iPad.
  */
-export function MuseumPage({ id, join }: { id?: string; join?: string }) {
+export function MuseumPage({ join }: { id?: string; join?: string }) {
   const helper = join !== undefined
   const together = dataMode === 'live'
   const room = useMuseumRoom(helper ? 'helper' : 'patient', { join, enabled: together })
-  const [exhibitions, setExhibitions] = useState<Exhibition[] | null>(null)
+  const [exhibition, setExhibition] = useState<Exhibition | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
   const [focus, setFocus] = useState(-1)
   const [arrived, setArrived] = useState(false)
-  const [dragging, setDragging] = useState(false)
-  const [busy, setBusy] = useState<string | null>(null)
   const [hint, setHint] = useState(true)
   const walker = useRef<WalkerHandle>(null)
   // Stepping into a picture: which one, and how far: diving in, inside, leaving, or (`surfacing`)
@@ -65,19 +64,11 @@ export function MuseumPage({ id, join }: { id?: string; join?: string }) {
   useEffect(() => () => sound.dispose(), [sound])
   const [musicOn, setMusicOn] = useState(sound.musicOn)
 
-  const refresh = useCallback(() => {
-    loadExhibitions()
-      .then(setExhibitions)
+  useEffect(() => {
+    visits()
+      .then(setExhibition)
       .catch((e: Error) => setError(e.message))
   }, [])
-  useEffect(refresh, [refresh])
-
-  const exhibition = exhibitions?.find((e) => e.id === id) ?? exhibitions?.[0] ?? null
-  useEffect(() => {
-    setFocus(-1)
-    // Only when another exhibition opens, not when its items change.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [exhibition?.id])
 
   // Rooms are planned for the number of pictures; adding one may add a room.
   const count = Math.max(1, exhibition?.items.length ?? 1)
@@ -237,36 +228,6 @@ export function MuseumPage({ id, join }: { id?: string; join?: string }) {
     setArrived(slot >= 0)
   }, [])
 
-  const add = useCallback(
-    async (files: File[]) => {
-      if (!exhibition) return
-      const usable = files.filter((f) => kindOf(f))
-      if (usable.length === 0) {
-        setBusy('Only photos and videos can be hung here.')
-        setTimeout(() => setBusy(null), 2500)
-        return
-      }
-      setBusy(`Hanging ${usable.length} ${usable.length === 1 ? 'piece' : 'pieces'}…`)
-      try {
-        const added = await addFiles(exhibition.id, usable)
-        setExhibitions((all) => all?.map((e) => (e.id === exhibition.id ? { ...e, items: [...e.items, ...added] } : e)) ?? all)
-        setBusy(null)
-      } catch (e) {
-        setBusy(`Couldn't keep them on this device: ${(e as Error).message}`)
-      }
-    },
-    [exhibition],
-  )
-
-  const remove = useCallback(
-    async (artId: string) => {
-      await removeLocal(artId).catch(() => {})
-      setExhibitions((all) => all?.map((e) => ({ ...e, items: e.items.filter((a) => a.id !== artId) })) ?? all)
-      setFocus(-1)
-    },
-    [],
-  )
-
   // Keys for the guided tour: N / P or Page Down / Page Up; Escape steps back.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -283,7 +244,8 @@ export function MuseumPage({ id, join }: { id?: string; join?: string }) {
   }, [focus, arrived, inside, goTo, stepIn])
 
   if (error) return <div className="museum-message">{error}</div>
-  if (!exhibitions || !exhibition) return <div className="museum-message">Opening the museum…</div>
+  if (exhibition === undefined) return <div className="museum-message">Opening the museum…</div>
+  if (exhibition === null) return <div className="museum-message">The museum is being set up. Nothing hangs here yet.</div>
 
   // The label shows once the visitor has arrived at a piece or is looking at one.
   const current = focus >= 0 && arrived ? exhibition.items[focus] : null
@@ -294,23 +256,9 @@ export function MuseumPage({ id, join }: { id?: string; join?: string }) {
       className={`museum${inside ? ' inside' : ''}`}
       // Sound can only start after a click or tap.
       onPointerDown={() => sound.wake()}
-      onDragOver={(e) => {
-        if ([...e.dataTransfer.items].some((i) => i.kind === 'file')) {
-          e.preventDefault()
-          setDragging(true)
-        }
-      }}
-      onDragLeave={(e) => {
-        if (e.currentTarget === e.target) setDragging(false)
-      }}
-      onDrop={(e) => {
-        e.preventDefault()
-        setDragging(false)
-        void add([...e.dataTransfer.files])
-      }}
     >
       <div className="museum-stage">
-        {total > 0 || exhibition.id === MY_EXHIBITION ? (
+        {total > 0 ? (
           <MuseumScene
             exhibition={exhibition}
             plan={plan}
@@ -343,19 +291,6 @@ export function MuseumPage({ id, join }: { id?: string; join?: string }) {
       {warp && <Streaks key={`${warp.dir}${warp.cross}`} dir={warp.dir} cross={warp.cross} />}
 
       <header className="museum-top">
-        <a className="museum-chip" href="#/">
-          ← Back
-        </a>
-        <label className="museum-chip museum-select">
-          <span className="sr-only">Exhibition</span>
-          <select value={exhibition.id} onChange={(e) => (location.hash = museumHash(e.target.value, join))}>
-            {exhibitions.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.title} ({e.items.length})
-              </option>
-            ))}
-          </select>
-        </label>
         <button
           className={`museum-chip${musicOn ? ' on' : ''}`}
           onClick={() => {
@@ -368,10 +303,6 @@ export function MuseumPage({ id, join }: { id?: string; join?: string }) {
         >
           {musicOn ? '♪ Music on' : '♪ Music off'}
         </button>
-        <label className="museum-chip museum-add">
-          Add photos or videos
-          <input type="file" accept="image/*,video/*" multiple hidden onChange={(e) => void add([...(e.target.files ?? [])])} />
-        </label>
       </header>
 
       {hint && total > 0 && (
@@ -383,7 +314,7 @@ export function MuseumPage({ id, join }: { id?: string; join?: string }) {
       {total === 0 && (
         <div className="museum-empty">
           <h2>{exhibition.title}</h2>
-          <p>Nothing is hanging here yet. Drop photos or videos anywhere on this page, or press “Add photos or videos”.</p>
+          <p>Nothing is hanging here yet.</p>
         </div>
       )}
 
@@ -409,7 +340,6 @@ export function MuseumPage({ id, join }: { id?: string; join?: string }) {
                       {helper ? 'Open on the iPad' : 'Memory Window'}
                     </button>
                   )}
-                  {current.local && <button onClick={() => void remove(current.id)}>Take down</button>}
                 </div>
               </div>
             ) : (
@@ -427,12 +357,6 @@ export function MuseumPage({ id, join }: { id?: string; join?: string }) {
         </footer>
       )}
 
-      {dragging && (
-        <div className="museum-drop">
-          <p>Drop to hang them in “{exhibition.title}”</p>
-        </div>
-      )}
-      {busy && <div className="museum-toast">{busy}</div>}
       {together &&
         (helper ? (
           <HelperTogether room={room} join={join} openTitle={room.state?.window ? (exhibition.items.find((a) => a.captureId === room.state?.window)?.title ?? null) : null} />
