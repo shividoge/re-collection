@@ -19,6 +19,10 @@ from .errors import ConvexError, ConvexServerError
 from .transfer import FinishedPart, UploadTarget
 
 JobKind = Literal["facts", "bake", "convert", "splat"]
+
+# The job protocol this worker speaks (backend WORKER_PROTOCOL; claim refuses any other): every
+# call after claim carries the claim's `attempt`, and outputs go to that attempt's own keys.
+WORKER_PROTOCOL = 2
 Area = Literal["raw", "derived", "video"]
 
 
@@ -90,13 +94,14 @@ class SplatResult(TypedDict):
 
 JobResult = ConvertResult | SplatResult
 
-# ConvexError `data.code` values (or message phrases) that mean the job is no longer ours.
+# ConvexError `data.code` values (or message phrases) that mean the job is no longer ours. The
+# backend answers `cancelled` to any call from an attempt that lost the job's lease.
 LEASE_LOST_CODES = frozenset({"not_leased", "lease_lost", "lease_expired", "not_found", "cancelled"})
 _LEASE_LOST_PHRASES = ("not leased", "lease expired", "lease lost", "job not found")
 
 
 def is_lease_lost(exc: BaseException) -> bool:
-    """True if a heartbeat error says the job isn't leased to this worker any more."""
+    """True if a Convex error says the job isn't this attempt's any more (any call after claim)."""
     if type(exc).__name__ != "ConvexError":
         return False
     data = getattr(exc, "data", None)
@@ -163,8 +168,8 @@ class WorkerApi:
             raise
 
     def claim(self, worker_id: str, kinds: list[str], gpu: bool, max_frames: int) -> Claim | None:
-        # `protocol` 2: the job protocol this worker speaks (attempt on every call); Convex refuses others.
-        args: dict[str, object] = {"workerId": worker_id, "kinds": kinds, "gpu": gpu, "maxFrames": max_frames, "protocol": 2}
+        args: dict[str, object] = {"workerId": worker_id, "kinds": kinds, "gpu": gpu, "maxFrames": max_frames,
+                                   "protocol": WORKER_PROTOCOL}
         return cast(Claim | None, self._call("mutation", "worker:claim", args))
 
     # Every call after claim carries the claim's `attempt`: Convex ignores calls from a worker

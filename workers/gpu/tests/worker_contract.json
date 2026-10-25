@@ -1,0 +1,850 @@
+{
+  "protocol": 2,
+  "functions": {
+    "claim": {
+      "kind": "mutation",
+      "args": {
+        "type": "object",
+        "value": {
+          "token": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "workerId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "kinds": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "union",
+                "value": [
+                  {
+                    "type": "literal",
+                    "value": "facts"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "bake"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "convert"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "splat"
+                  }
+                ]
+              }
+            },
+            "optional": false
+          },
+          "gpu": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": false
+          },
+          "maxFrames": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
+          "protocol": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          }
+        }
+      },
+      "returns": {
+        "type": "union",
+        "value": [
+          {
+            "type": "object",
+            "value": {
+              "jobId": {
+                "fieldType": {
+                  "type": "id",
+                  "tableName": "jobs"
+                },
+                "optional": false
+              },
+              "kind": {
+                "fieldType": {
+                  "type": "union",
+                  "value": [
+                    {
+                      "type": "literal",
+                      "value": "facts"
+                    },
+                    {
+                      "type": "literal",
+                      "value": "bake"
+                    },
+                    {
+                      "type": "literal",
+                      "value": "convert"
+                    },
+                    {
+                      "type": "literal",
+                      "value": "splat"
+                    }
+                  ]
+                },
+                "optional": false
+              },
+              "captureId": {
+                "fieldType": {
+                  "type": "string"
+                },
+                "optional": false
+              },
+              "attempt": {
+                "fieldType": {
+                  "type": "number"
+                },
+                "optional": false
+              }
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "heartbeat": {
+      "kind": "mutation",
+      "args": {
+        "type": "object",
+        "value": {
+          "token": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "jobId": {
+            "fieldType": {
+              "type": "id",
+              "tableName": "jobs"
+            },
+            "optional": false
+          },
+          "progress": {
+            "fieldType": {
+              "type": "object",
+              "value": {
+                "stage": {
+                  "fieldType": {
+                    "type": "string"
+                  },
+                  "optional": false
+                },
+                "fraction": {
+                  "fieldType": {
+                    "type": "union",
+                    "value": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optional": false
+                },
+                "message": {
+                  "fieldType": {
+                    "type": "string"
+                  },
+                  "optional": false
+                }
+              }
+            },
+            "optional": true
+          },
+          "attempt": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "value": {
+          "ok": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": false
+          },
+          "cancelled": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": false
+          }
+        }
+      }
+    },
+    "inputs": {
+      "kind": "action",
+      "args": {
+        "type": "object",
+        "value": {
+          "token": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "jobId": {
+            "fieldType": {
+              "type": "id",
+              "tableName": "jobs"
+            },
+            "optional": false
+          },
+          "attempt": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "value": {
+          "manifestJson": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "optional": false
+          },
+          "files": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "name": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "area": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "literal",
+                          "value": "raw"
+                        },
+                        {
+                          "type": "literal",
+                          "value": "derived"
+                        },
+                        {
+                          "type": "literal",
+                          "value": "video"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "url": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "bytes": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            },
+            "optional": false
+          }
+        }
+      }
+    },
+    "outputUrls": {
+      "kind": "action",
+      "args": {
+        "type": "object",
+        "value": {
+          "token": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "jobId": {
+            "fieldType": {
+              "type": "id",
+              "tableName": "jobs"
+            },
+            "optional": false
+          },
+          "attempt": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "files": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "name": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "bytes": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "contentType": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "contentEncoding": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": true
+                  },
+                  "area": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "literal",
+                          "value": "raw"
+                        },
+                        {
+                          "type": "literal",
+                          "value": "derived"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            },
+            "optional": false
+          }
+        }
+      },
+      "returns": {
+        "type": "array",
+        "value": {
+          "type": "object",
+          "value": {
+            "name": {
+              "fieldType": {
+                "type": "string"
+              },
+              "optional": false
+            },
+            "target": {
+              "fieldType": {
+                "type": "object",
+                "value": {
+                  "uploadId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "key": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "partSize": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": true
+                  },
+                  "parts": {
+                    "fieldType": {
+                      "type": "array",
+                      "value": {
+                        "type": "object",
+                        "value": {
+                          "partNumber": {
+                            "fieldType": {
+                              "type": "number"
+                            },
+                            "optional": false
+                          },
+                          "url": {
+                            "fieldType": {
+                              "type": "string"
+                            },
+                            "optional": false
+                          }
+                        }
+                      }
+                    },
+                    "optional": true
+                  },
+                  "single": {
+                    "fieldType": {
+                      "type": "object",
+                      "value": {
+                        "url": {
+                          "fieldType": {
+                            "type": "string"
+                          },
+                          "optional": false
+                        },
+                        "headers": {
+                          "fieldType": {
+                            "type": "record",
+                            "keys": {
+                              "type": "string"
+                            },
+                            "values": {
+                              "fieldType": {
+                                "type": "string"
+                              },
+                              "optional": false
+                            }
+                          },
+                          "optional": false
+                        }
+                      }
+                    },
+                    "optional": true
+                  }
+                }
+              },
+              "optional": false
+            }
+          }
+        }
+      }
+    },
+    "finishOutput": {
+      "kind": "action",
+      "args": {
+        "type": "object",
+        "value": {
+          "token": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "jobId": {
+            "fieldType": {
+              "type": "id",
+              "tableName": "jobs"
+            },
+            "optional": false
+          },
+          "attempt": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "uploadId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "parts": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "partNumber": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "etag": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            },
+            "optional": true
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "value": {
+          "ok": {
+            "fieldType": {
+              "type": "literal",
+              "value": true
+            },
+            "optional": false
+          },
+          "bytes": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          }
+        }
+      }
+    },
+    "complete": {
+      "kind": "mutation",
+      "args": {
+        "type": "object",
+        "value": {
+          "token": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "jobId": {
+            "fieldType": {
+              "type": "id",
+              "tableName": "jobs"
+            },
+            "optional": false
+          },
+          "result": {
+            "fieldType": {
+              "type": "union",
+              "value": [
+                {
+                  "type": "object",
+                  "value": {
+                    "kind": {
+                      "fieldType": {
+                        "type": "literal",
+                        "value": "bake"
+                      },
+                      "optional": false
+                    },
+                    "derived": {
+                      "fieldType": {
+                        "type": "object",
+                        "value": {
+                          "format": {
+                            "fieldType": {
+                              "type": "literal",
+                              "value": "braindance.derived"
+                            },
+                            "optional": false
+                          },
+                          "version": {
+                            "fieldType": {
+                              "type": "number"
+                            },
+                            "optional": false
+                          },
+                          "captureId": {
+                            "fieldType": {
+                              "type": "string"
+                            },
+                            "optional": false
+                          },
+                          "bakedAt": {
+                            "fieldType": {
+                              "type": "string"
+                            },
+                            "optional": false
+                          },
+                          "bakeVersion": {
+                            "fieldType": {
+                              "type": "string"
+                            },
+                            "optional": false
+                          },
+                          "files": {
+                            "fieldType": {
+                              "type": "object",
+                              "value": {
+                                "points": {
+                                  "fieldType": {
+                                    "type": "string"
+                                  },
+                                  "optional": false
+                                },
+                                "surface": {
+                                  "fieldType": {
+                                    "type": "string"
+                                  },
+                                  "optional": true
+                                },
+                                "timeline": {
+                                  "fieldType": {
+                                    "type": "string"
+                                  },
+                                  "optional": true
+                                },
+                                "depth": {
+                                  "fieldType": {
+                                    "type": "string"
+                                  },
+                                  "optional": true
+                                },
+                                "depthIndex": {
+                                  "fieldType": {
+                                    "type": "string"
+                                  },
+                                  "optional": true
+                                }
+                              }
+                            },
+                            "optional": false
+                          },
+                          "stats": {
+                            "fieldType": {
+                              "type": "object",
+                              "value": {
+                                "points": {
+                                  "fieldType": {
+                                    "type": "number"
+                                  },
+                                  "optional": false
+                                },
+                                "surfaceTriangles": {
+                                  "fieldType": {
+                                    "type": "number"
+                                  },
+                                  "optional": true
+                                },
+                                "timelineVoxels": {
+                                  "fieldType": {
+                                    "type": "number"
+                                  },
+                                  "optional": true
+                                },
+                                "bakeMs": {
+                                  "fieldType": {
+                                    "type": "number"
+                                  },
+                                  "optional": false
+                                }
+                              }
+                            },
+                            "optional": false
+                          }
+                        }
+                      },
+                      "optional": false
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "value": {
+                    "kind": {
+                      "fieldType": {
+                        "type": "literal",
+                        "value": "convert"
+                      },
+                      "optional": false
+                    },
+                    "manifestJson": {
+                      "fieldType": {
+                        "type": "string"
+                      },
+                      "optional": false
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "value": {
+                    "kind": {
+                      "fieldType": {
+                        "type": "literal",
+                        "value": "splat"
+                      },
+                      "optional": false
+                    },
+                    "splat": {
+                      "fieldType": {
+                        "type": "object",
+                        "value": {
+                          "file": {
+                            "fieldType": {
+                              "type": "string"
+                            },
+                            "optional": false
+                          },
+                          "format": {
+                            "fieldType": {
+                              "type": "union",
+                              "value": [
+                                {
+                                  "type": "literal",
+                                  "value": "spz"
+                                },
+                                {
+                                  "type": "literal",
+                                  "value": "3dgs-ply"
+                                }
+                              ]
+                            },
+                            "optional": false
+                          },
+                          "count": {
+                            "fieldType": {
+                              "type": "number"
+                            },
+                            "optional": false
+                          },
+                          "shDegree": {
+                            "fieldType": {
+                              "type": "number"
+                            },
+                            "optional": false
+                          },
+                          "source": {
+                            "fieldType": {
+                              "type": "union",
+                              "value": [
+                                {
+                                  "type": "literal",
+                                  "value": "trained-from-video"
+                                },
+                                {
+                                  "type": "literal",
+                                  "value": "trained-from-lidar-capture"
+                                }
+                              ]
+                            },
+                            "optional": false
+                          }
+                        }
+                      },
+                      "optional": false
+                    }
+                  }
+                }
+              ]
+            },
+            "optional": false
+          },
+          "attempt": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "value": {
+          "ok": {
+            "fieldType": {
+              "type": "literal",
+              "value": true
+            },
+            "optional": false
+          }
+        }
+      }
+    },
+    "fail": {
+      "kind": "mutation",
+      "args": {
+        "type": "object",
+        "value": {
+          "token": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "jobId": {
+            "fieldType": {
+              "type": "id",
+              "tableName": "jobs"
+            },
+            "optional": false
+          },
+          "error": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          },
+          "retryable": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": false
+          },
+          "attempt": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          }
+        }
+      },
+      "returns": {
+        "type": "object",
+        "value": {
+          "ok": {
+            "fieldType": {
+              "type": "literal",
+              "value": true
+            },
+            "optional": false
+          }
+        }
+      }
+    }
+  }
+}
