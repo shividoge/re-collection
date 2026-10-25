@@ -161,7 +161,7 @@ Function names are the contract (`backend/convex/<module>.ts`). Validators live 
 
 ### 6.1 Tables (`backend/convex/schema.ts`)
 
-`captures`, `files`, `uploads`, `moments`, `sessions`, `people`, `jobs`, `workers`, `museumRooms`, `museumPresence`, `museumArrangement`. Exact fields in `schema.ts`.
+`captures`, `files`, `uploads`, `moments`, `sessions`, `people`, `jobs`, `workers`, `museumRooms`, `museumPresence`, `museumArrangement`, `palace`, `palaceMembers`, `palaceView`, `palaceSignals`, `palaceAudio`. Exact fields in `schema.ts`.
 
 ### 6.2 Captures and files (phone, web, workers)
 
@@ -222,6 +222,42 @@ Env: `ANTHROPIC_API_KEY`, `MODEL_OFFLINE` (default `claude-opus-5-5`), `MODEL_LI
 | `museum.setState` | mutation | `{ code, at, atId?, window, by, name? }` | `{ state }` (validation as in `guide-api.md`) |
 | `museum.heartbeat` | mutation | `{ code, client, as, name? }` | `{ ok }`; a screen calls it every 5 s; peers counts heartbeats newer than 12 s |
 | `museum.getArrangement` / `museum.setArrangement` / `museum.clearArrangement` | query / mutation / mutation | as in `guide-api.md` | arrangement |
+
+#### Live visit (family join her Memory Palace and talk)
+
+Family join the patient's palace from anywhere: she leads, their screens follow where she walks and which memory she steps into, and everyone talks. One live visit per deployment (one palace). Ported from the guide's `live.mjs` (PR #57) onto Convex: reactive queries replace polling.
+
+**The visit key.** Every live function takes `key`, the palace's secret (32 characters, base64url, 192 random bits). Her link and the family's link are the same: `#/museum?visit=<key>`, and the page asks "Who's visiting?" each time it opens. The caretaker gets the key in the editor and can make a new one, which ends the current visit and stops the old link working (her iPad too). A wrong or old key → `not_found` "This visit link no longer works…". The key is only as private as the editor, which has no login (the team's decision for family tools). The static site has no live visit.
+
+| Function | Kind | Args | Returns |
+|---|---|---|---|
+| `palace.visitKey` | query | `{}` | `{ key: string \| null }` (the editor; null until one is made) |
+| `palace.makeVisitKey` | action | `{ replace? }` | `{ key }`: the current key, or a new one when there's none or `replace` (crypto randomness, so an action); replacing ends the visit |
+| `palace.join` | mutation | `{ key, role: 'patient' \| 'family', name? }` | `{ me, iceServers }`: `me` is this screen's member id |
+| `palace.heartbeat` | mutation | `{ key, me }` | `{ ok }`; every 3 s. A member not heard from for 10 s is gone; an unknown `me` → `not_found` (join again) |
+| `palace.leave` | mutation | `{ key, me }` | `null` (closing the tab; idempotent) |
+| `palace.members` | query | `{ key, me }` | `{ here: boolean, members: Member[] }` (`here` false: this screen was dropped, join again) |
+| `palace.view` | query | `{ key }` | `View & { rev, updatedAt }` or `null` (no patient in the visit) |
+| `palace.setView` | mutation | `{ key, me, view: View }` | `{ rev }`; the patient only (`forbidden` otherwise); sent at most 5 times a second, only when it changed |
+| `palace.signal` | mutation | `{ key, me, to, data }` | `null`; WebRTC offer, answer or ICE candidate (`data` a JSON string up to 16 KB) for one member |
+| `palace.signals` | query | `{ key, me }` | `[{ id, from, data }]` addressed to `me` (oldest first, at most 100) |
+| `palace.ackSignals` | mutation | `{ key, me, ids }` | `null`; deletes those (each is handled once; the screen also skips ids it has seen) |
+| `palace.sendAudio` | mutation | `{ key, me, data: bytes }` | `{ seq }`; relayed voice, 16 kHz mono μ-law, about 250 ms (1–64 KB) |
+| `palace.audio` | query | `{ key, me }` | `{ latest, chunks: [{ seq, from, data }] }`: the last 8 chunks from others (newest last); `latest` is the newest `seq` from anyone |
+
+```ts
+type Member = { id: string; role: 'patient' | 'family'; name: string }
+type View = {
+  x: number; z: number; yaw: number; pitch: number                         // where she stands and looks (m, rad; finite)
+  inside: { index: number; stage: 'diving' | 'here' | 'leaving' } | null   // stepping into memory `index` (0–999)
+  music: boolean
+}
+```
+
+- **Names:** family join with a name (1–40 characters, whitespace collapsed); a patient without one gets `people.displayName` (or "Grandma").
+- **The view** belongs to the patient: it's null whenever no patient is in the visit, and her leaving clears it.
+- **Voice:** each pair of screens tries a direct WebRTC call (Convex only passes the setup messages). Where that doesn't connect within 6 s (venue Wi-Fi, mobile data), voice goes through `sendAudio` instead, only while someone speaks. `iceServers` come from the deployment's `ICE_SERVERS` (a JSON array as `RTCPeerConnection` takes it; a TURN server goes here), defaulting to a public STUN server. A screen's first `audio` answer only sets where it starts (`latest`): no replaying old voice. Chunks are kept 10 s, never written anywhere else.
+- **Cleanup:** `join` and a cron every minute drop gone members, their unread signals, the view when no patient is left, and voice older than 10 s.
 
 ### 6.7 Public (front page, no writes)
 
