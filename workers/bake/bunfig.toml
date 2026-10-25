@@ -1,0 +1,8 @@
+preload = ["./src/webModules.ts"]
+
+[install]
+# Never fetch a missing package at run time (see src/webModules.ts).
+auto = "disable"
+
+[test]
+preload = ["./src/webModules.ts"]
