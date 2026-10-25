@@ -1,12 +1,18 @@
 """
 Turn an ordinary video (no LiDAR) into a Braindance capture package, so an old family video can
-be revisited in 3D like a phone scan: room cloud, camera path, per-frame depth for the people
-replay, keyframes and the original sound.
+be revisited in 3D like a phone scan: room cloud (and optionally a Gaussian splat of the room),
+camera path, per-frame depth for the people replay, keyframes and the original sound.
 
-Depth Anything 3 (DA3-BASE, Apache-2.0) estimates each sampled frame's camera pose, intrinsics
-and depth. Everything it produces is an ESTIMATE, not a measurement: scale is approximate, and
+Depth Anything 3 (default DA3NESTED-GIANT-LARGE-1.1: multi-view depth and poses plus a metric
+depth model for real-world scale) estimates each sampled frame's camera pose, intrinsics and
+depth. Everything it produces is an ESTIMATE, not a measurement: scale is approximate, and
 anything the camera never saw stays empty. The manifest says so (`"source": "video"`,
 `"depth": {"estimated": true, ...}`) and the web app labels these scenes.
+
+The room is built only from what several frames agree on: pixels at depth jumps, pixels
+neighbouring frames contradict, low-confidence pixels, sky, and people and pets (Mask R-CNN) are
+left out. People stay in the per-frame depth, so the people replay still shows them. The splat
+(`--splat train`, the default) is optimised against the video's own frames with gsplat.
 
 Output follows docs/capture-format.md (same files a phone capture has), so the guide's import,
 fact extraction, review, revisit sessions, the viewer and the Memory Window all work unchanged:
@@ -35,16 +41,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
 
 # PyTorch and pycolmap (imported by DA3) each bring an OpenMP runtime on macOS; without this the
 # process aborts at import. Both only use it for CPU threading here.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+# Fewer out-of-memory failures from fragmentation when the big model runs near the GPU's limit.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
-# A local copy (models/DA3-BASE: config.json + model.safetensors from the Hugging Face repo)
-# is used when present; Hugging Face's own downloader can stall on large files.
-_LOCAL = Path(__file__).resolve().parent / "models" / "DA3-BASE"
-MODEL = str(_LOCAL) if (_LOCAL / "model.safetensors").exists() else "depth-anything/DA3-BASE"
+# A local copy (models/<name>: config.json + model.safetensors from the Hugging Face repo) is used
+# when present; Hugging Face's own downloader can stall on large files.
+MODEL_NAME = "DA3NESTED-GIANT-LARGE-1.1"
+_LOCAL = Path(__file__).resolve().parent / "models" / MODEL_NAME
+MODEL = str(_LOCAL) if (_LOCAL / "model.safetensors").exists() else f"depth-anything/{MODEL_NAME}"
 FLIP = np.diag([1.0, -1.0, -1.0, 1.0])  # OpenCV <-> ARKit axes, for camera and world frames
 # Fedora's stock ffmpeg-free has no libx264 and no HEVC decoder (iPhone videos); point these at a full build.
 FFMPEG = os.environ.get("FFMPEG", "ffmpeg")
@@ -180,27 +188,34 @@ def interpolate_pose(poses: list[np.ndarray], times: list[float], t: float) -> n
     return m
 
 
-def unproject(depth: np.ndarray, K: np.ndarray, c2w: np.ndarray, stride: int) -> tuple[np.ndarray, np.ndarray]:
-    """Depth pixels -> world points (capture convention). Returns (points Nx3, (v,u) indices)."""
-    h, w = depth.shape
-    vs, us = np.mgrid[0:h:stride, 0:w:stride]
-    d = depth[vs, us]
-    x = (us - K[0, 2]) * d / K[0, 0]
-    y = (vs - K[1, 2]) * d / K[1, 1]
-    cam = np.stack([x, -y, -d, np.ones_like(d)], axis=-1).reshape(-1, 4)  # ARKit camera space
-    world = (c2w @ cam.T).T[:, :3]
-    return world, np.stack([vs.ravel(), us.ravel()], axis=-1)
 
-
-def voxel_downsample(points: np.ndarray, colors: np.ndarray, voxel: float) -> tuple[np.ndarray, np.ndarray]:
-    keys = np.floor(points / voxel).astype(np.int64)
-    _, inverse, counts = np.unique(keys, axis=0, return_inverse=True, return_counts=True)
-    inverse = inverse.ravel()
-    sums = np.zeros((counts.size, 3))
-    np.add.at(sums, inverse, points)
-    csum = np.zeros((counts.size, 3))
-    np.add.at(csum, inverse, colors.astype(np.float64))
-    return (sums / counts[:, None]).astype(np.float32), np.clip(np.round(csum / counts[:, None]), 0, 255).astype(np.uint8)
+def level_world(poses: list[np.ndarray]) -> np.ndarray:
+    """A rotation (4x4) that makes world +y point up. A handheld camera is rarely rolled, so its
+    x axis stays about horizontal: "up" is the direction most perpendicular to every camera's x
+    axis (the smallest eigenvector of their scatter), signed to agree with the cameras' up. When
+    the camera never turned enough to pin that down, fall back to the cameras' average up with
+    the roll removed."""
+    xs = np.stack([T[:3, 0] for T in poses])
+    ys = np.stack([T[:3, 1] for T in poses])
+    vals, vecs = np.linalg.eigh(xs.T @ xs / len(xs))
+    up = vecs[:, 0]
+    if vals[0] > 0.3 * vals[1]:  # ambiguous: the x axes span less than a plane
+        x = xs.mean(0) / np.linalg.norm(xs.mean(0))
+        up = ys.mean(0) - (ys.mean(0) @ x) * x
+    up = up / np.linalg.norm(up)
+    if up @ ys.mean(0) < 0:
+        up = -up
+    # Smallest rotation taking `up` to +y (Rodrigues).
+    target = np.array([0.0, 1.0, 0.0])
+    v, c = np.cross(up, target), float(up @ target)
+    if np.linalg.norm(v) < 1e-9:
+        R = np.eye(3) if c > 0 else np.diag([1.0, -1.0, -1.0])
+    else:
+        vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+        R = np.eye(3) + vx + vx @ vx / (1 + c)
+    M = np.eye(4)
+    M[:3, :3] = R
+    return M
 
 
 def write_room_bin(path: Path, points: np.ndarray, colors: np.ndarray) -> None:
@@ -223,115 +238,205 @@ def write_room_ply(path: Path, points: np.ndarray, colors: np.ndarray) -> None:
         f.write(rec.tobytes())
 
 
+def default_max_frames(device: str) -> int:
+    """How many frames the model can take at once. The 1.4B-parameter model needs about 8.6 GiB
+    plus 0.065 GiB per frame (measured on CUDA at 504 px: 72 frames fit in 16 GB, 84 don't)."""
+    import torch
+
+    if device != "cuda":
+        return 40
+    total = torch.cuda.get_device_properties(0).total_memory / 2**30
+    return int(max(16, min(240, (total - 2.5 - 8.6) / 0.065)))
+
+
+def confidence_levels(conf: np.ndarray, usable: np.ndarray, has_conf: bool) -> np.ndarray:
+    """Model confidence -> the capture's 0 (no data) / 1 (medium) / 2 (high), per frame."""
+    if not has_conf:
+        return np.where(usable, 1, 0).astype(np.uint8)  # no confidence from the model: medium, never high
+    vals = conf[usable]
+    if vals.size == 0:
+        return np.zeros(conf.shape, np.uint8)
+    lo, hi = np.percentile(vals, 20), np.percentile(vals, 55)
+    return np.where(usable, np.where(conf >= hi, 2, np.where(conf >= lo, 1, 0)), 0).astype(np.uint8)
+
+
 # ---------- main ----------
 
-def main() -> None:
+def main() -> int | None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("video", type=Path)
     ap.add_argument("--title", default="")
     ap.add_argument("--attendees", default="", help="comma-separated names the family gives")
     ap.add_argument("--out", type=Path, default=Path("out"))
-    ap.add_argument("--sample-fps", type=float, default=2.0, help="frames per second given to the model")
-    ap.add_argument("--max-frames", type=int, default=40, help="cap on model frames (memory)")
+    ap.add_argument("--sample-fps", type=float, default=10.0, help="frames per second given to the model")
+    ap.add_argument("--max-frames", type=int, default=None,
+                    help="cap on model frames (default: what fits in GPU memory; longer videos are sampled more sparsely)")
     ap.add_argument("--median-depth", type=float, default=2.0,
-                    help="the model's depth has no true scale; scale it so the typical depth is this many meters")
+                    help="only for models without metric depth: scale so the typical depth is this many meters")
     ap.add_argument("--model", default=MODEL)
     ap.add_argument("--device", default=None, help="mps, cuda or cpu (default: best available)")
+    ap.add_argument("--voxel", type=float, default=0.01, help="room.bin point spacing in meters")
+    ap.add_argument("--max-points", type=int, default=2_000_000, help="most room.bin points (bigger scenes get coarser voxels)")
+    ap.add_argument("--splat", choices=["train", "none"], default="train",
+                    help="room.splat.ply: train a Gaussian splat with gsplat, or none")
+    ap.add_argument("--splat-steps", type=int, default=7000)
+    ap.add_argument("--splat-max", type=int, default=1_000_000, help="most Gaussians in the splat")
+    ap.add_argument("--splat-width", type=int, default=1280, help="training image width")
+    ap.add_argument("--holdout", type=int, default=0,
+                    help="for evaluation: leave every Nth model frame out of the room and the splat, and list them "
+                         "in <out>/capture-<id>.holdout.json")
     ap.add_argument("--import", dest="import_to_guide", action="store_true",
                     help="then import the capture into the guide (node guide/scripts/import.mjs; honors DATA_DIR)")
     args = ap.parse_args()
 
     import torch
     from depth_anything_3.api import DepthAnything3
+    from PIL import Image
+
+    import fusion
+    import splat
 
     src = args.video.expanduser().resolve()
     if not src.exists():
         raise SystemExit(f"No such video: {src}")
+    if args.splat == "train":
+        try:
+            import gsplat  # noqa: F401
+        except ImportError:
+            raise SystemExit("--splat train needs gsplat (README: 'gsplat'), or pass --splat none.")
     info = probe(src)
+    device = args.device or ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    dev = torch.device(device)
     cid = str(uuid.uuid4())
     out = (args.out / f"capture-{cid}").resolve()
     out.mkdir(parents=True)
-    print(f"[1/6] Transcoding {src.name} ({info['duration']:.1f} s) to H.264…")
+    print(f"[1/8] Transcoding {src.name} ({info['duration']:.1f} s) to H.264…")
     video = out / "video.mp4"
     transcode(src, video, info["has_audio"])
     frame_times, W, H, fps = frame_times_and_size(video)
     frame_count = len(frame_times)
     duration = float(frame_times[-1]) + 1.0 / fps
 
-    # Frames for the model, evenly spaced, at most --max-frames.
-    # Short clips still get enough views to reconstruct from (at least 16, never more than exist).
-    n = max(2, min(args.max_frames, frame_count, max(16, int(duration * args.sample_fps) + 1)))
-    # Evenly spaced in time, each snapped to the nearest real frame (frames.jsonl gives those frames `d`).
+    # Frames for the model, evenly spaced in time, each snapped to the nearest real frame
+    # (frames.jsonl gives those frames `d`). Short clips still get at least 16 views.
+    cap = args.max_frames or default_max_frames(device)
+    n = max(2, min(cap, frame_count, max(16, int(duration * args.sample_fps) + 1)))
     sample_frames = sorted({int(np.abs(frame_times - t).argmin()) for t in np.linspace(0, frame_times[-1], n)})
     n = len(sample_frames)
     sample_times = [float(frame_times[i]) for i in sample_frames]
+    holdout = [k for k in range(n) if args.holdout and k % args.holdout == args.holdout // 2]
+    usable = [k for k in range(n) if k not in holdout]
     with tempfile.TemporaryDirectory() as tmp:
-        print(f"[2/6] Extracting {n} frames…")
+        print(f"[2/8] Extracting {n} frames ({n / duration:.1f} per second)…")
         paths = extract_frames(video, sample_frames, Path(tmp))
+        full = torch.from_numpy(np.stack([np.asarray(Image.open(p).convert("RGB")) for p in paths]))  # N, H, W, 3
 
-        device = args.device or ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
-        print(f"[3/6] Depth Anything 3 ({args.model}) on {device}…")
-        model = DepthAnything3.from_pretrained(args.model).to(device=torch.device(device))
+        print(f"[3/8] Depth Anything 3 ({Path(args.model).name}) on {device}…")
+        model = DepthAnything3.from_pretrained(args.model).to(device=dev)
         with torch.no_grad():
             pred = model.inference([str(p) for p in paths])
+        del model
+        if device == "cuda":
+            torch.cuda.empty_cache()
 
-    depth = np.asarray(pred.depth, dtype=np.float32)            # N, h, w
+    depth_np = np.asarray(pred.depth, dtype=np.float32)            # N, h, w
     has_conf = pred.conf is not None
-    conf = np.asarray(pred.conf, dtype=np.float32) if has_conf else np.ones_like(depth)
-    images = np.asarray(pred.processed_images)                   # N, h, w, 3
-    _, h, w = depth.shape
-    # Only finite, positive depth is data; everything else becomes "no data" (0) below.
-    valid = np.isfinite(depth) & (depth > 0)
-    conf = np.where(valid & np.isfinite(conf), conf, 0).astype(np.float32)
-    if not valid.any():
+    conf_np = np.asarray(pred.conf, dtype=np.float32) if has_conf else np.ones_like(depth_np)
+    _, h, w = depth_np.shape
+    valid_np = np.isfinite(depth_np) & (depth_np > 0)
+    conf_np = np.where(valid_np & np.isfinite(conf_np), conf_np, 0).astype(np.float32)
+    if not valid_np.any():
         raise SystemExit("Depth Anything 3 returned no usable depth for this video.")
-    # Scale: the model's units are arbitrary unless it reports metric depth.
-    # Typical depth of the more confident pixels; all valid pixels if confidence is missing or uniform.
-    good = valid & (conf > np.median(conf[valid]))
-    if not good.any():
-        good = valid
-    scale = 1.0 if pred.is_metric else args.median_depth / float(np.median(depth[good]))
+    if pred.is_metric:
+        scale = 1.0
+    else:  # arbitrary units: scale the typical depth of the more confident pixels to --median-depth
+        good = valid_np & (conf_np > np.median(conf_np[valid_np]))
+        scale = args.median_depth / float(np.median(depth_np[good if good.any() else valid_np]))
     if not math.isfinite(scale) or scale <= 0:
         raise SystemExit(f"Couldn't scale the depth (scale {scale}); not writing a capture from it.")
-    depth = np.where(valid, depth * scale, 0).astype(np.float32)
-    poses = []
+    depth_np = np.where(valid_np, depth_np * scale, 0).astype(np.float32)
+    poses_np = []
     for k in range(n):
         w2c = np.asarray(pred.extrinsics[k], dtype=np.float64).copy()
         w2c[:3, 3] *= scale
-        poses.append(to_capture_pose(w2c))
-    Ks = [np.asarray(pred.intrinsics[k], dtype=np.float64) for k in range(n)]
-    if not all(np.isfinite(T).all() for T in poses) or not all(np.isfinite(K).all() and K[0, 0] > 0 and K[1, 1] > 0 for K in Ks):
+        poses_np.append(to_capture_pose(w2c))
+    level = level_world(poses_np)  # turn the world so gravity points down -y, like ARKit
+    poses_np = [level @ T for T in poses_np]
+    Ks_np = [np.asarray(pred.intrinsics[k], dtype=np.float64) for k in range(n)]
+    if not all(np.isfinite(T).all() for T in poses_np) or not all(np.isfinite(K).all() and K[0, 0] > 0 and K[1, 1] > 0 for K in Ks_np):
         raise SystemExit("Depth Anything 3 returned a camera pose or intrinsics that aren't finite; not writing a capture from it.")
 
-    # ---- room.bin: fuse the confident pixels of every frame ----
-    print("[4/6] Fusing the room…")
-    pts, cols = [], []
-    for k in range(n):
-        keep_mask = (conf[k] >= np.percentile(conf[k], 40)) & valid[k]
-        world, idx = unproject(depth[k], Ks[k], poses[k], stride=2)
-        m = keep_mask[idx[:, 0], idx[:, 1]]
-        pts.append(world[m])
-        cols.append(images[k][idx[m, 0], idx[m, 1]])
-    points = np.concatenate(pts)
-    colors = np.concatenate(cols)
-    if len(points) == 0 or not np.isfinite(points).all():
-        raise SystemExit("The fused room has no points or non-finite points; not writing a capture from it.")
-    points, colors = voxel_downsample(points, colors, voxel=0.015)
-    write_room_bin(out / "room.bin", points, colors)
-    write_room_ply(out / "room.ply", points, colors)
+    # ---- what may become part of the static room ----
+    print("[4/8] Finding people, depth edges and pixels the frames disagree on…")
+    depth = torch.from_numpy(depth_np).to(dev)
+    conf = torch.from_numpy(conf_np).to(dev)
+    poses = torch.from_numpy(np.stack(poses_np)).float().to(dev)
+    Ks = torch.from_numpy(np.stack(Ks_np)).float().to(dev)
+    valid = torch.from_numpy(valid_np).to(dev)
+    moving_full = fusion.moving_masks(full, dev)                     # N, H, W (video resolution)
+    moving = fusion.resize_mask(moving_full.to(dev), h, w)
+    edges = fusion.depth_edges(depth)
+    sky = torch.from_numpy(np.asarray(pred.sky) > 0.5).to(dev) if pred.sky is not None else torch.zeros_like(valid)
+    surface = valid & ~edges & ~sky
+    # Only the least confident 5% per frame: textureless near surfaces (a white bedsheet) get low
+    # confidence yet sound depth. The edge and multi-view checks do the real cleaning.
+    floor = torch.stack([torch.quantile(conf[k][surface[k]], 0.05) if surface[k].any() else conf.new_tensor(0) for k in range(n)])
+    static = surface & ~moving & (conf >= floor[:, None, None])
+    keep = fusion.consistency(depth, static, Ks, poses, usable)
+    print(f"      kept {keep[usable].float().mean().item():.0%} of pixels for the room "
+          f"(people/pets {moving[usable].float().mean().item():.0%}, edges {edges[usable].float().mean().item():.0%})")
 
-    # ---- depth.bin / confidence.bin on the phone's 256x192 grid ----
+    # ---- room.bin: fuse what the frames agree on, coloured from the full-resolution video ----
+    print("[5/8] Fusing the room…")
+    up = 2
+    colors = fusion.resize_images(full, h * up, w * up).to(dev)
+    voxel = args.voxel
+    points, cols = fusion.fuse_room(depth, keep, Ks, poses, colors, usable, upsample=up, voxel=voxel)
+    while len(points) > args.max_points:  # big scenes: coarser voxels (surface points scale with 1/voxel^2)
+        voxel *= max(1.2, math.sqrt(len(points) / args.max_points))
+        points, cols = fusion.voxel_downsample(points, cols.float(), voxel)
+    if voxel != args.voxel:
+        print(f"      a big scene: {voxel * 100:.1f} cm voxels to stay under {args.max_points:,} points")
+    del colors
+    if len(points) == 0 or not torch.isfinite(points).all():
+        raise SystemExit("The fused room has no points or non-finite points; not writing a capture from it.")
+    points_np, cols_np = points.cpu().numpy(), cols.cpu().numpy()
+    write_room_bin(out / "room.bin", points_np, cols_np)
+    write_room_ply(out / "room.ply", points_np, cols_np)
+
+    # ---- room.splat.ply ----
+    splat_entry = None
+    if args.splat == "train":
+        sw = min(args.splat_width, W)
+        sh_ = int(round(H * sw / W / 2)) * 2
+        print(f"[6/8] Training the splat on {len(usable)} frames at {sw}x{sh_} ({args.splat_steps} steps)…")
+        images = fusion.resize_images(full[usable], sh_, sw).round().clamp(0, 255).to(torch.uint8).to(dev)
+        masks = fusion.resize_mask(moving_full[usable].to(dev), sh_, sw)
+        Ks_train = torch.stack([fusion.scale_K(Ks[k], sw / w, sh_ / h) for k in usable])
+        trusted = torch.where(surface & ~moving, depth, torch.zeros_like(depth))[usable]
+        g = splat.train(points, cols, images, masks, poses[usable], Ks_train, trusted,
+                        steps=args.splat_steps, cap=args.splat_max)
+        del images, masks
+        source, sh_degree = "trained-from-video", 1
+    else:
+        print("[6/8] No splat (--splat none).")
+    if args.splat != "none":
+        splat.write_ply(out / "room.splat.ply", g["means"], g["scales"], g["quats"], g["opacities"], g["sh"],
+                        f"Room estimated from a video ({source}); people masked out")
+        splat_entry = {"file": "room.splat.ply", "format": "3dgs-ply", "count": int(len(g["means"])),
+                       "shDegree": sh_degree, "source": source}
+
+    # ---- depth.bin / confidence.bin on the phone's 256x192 grid (people included, edges removed) ----
     # The web viewer assumes LiDAR's 256x192 for every capture and scales K per axis
     # (fx by 256/videoW, fy by 192/videoH), so any video aspect works on this grid.
     dw, dh = 256, 192
+    usable_px = (valid & ~edges & ~sky).cpu().numpy()
     with open(out / "depth.bin", "wb") as fd, open(out / "confidence.bin", "wb") as fc:
         for k in range(n):
-            d = np.asarray(Image.fromarray(depth[k]).resize((dw, dh), Image.NEAREST))
-            c = np.asarray(Image.fromarray(conf[k]).resize((dw, dh), Image.NEAREST))
-            lo, hi = np.percentile(c, 30), np.percentile(c, 60)
-            c8 = np.where(c >= hi, 2, np.where(c >= lo, 1, 0)).astype(np.uint8)
-            if not has_conf:
-                c8[:] = 1  # no confidence from the model: say medium, never high
+            idx_v = np.minimum((np.arange(dh) + 0.5) * h / dh, h - 1).astype(int)
+            idx_u = np.minimum((np.arange(dw) + 0.5) * w / dw, w - 1).astype(int)
+            d = depth_np[k][np.ix_(idx_v, idx_u)]
+            c8 = confidence_levels(conf_np[k], usable_px[k], has_conf)[np.ix_(idx_v, idx_u)]
             mm_f = np.round(d * 1000)
             c8[(mm_f <= 0) | (mm_f > 65535)] = 0  # no depth, or beyond what UInt16 mm can hold
             mm = np.where(c8 > 0, mm_f, 0).astype("<u2")  # low confidence counts as no data
@@ -339,25 +444,24 @@ def main() -> None:
             fc.write(c8.tobytes())
 
     # ---- frames.jsonl: one line per video frame; poses between samples are interpolated ----
-    print("[5/6] Writing the camera path…")
-    sx, sy = W / w, H / h
+    print("[7/8] Writing the camera path…")
     has_depth = {i: k for k, i in enumerate(sample_frames)}
+    Ks_video = [fusion.scale_K(Ks[k], W / w, H / h).cpu().numpy() for k in range(n)]
     with open(out / "frames.jsonl", "w") as f:
         for i in range(frame_count):
             t = float(frame_times[i])
-            T = interpolate_pose(poses, sample_times, t)
-            k = int(np.argmin([abs(t - s) for s in sample_times]))
-            K = Ks[k]
+            T = interpolate_pose(poses_np, sample_times, t)
+            K = Ks_video[int(np.argmin([abs(t - s) for s in sample_times]))]
             line = {
                 "i": i, "t": round(t, 6),
                 "T": [float(v) for v in T.T.ravel()],  # column-major
-                "K": [float(K[0, 0] * sx), float(K[1, 1] * sy), float(K[0, 2] * sx), float(K[1, 2] * sy)],
+                "K": [float(K[0, 0]), float(K[1, 1]), float(K[0, 2]), float(K[1, 2])],
                 "track": "normal", "d": has_depth.get(i), "phase": "moment",
             }
             f.write(json.dumps(line, separators=(",", ":"), allow_nan=False) + "\n")
 
     # ---- keyframes, thumbnail ----
-    print("[6/6] Keyframes and manifest…")
+    print("[8/8] Keyframes and manifest…")
     (out / "keyframes").mkdir()
     for s in range(int(math.floor(duration - 1e-3)) + 1):
         # Seek a little before the end for the last second: a seek past the final frame writes nothing.
@@ -367,12 +471,17 @@ def main() -> None:
 
     created = info["created"] or datetime.now(timezone.utc).isoformat()
     keyframe_count = len(list((out / "keyframes").glob("k*.jpg")))
+    model_name = Path(args.model).name
+    room = {"ply": "room.ply", "bin": "room.bin", "points": int(len(points_np)), "voxelMeters": round(voxel, 4),
+            "source": "estimated-from-video"}
+    if splat_entry:
+        room["splat"] = splat_entry
     manifest = {
         "format": "braindance.capture",
         "version": 1,
         "id": cid,
         "createdAt": created.replace("+00:00", "Z") if created.endswith("+00:00") else created,
-        "device": f"video ({Path(args.model).name})",
+        "device": f"video ({model_name})",
         "source": "video",
         "title": args.title,
         "attendees": [a.strip() for a in args.attendees.split(",") if a.strip()],
@@ -381,24 +490,28 @@ def main() -> None:
         "video": {"file": "video.mp4", "width": W, "height": H, "fps": round(fps), "durationSec": round(duration, 3), "frameCount": frame_count},
         "audio": {"inVideo": info["has_audio"], "sampleRate": 48000, "channels": 1},
         "depth": {"file": "depth.bin", "confidenceFile": "confidence.bin", "width": dw, "height": dh, "unit": "mm",
-                  "rateHz": round(n / duration, 3), "count": n, "estimated": True, "model": f"Depth Anything 3 ({Path(args.model).name})",
-                  "scale": "approximate" if not pred.is_metric else "metric"},
+                  "rateHz": round(n / duration, 3), "count": n, "estimated": True, "model": f"Depth Anything 3 ({model_name})",
+                  "scale": "metric" if pred.is_metric else "approximate"},
         "mesh": {"present": False},
-        "room": {"ply": "room.ply", "bin": "room.bin", "points": int(len(points)), "voxelMeters": 0.015, "source": "estimated-from-video"},
+        "room": room,
         "keyframes": {"dir": "keyframes", "everySec": 1, "count": keyframe_count},
         "phases": {"moment": {"tStart": 0, "tEnd": round(duration, 3)}},
         "warnings": [
-            f"Reconstructed from an ordinary video by Depth Anything 3 ({Path(args.model).name}). "
+            f"Reconstructed from an ordinary video by Depth Anything 3 ({model_name}). "
             "The room, depth, scale and camera path are estimated, not measured."
         ],
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
-    print(f"Done: {out}\n  {len(points):,} room points, {n} depth frames, {frame_count} video frames.\n"
-          f"  Import it (from the repo root): node guide/scripts/import.mjs {out}")
+    if holdout:
+        (args.out / f"capture-{cid}.holdout.json").write_text(json.dumps({"frames": [sample_frames[k] for k in holdout]}))
+    print(f"Done: {out}\n  {len(points_np):,} room points, {n} depth frames, {frame_count} video frames"
+          + (f", {splat_entry['count']:,} Gaussians" if splat_entry else "") + "."
+          f"\n  Import it (from the repo root): node guide/scripts/import.mjs {out}")
     if args.import_to_guide:
         importer = Path(__file__).resolve().parents[2] / "guide" / "scripts" / "import.mjs"
         sys.stdout.flush()
         return subprocess.run(["node", str(importer), str(out)]).returncode
+    return None
 
 
 if __name__ == "__main__":
