@@ -185,6 +185,12 @@ await cdp('Emulation.setUserAgentOverride', { userAgent: 'Mozilla/5.0 (iPad; CPU
 await cdp('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
 await cdp('Emulation.setCPUThrottlingRate', { rate: 4 })
 await cdp('Page.addScriptToEvaluateOnNewDocument', { source: PROBE })
+// NOVIDEO=1: video files don't load, to see what the rooms themselves cost (headless Chrome has
+// no hardware video decoding, so videos cost far more here than on a tablet).
+if (process.env.NOVIDEO) {
+  await cdp('Network.enable')
+  await cdp('Network.setBlockedURLs', { urls: ['*.mov*', '*.mp4*', '*.MOV*', '*.m4v*', '*.webm*'] })
+}
 
 const result: Record<string, unknown> = { url, settings: 'DPR 2, 1180x820, iPad UA, touch, CPU 4x throttled, RTX 5060 Ti (Vulkan ANGLE)' }
 const navStart = Date.now()

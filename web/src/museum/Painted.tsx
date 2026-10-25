@@ -9,7 +9,7 @@ import { brushStep, PAINT_GLSL } from './paint'
  * over `ms`; once it's fully lifted the canvas hides and stops drawing.
  */
 export function Painted({ source, fit, painted, ms, onSettled }: { source: HTMLImageElement | HTMLVideoElement | null; fit: 'contain' | 'cover'; painted: boolean; ms: number; onSettled?: () => void }) {
-  const canvas = useRef<HTMLCanvasElement>(null)
+  const box = useRef<HTMLDivElement>(null)
   const goal = useRef({ painted, ms, onSettled })
   const kick = useRef<() => void>(() => {})
   useEffect(() => {
@@ -19,8 +19,12 @@ export function Painted({ source, fit, painted, ms, onSettled }: { source: HTMLI
   }, [painted, ms, onSettled])
 
   useEffect(() => {
-    const el = canvas.current
-    if (!el || !source) return
+    const holder = box.current
+    if (!holder || !source) return
+    // A fresh canvas for each renderer: a canvas whose context was let go can't be drawn on again.
+    const el = document.createElement('canvas')
+    el.className = 'stepin-painted'
+    holder.replaceChildren(el)
     const renderer = new THREE.WebGLRenderer({ canvas: el, alpha: true, antialias: false, powerPreference: 'high-performance' })
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
     const video = source instanceof HTMLVideoElement
@@ -127,11 +131,12 @@ export function Painted({ source, fit, painted, ms, onSettled }: { source: HTMLI
       renderer.dispose()
       // Let the context go now, not whenever the browser gets round to it (each one is costly on a tablet).
       renderer.forceContextLoss()
+      el.remove()
     }
     // A new renderer per picture and fit; `painted` changes are picked up by the loop.
   }, [source, fit])
 
-  return <canvas ref={canvas} className="stepin-painted" aria-hidden="true" />
+  return <div ref={box} className="stepin-painted" aria-hidden="true" />
 }
 
 /**
