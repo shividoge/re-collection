@@ -113,8 +113,9 @@ export function follow(s: RoomSync, followed: number, here: string | null): { ma
  * Memory Window opened from the museum, undefined anywhere else (nothing to follow there).
  */
 export function roomHere(hash: string): string | null | undefined {
-  // #/museum is the hall; #/memories is its old address (old links still land there).
-  if (/^#\/(museum|memories)$/i.test(hash)) return null
+  // #/museum (or one of its exhibitions, #/museum/<id>) is the hall; #/memories is its old
+  // address (old links still land there). The editor isn't.
+  if (/^#\/(museum(\/(?!edit$)[\w-]+)?|memories)$/i.test(hash)) return null
   const window = /^#\/window\/([0-9a-f-]{36})\?from=museum$/i.exec(hash)
   return window ? window[1] : undefined
 }
