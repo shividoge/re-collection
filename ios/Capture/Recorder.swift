@@ -153,6 +153,15 @@ final class CaptureRecorder {
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: Int(size.width),
             AVVideoHeightKey: Int(size.height),
+            // The encoder's default for 1920x1440 is about 19 Mbps (71 MB per 30 s).
+            // 8 Mbps looks the same for a handheld visit at well under half the size.
+            // A keyframe every second keeps seeking in the browser quick.
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: RecordingFormat.videoBitRate,
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+                AVVideoExpectedSourceFrameRateKey: fps,
+                AVVideoMaxKeyFrameIntervalKey: fps,
+            ] as [String: Any],
         ])
         video.expectsMediaDataInRealTime = true
         // Stored in the sensor's landscape orientation, untransformed; the

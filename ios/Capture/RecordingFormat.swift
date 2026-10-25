@@ -10,6 +10,9 @@ enum RecordingFormat {
     /// Depth and confidence frames are recorded at 10 Hz.
     static let depthInterval: TimeInterval = 0.1
 
+    /// H.264 average bit rate for the 1920x1440, 30 fps moment video.
+    static let videoBitRate = 8_000_000
+
     /// True when the next depth frame is due. 5 ms of slack absorbs frame
     /// timestamp jitter so 10 Hz lands on every 3rd frame at 30 fps and every
     /// 6th at 60 fps, without letting an early frame sneak in.
