@@ -79,6 +79,14 @@ export function fileKey(captureId: string, area: Area, name: string): string {
   return area === 'video' ? `videos/${captureId}/${name}` : `captures/${captureId}/${area}/${name}`
 }
 
+/**
+ * Where one attempt of a worker job writes an output. Every attempt has its own keys, so a stale
+ * attempt's late PUT can never touch a published object; the file row points at the key.
+ */
+export function workerKey(captureId: string, area: 'raw' | 'derived', jobId: string, attempt: number, name: string): string {
+  return `captures/${captureId}/${area}/${jobId}.${attempt}/${name}`
+}
+
 /** The status a new capture starts with. */
 export function initialStatus(source: 'phone' | 'video', hasSplat: boolean): CaptureStatus {
   return {

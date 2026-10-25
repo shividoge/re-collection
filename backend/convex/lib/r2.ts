@@ -20,7 +20,7 @@ export const CACHE_CONTROL = 'public, max-age=31536000, immutable'
 export const PART_SIZE = 16 * 1024 * 1024
 export const SINGLE_MAX = 8 * 1024 * 1024
 export const MAX_PARTS = 10000
-const PUT_EXPIRES = 3600
+export const PUT_EXPIRES = 3600
 const STABLE_EXPIRES = 604800
 const DAY_MS = 86400000
 const UNSIGNED = 'UNSIGNED-PAYLOAD'
@@ -351,11 +351,17 @@ async function s3(
     payloadHash: sha256Hex(body),
   })
   const qs = canonicalQuery(query)
-  const res = await fetch(`${t.origin}${t.path}${qs ? `?${qs}` : ''}`, {
-    method,
-    headers,
-    body: method === 'GET' || method === 'HEAD' ? undefined : body,
-  })
+  let res: Response
+  try {
+    res = await fetch(`${t.origin}${t.path}${qs ? `?${qs}` : ''}`, {
+      method,
+      headers,
+      body: method === 'GET' || method === 'HEAD' ? undefined : body,
+    })
+  } catch (error) {
+    // R2 unreachable (no HTTP answer at all): worth trying again, like a 5xx.
+    throw new R2Error(`R2 ${op} failed for ${key || '(bucket)'}: ${error instanceof Error ? error.message : String(error)}`, 0, null)
+  }
   if (res.ok || p.ok?.includes(res.status)) return res
   const text = method === 'HEAD' ? '' : await res.text().catch(() => '')
   throw s3Error(op, key, res.status, text)
@@ -370,9 +376,9 @@ export class R2Error extends Error {
     this.status = status
     this.code = code
   }
-  /** Worth trying again (R2 overloaded or briefly failing). */
+  /** Worth trying again (R2 unreachable (status 0), overloaded or briefly failing). */
   get retryable(): boolean {
-    return this.status >= 500 || this.status === 429
+    return this.status === 0 || this.status >= 500 || this.status === 429
   }
 }
 

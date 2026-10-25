@@ -26,7 +26,10 @@ export default defineSchema({
     status: captureStatus,
     public: v.boolean(),
     derived: v.union(derived, v.null()),
-    /** Set when the capture is being deleted; everything ignores it from then on. */
+    /**
+     * Set when the capture is being deleted: everything ignores it from then on, and `begin` for
+     * the same id is refused until the purge has deleted its objects and then this row.
+     */
     deleting: v.optional(v.boolean()),
   })
     .index('by_captureId', ['captureId'])
@@ -59,13 +62,22 @@ export default defineSchema({
     /** R2 multipart upload id; absent for a single PUT. */
     r2UploadId: v.optional(v.string()),
     partSize: v.optional(v.number()),
-    status: v.union(v.literal('open'), v.literal('done'), v.literal('aborted')),
-    /** Set when a worker writes this file for a job. */
+    /**
+     * open → done (registered in `files`). A worker's output goes open → staged (stored, not yet
+     * published) → done when that attempt completes the job; a losing attempt's are deleted.
+     */
+    status: v.union(v.literal('open'), v.literal('staged'), v.literal('done'), v.literal('aborted')),
+    /** Set when a worker writes this file for a job, with the attempt (lease) that writes it. */
     jobId: v.optional(v.id('jobs')),
+    attempt: v.optional(v.number()),
+    /** depth.index.json written by a worker: kept until the file is published. */
+    indexedBytes: v.optional(v.number()),
+    indexedCount: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_capture', ['captureId'])
-    .index('by_status', ['status', 'createdAt']),
+    .index('by_status', ['status', 'createdAt'])
+    .index('by_job', ['jobId', 'attempt']),
 
   moments: defineTable(momentFields).index('by_captureId', ['captureId']),
 
@@ -74,6 +86,8 @@ export default defineSchema({
     ...sessionFields,
     /** Set while `end` scores the session: new turns are refused, a second `end` waits. */
     endingAt: v.optional(v.number()),
+    /** Which `end` call holds the scoring claim (only it may commit or release it). */
+    endingToken: v.optional(v.string()),
   })
     .index('by_sessionId', ['sessionId'])
     .index('by_capture', ['captureId', 'startedAt']),

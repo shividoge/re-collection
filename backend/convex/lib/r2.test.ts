@@ -8,8 +8,9 @@
 //   R2_TEST_BUCKET             bucket (created if missing; default braindance-test)
 //   R2_TEST_REGION             region (default us-east-1; use auto for R2)
 import { ConvexError } from 'convex/values'
-import { beforeAll, describe, expect, test } from 'vitest'
+import { beforeAll, describe, expect, test, vi } from 'vitest'
 import {
+  R2Error,
   CACHE_CONTROL,
   PART_SIZE,
   type R2Config,
@@ -222,6 +223,21 @@ describe('r2Config', () => {
     const c = r2Config({ ...base, R2_ACCOUNT_ID: 'abc', R2_ENDPOINT: 'http://127.0.0.1:5191/', R2_REGION: 'us-east-1' })
     expect(c.endpoint).toBe('http://127.0.0.1:5191')
     expect(c.region).toBe('us-east-1')
+  })
+})
+
+describe('R2Error', () => {
+  test("R2 unreachable (no HTTP answer) is retryable, like a 5xx; a 4xx isn't", async () => {
+    vi.stubGlobal('fetch', () => Promise.reject(new TypeError('fetch failed')))
+    try {
+      const cfg: R2Config = { endpoint: 'https://r2.test', accessKeyId: 'k', secretAccessKey: 's', bucket: 'b', region: 'auto' }
+      const error = await headObject(cfg, 'a/b').catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(R2Error)
+      expect((error as R2Error).retryable).toBe(true)
+      expect(new R2Error('x', 403, 'AccessDenied').retryable).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 

@@ -45,6 +45,20 @@ describe('uploads and stage triggers', () => {
     await expect(t.action(api.uploads.start, { captureId: CAPTURE_ID, name: '../x', bytes: 1, contentType: 'x' })).rejects.toThrow(/allowed file name/)
   })
 
+  test('a retried or concurrent finish returns the recorded success and registers the file once', async () => {
+    const t = setup()
+    const capture = tinyCapture()
+    await t.mutation(api.captures.begin, { manifestJson: capture.manifestJson })
+    const target = await t.action(api.uploads.start, { captureId: CAPTURE_ID, name: 'thumb.jpg', bytes: 4, contentType: 'image/jpeg' })
+    await fetch(target.single!.url, { method: 'PUT', headers: target.single!.headers, body: capture.files['thumb.jpg'] })
+    const results = await Promise.all([t.action(api.uploads.finish, { uploadId: target.uploadId }), t.action(api.uploads.finish, { uploadId: target.uploadId })])
+    expect(results).toEqual([{ ok: true, bytes: 4 }, { ok: true, bytes: 4 }])
+    // The answer was lost; the phone asks again.
+    expect(await t.action(api.uploads.finish, { uploadId: target.uploadId })).toEqual({ ok: true, bytes: 4 })
+    const detail = await t.query(api.captures.get, { captureId: CAPTURE_ID })
+    expect(detail?.files.map((f) => [f.name, f.rev])).toEqual([['thumb.jpg', 1]])
+  })
+
   test('a big file gets a multipart upload with 16 MiB parts', async () => {
     const t = setup()
     await t.mutation(api.captures.begin, { manifestJson: tinyCapture().manifestJson })

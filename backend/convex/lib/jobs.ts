@@ -5,7 +5,7 @@
 import { ConvexError } from 'convex/values'
 import { internal } from '../_generated/api'
 import type { Doc, Id } from '../_generated/dataModel'
-import type { MutationCtx } from '../_generated/server'
+import type { MutationCtx, QueryCtx } from '../_generated/server'
 import type { JobKind } from '../validators'
 import { getCapture, patchStatus } from './data'
 
@@ -29,6 +29,23 @@ export function tokenMatches(token: string, expected: string | undefined): boole
 export function requireToken(token: string): void {
   if (!process.env.WORKER_TOKEN) throw new ConvexError({ code: 'unauthorized', message: "WORKER_TOKEN isn't set in this Convex deployment." })
   if (!tokenMatches(token, process.env.WORKER_TOKEN)) throw new ConvexError({ code: 'unauthorized', message: 'Wrong worker token.' })
+}
+
+/** Is `attempt` (what `claim` returned) the attempt holding the job's current lease? */
+export function holdsLease(job: Pick<Doc<'jobs'>, 'status' | 'attempts'>, attempt: number): boolean {
+  return job.status === 'leased' && attempt === job.attempts + 1
+}
+
+/** Thrown to a worker whose attempt lost its lease (expired, superseded, or the capture was deleted). */
+export const cancelled = (message = "This job attempt doesn't hold the lease any more; stop working on it.") => new ConvexError({ code: 'cancelled', message })
+
+/** The job, if `attempt` holds its lease and its capture still exists; else throws `cancelled`. */
+export async function requireLease(ctx: QueryCtx | MutationCtx, jobId: Id<'jobs'>, attempt: number): Promise<Doc<'jobs'>> {
+  const job = await ctx.db.get(jobId)
+  if (!job) throw cancelled(`No job ${jobId}.`)
+  if (!holdsLease(job, attempt)) throw cancelled()
+  if (!(await getCapture(ctx, job.captureId))) throw cancelled('The capture of this job was deleted.')
+  return job
 }
 
 /** Can this worker run the job? */

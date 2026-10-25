@@ -2,10 +2,13 @@ import { ConvexError, v } from 'convex/values'
 import { parseManifest } from '../../shared/manifest'
 import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
-import { action, internalMutation, internalQuery, type ActionCtx } from './_generated/server'
+import { action, internalAction, internalMutation, internalQuery, type ActionCtx } from './_generated/server'
 import { fileKey, invalid, notFound, requireCapture } from './lib/data'
 import {
   PART_SIZE,
+  abortMultipart,
+  deleteObject,
+  r2ConfigOrNull,
   SINGLE_MAX,
   completeMultipart,
   createMultipart,
@@ -20,6 +23,7 @@ import {
   type R2Config,
 } from './lib/r2'
 import { shown } from './lib/errors'
+import { requireLease } from './lib/jobs'
 import { afterFileRegistered, registerFile } from './lib/stages'
 import { isFileName, isSourceName, readDepthIndex } from './lib/validate'
 import { area, finishedPart, uploadTarget, type Area, type UploadTarget } from './validators'
@@ -54,9 +58,14 @@ export const open = internalMutation({
     r2UploadId: v.optional(v.string()),
     partSize: v.optional(v.number()),
     jobId: v.optional(v.id('jobs')),
+    attempt: v.optional(v.number()),
   },
   returns: v.id('uploads'),
-  handler: async (ctx, args) => ctx.db.insert('uploads', { ...args, status: 'open', createdAt: Date.now() }),
+  handler: async (ctx, args) => {
+    if (args.jobId) await requireLease(ctx, args.jobId, args.attempt ?? 0)
+    else await requireCapture(ctx, args.captureId)
+    return ctx.db.insert('uploads', { ...args, status: 'open', createdAt: Date.now() })
+  },
 })
 
 export const getUpload = internalQuery({
@@ -67,7 +76,11 @@ export const getUpload = internalQuery({
   },
 })
 
-/** Marks the upload done, registers the file and runs the stage triggers. */
+/**
+ * Marks the upload done, registers the file and runs the stage triggers. A worker's output is
+ * only staged (its attempt must still hold the lease); `worker.complete` publishes it. An upload
+ * that's already done or staged is left as is, so a retried or concurrent finish is a no-op.
+ */
 export const register = internalMutation({
   args: {
     uploadId: v.id('uploads'),
@@ -79,7 +92,13 @@ export const register = internalMutation({
   returns: v.null(),
   handler: async (ctx, { uploadId, bytes, manifestJson, indexedBytes, indexedCount }) => {
     const upload = await ctx.db.get(uploadId)
+    if (upload && (upload.status === 'done' || upload.status === 'staged')) return null
     if (!upload || upload.status !== 'open') throw notFound("This upload isn't open any more.")
+    if (upload.jobId) {
+      await requireLease(ctx, upload.jobId, upload.attempt ?? 0)
+      await ctx.db.patch(uploadId, { status: 'staged', ...(indexedBytes !== undefined ? { indexedBytes, indexedCount } : {}) })
+      return null
+    }
     const capture = await requireCapture(ctx, upload.captureId)
     await ctx.db.patch(uploadId, { status: 'done' })
     if (manifestJson !== undefined) {
@@ -94,14 +113,14 @@ export const register = internalMutation({
       ...(upload.contentEncoding ? { contentEncoding: upload.contentEncoding } : {}),
       ...(indexedBytes !== undefined ? { indexedBytes, indexedCount } : {}),
     })
-    await afterFileRegistered(ctx, (await ctx.db.get(capture._id)) ?? capture, file, upload.jobId !== undefined)
+    await afterFileRegistered(ctx, (await ctx.db.get(capture._id)) ?? capture, file, false)
     return null
   },
 })
 
 // ---- shared by uploads.* and worker.* -------------------------------------------------------
 
-export type TargetInput = { captureId: string; area: Area; name: string; key: string; bytes: number; contentType: string; contentEncoding?: string; jobId?: Id<'jobs'> }
+export type TargetInput = { captureId: string; area: Area; name: string; key: string; bytes: number; contentType: string; contentEncoding?: string; jobId?: Id<'jobs'>; attempt?: number }
 
 /** One presigned PUT for small files, a multipart upload for bigger ones. */
 export async function createTarget(ctx: ActionCtx, input: TargetInput): Promise<UploadTarget> {
@@ -113,7 +132,14 @@ export async function createTarget(ctx: ActionCtx, input: TargetInput): Promise<
     return { uploadId, key: input.key, single }
   }
   const r2UploadId = await createMultipart(cfg, input.key, { contentType: input.contentType, contentEncoding: input.contentEncoding })
-  const uploadId = await ctx.runMutation(internal.uploads.open, { ...input, r2UploadId, partSize: PART_SIZE })
+  let uploadId: Id<'uploads'>
+  try {
+    uploadId = await ctx.runMutation(internal.uploads.open, { ...input, r2UploadId, partSize: PART_SIZE })
+  } catch (error) {
+    // Refused (the job's lease moved on, the capture is being deleted): nothing will finish it.
+    await abortMultipart(cfg, input.key, r2UploadId).catch(() => {})
+    throw error
+  }
   const parts = Array.from({ length: partCount(input.bytes) }, (_, i) => ({ partNumber: i + 1, url: partUrl(cfg, input.key, r2UploadId, i + 1, now) }))
   return { uploadId, key: input.key, partSize: PART_SIZE, parts }
 }
@@ -146,7 +172,9 @@ export async function resumeTarget(upload: Doc<'uploads'>): Promise<{ target: Up
 
 /** Completes the upload in R2, checks the stored size, reads small JSON files Convex keeps, registers the file. */
 export async function finishUpload(ctx: ActionCtx, upload: Doc<'uploads'>, parts: { partNumber: number; etag: string }[] | undefined): Promise<number> {
-  if (upload.status !== 'open') throw invalid('This upload is already finished.')
+  // Finished by an earlier call whose answer was lost: the same answer again (its size was checked).
+  if (upload.status === 'done' || upload.status === 'staged') return upload.bytes
+  if (upload.status !== 'open') throw invalid('This upload was cancelled. Start it again.')
   const cfg = r2Config()
   if (upload.r2UploadId) {
     try {
@@ -188,6 +216,21 @@ export async function finishUpload(ctx: ActionCtx, upload: Doc<'uploads'>, parts
   await ctx.runMutation(internal.uploads.register, { uploadId: upload._id, bytes: head.bytes, ...extra })
   return head.bytes
 }
+
+/** Deletes objects (aborting their multipart uploads first); see stages.scheduleDiscard. */
+export const discard = internalAction({
+  args: { objects: v.array(v.object({ key: v.string(), r2UploadId: v.optional(v.string()) })) },
+  returns: v.null(),
+  handler: async (_ctx, { objects }) => {
+    const cfg = r2ConfigOrNull()
+    if (!cfg) return null
+    for (const o of objects) {
+      if (o.r2UploadId) await abortMultipart(cfg, o.key, o.r2UploadId)
+      await deleteObject(cfg, o.key)
+    }
+    return null
+  },
+})
 
 async function fetchText(cfg: R2Config, key: string): Promise<string> {
   // A fresh rev in the signed URL, so no cache can answer with older bytes.
