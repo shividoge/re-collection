@@ -2,7 +2,7 @@ import { MeshReflectorMaterial, RoundedBox } from '@react-three/drei'
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js'
-import { ArchDoorways, Carpets, Cornice, Lantern, varnishedWood, Wainscot } from './Classic'
+import { ArchDoorways, Carpets, Cornice, FloorBorder, Lantern, varnishedWood, Wainscot } from './Classic'
 import { WALL, type MuseumPlan, type Room } from './layout'
 import type { Look } from './looks'
 import { fabric, plaster, stoneFloor, titleTexture, woodFloor, type SurfaceMaps } from './textures'
@@ -185,7 +185,8 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
 
   const titleArt = useMemo(() => titleTexture(title, subtitle, look.titleInk, look.accent), [title, subtitle, look])
   useEffect(() => () => titleArt.texture.dispose(), [titleArt])
-  const titleW = Math.min(spec.width * 0.72, 5.6)
+  // In the classic gallery the title sits between the mantel's candelabra and the cornice.
+  const titleW = classic ? 4.2 : Math.min(spec.width * 0.72, 5.6)
 
   return (
     <group>
@@ -225,6 +226,7 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
           <Wainscot plan={plan} look={look} />
           <Cornice plan={plan} look={look} />
           <ArchDoorways plan={plan} wallMaterial={wallMaterial} />
+          <FloorBorder plan={plan} />
           <Carpets plan={plan} />
         </>
       )}
@@ -257,7 +259,8 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
       ))}
 
       {/* The exhibition's title, lettered on the entrance wall. */}
-      <mesh position={[0, 2.35, first.zFront - 0.006]} rotation={[0, Math.PI, 0]}>
+      {/* Above the fireplace in the classic gallery. */}
+      <mesh position={[0, classic ? 2.65 : 2.35, first.zFront - 0.006]} rotation={[0, Math.PI, 0]}>
         <planeGeometry args={[titleW, titleW / titleArt.aspect]} />
         <meshBasicMaterial map={titleArt.texture} transparent toneMapped={false} />
       </mesh>

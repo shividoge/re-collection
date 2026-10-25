@@ -20,7 +20,7 @@ Five styles, chosen per exhibition with the buttons at the top (remembered on th
 
 | Style | Room | Frames |
 |---|---|---|
-| **Classic gallery** (default) | a classic picture gallery at a modest scale: rose-red fabric walls, varnished wood panelling, ivory cornice with gilded brackets, a skylight lantern, herringbone floor under a plain rug, arched doorways; a bench, a vitrine and sculptures on plinths in each room | ornate gilded frames (beads, cove, corner rosettes), one row of large pictures above the panelling |
+| **Classic gallery** (default) | a classic picture gallery at a modest scale: rose-red fabric walls, raised-panel wainscot, ivory cornice with gilded brackets, a skylight lantern, herringbone floor with a dark wood border and a plain rug, arched doorways; a round tufted settee with an urn in each room, candle torchères, candle sconces between pictures, a marble fireplace on the entrance wall, pedestals with urns | ornate gilded frames (beads, cove, corner rosettes), three large pictures per side wall above the panelling |
 | **Calm room** (default) | living-room size, home-height ceiling, plain matte boards, warm light walls, bright even light | dark wood frames, cream mats, 4–6 large pieces per room |
 | Sunlit gallery | pale oak floor, white walls, a skylight | thin black frames, white mats |
 | Warm salon | herringbone parquet, plum walls with a dark lower panel, chandelier | gilded frames |
@@ -56,13 +56,14 @@ tested in a virtual museum, so treat it as the best available guess:
   dementia that went well used passive viewing; continuous self-steered movement is what makes
   people dizzy, and teleporting costs orientation (Clifton & Palmisano).
 
-## Exhibits that aren't pictures
+## Furnishings
 
-In the classic gallery, each room has a **vitrine**: a glass case with one of the exhibition's
-visits as a small 3D model, made from that visit's own room scan (`room.bin`), turning slowly,
-with its title on the base. An exhibition without visits leaves the case empty rather than
-filling it with something made up. The **sculptures** on plinths (a bronze amphora, a marble
-knot) are decoration, like a museum's own furniture, and carry no label.
+The classic gallery is furnished like an old picture gallery, none of it pretending to be part
+of the family's exhibition: a round tufted velvet settee in the middle of each room with a
+pedestal and bronze urn rising from it, bronze candle torchères in the corners, brass candle
+sconces between the pictures, a carved marble fireplace with a flickering fire and candelabra
+on the entrance wall, and pedestals with marble urns in the last room. Visitors walk around all
+of it, and guided walks step round it.
 
 ## Putting things in an exhibition
 

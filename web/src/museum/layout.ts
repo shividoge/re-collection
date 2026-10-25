@@ -29,7 +29,7 @@ export interface StyleSpec {
 export const STYLES: Record<RoomStyle, StyleSpec> = {
   // A classic picture gallery (rose-red fabric walls, dark wood panelling, a skylight), kept to
   // a modest height and a single row of large pictures. The doorway is arched.
-  classic: { width: 7, depth: 9.5, height: 4.4, perSide: 2, maxW: 1.45, maxH: 1.05, doorW: 1.7, doorH: 2.45, hang: 1.85 },
+  classic: { width: 7, depth: 9.5, height: 4.4, perSide: 3, maxW: 1.4, maxH: 1.05, doorW: 1.7, doorH: 2.45, hang: 1.85 },
   // The calm room, for the person with dementia (docs/museum.md "Why the calm room"): the
   // size of a living room, a home-height ceiling, few but large pictures per room.
   calm: { width: 6.4, depth: 7.2, height: 3.1, perSide: 2, maxW: 1.45, maxH: 1.15, doorW: 1.6, doorH: 2.35, hang: 1.55 },
@@ -88,11 +88,12 @@ export interface Slot {
 }
 
 /**
- * Something standing on the floor that visitors walk around: a bench, a vitrine (a glass case
- * with a visit's 3D scan inside), or a plinth with a sculpture. A rectangle on the floor.
+ * Something standing on the floor that visitors walk around: a round tufted settee with an urn
+ * in the middle of a room, a candle torchère, a pedestal with an urn, or the fireplace. A
+ * rectangle on the floor.
  */
 export interface Feature {
-  kind: 'bench' | 'vitrine' | 'plinth'
+  kind: 'settee' | 'torch' | 'pedestal' | 'fireplace'
   room: number
   x: number
   z: number
@@ -210,20 +211,21 @@ export function planMuseum(count: number, style: RoomStyle): MuseumPlan {
     }
   }
 
-  // The classic gallery is furnished: a bench and a vitrine down the middle of each room,
-  // sculptures on plinths in the corners that have no picture in front of them.
+  // The classic gallery is furnished: a round settee in the middle of each room, candle
+  // torchères in the front corners, a fireplace on the entrance wall, and pedestals with urns
+  // in the far corners of the last room (no picture hangs in front of any of them).
   const features: Feature[] = []
   if (style === 'classic') {
     for (const room of roomList) {
       const cz = (room.zFront + room.zBack) / 2
-      features.push({ kind: 'bench', room: room.index, x: 0, z: cz + 1.9, hw: 0.8, hd: 0.32 })
-      features.push({ kind: 'vitrine', room: room.index, x: 0, z: cz - 1, hw: 0.42, hd: 0.42 })
-      const corner = half - 0.75
+      features.push({ kind: 'settee', room: room.index, x: 0, z: cz, hw: 0.78, hd: 0.78 })
+      const corner = half - 0.6
       for (const x of [-corner, corner]) {
-        features.push({ kind: 'plinth', room: room.index, x, z: room.zFront - 0.75, hw: 0.3, hd: 0.3 })
-        if (room.index === rooms - 1) features.push({ kind: 'plinth', room: room.index, x, z: room.zBack + 0.75, hw: 0.3, hd: 0.3 })
+        features.push({ kind: 'torch', room: room.index, x, z: room.zFront - 0.6, hw: 0.22, hd: 0.22 })
+        if (room.index === rooms - 1) features.push({ kind: 'pedestal', room: room.index, x, z: room.zBack + 0.65, hw: 0.28, hd: 0.28 })
       }
     }
+    features.push({ kind: 'fireplace', room: 0, x: 0, z: roomList[0].zFront - 0.22, hw: 1.05, hd: 0.22 })
   }
 
   return { style, spec, rooms: roomList, walls, doorways, slots, features, start: [0, roomList[0].zFront - 1.6] }
@@ -270,32 +272,68 @@ export function route(plan: MuseumPlan, from: [number, number], to: [number, num
   if (a < b) for (let r = a; r < b; r++) stops.push([0, plan.doorways[r].z])
   else for (let r = a - 1; r >= b; r--) stops.push([0, plan.doorways[r].z])
   stops.push(to)
-  // Step around furniture in the way, going round it on the side the walk is already nearer:
-  // walking mostly forward, pass it to the left or right; walking mostly across, pass in front
-  // of it or behind it.
-  const points: [number, number][] = []
-  let at = from
-  for (const stop of stops) {
-    const blocking = plan.features
-      .filter((f) => crosses(at, stop, f))
-      .sort((p, q) => Math.hypot(p.x - at[0], p.z - at[1]) - Math.hypot(q.x - at[0], q.z - at[1]))
-    for (const f of blocking) {
-      const ox = f.hw + CLEARANCE + 0.35
-      const oz = f.hd + CLEARANCE + 0.35
-      if (Math.abs(stop[1] - at[1]) >= Math.abs(stop[0] - at[0])) {
-        const x = f.x + ((stop[0] + at[0]) / 2 >= f.x ? ox : -ox)
-        const dir = stop[1] < at[1] ? -1 : 1
-        points.push([x, f.z - dir * oz], [x, f.z + dir * oz])
-      } else {
-        const z = f.z + ((stop[1] + at[1]) / 2 >= f.z ? oz : -oz)
-        const dir = stop[0] < at[0] ? -1 : 1
-        points.push([f.x - dir * ox, z], [f.x + dir * ox, z])
+  // Step around furniture in the way: for the first piece blocking a leg, try going round it by
+  // one corner or by two neighboring corners, and keep the shortest way that's clear.
+  const points: [number, number][] = [...stops]
+  for (let guard = 0; guard < 12; guard++) {
+    let at = from
+    let fixed = false
+    for (let i = 0; i < points.length && !fixed; i++) {
+      const stop = points[i]
+      const f = plan.features.find((g) => crosses(at, stop, g))
+      if (f) {
+        const detour = around(plan, f, at, stop)
+        if (detour) points.splice(i, 0, ...detour)
+        fixed = Boolean(detour)
       }
+      at = points[i]
     }
-    points.push(stop)
-    at = stop
+    if (!fixed) break
   }
   return points
+}
+
+/** The shortest clear way past `f` from `a` to `b`: one corner, or two neighboring corners. */
+function around(plan: MuseumPlan, f: Feature, a: [number, number], b: [number, number]): [number, number][] | null {
+  const ox = f.hw + CLEARANCE + 0.3
+  const oz = f.hd + CLEARANCE + 0.3
+  const corners: [number, number][] = [
+    [f.x - ox, f.z - oz],
+    [f.x + ox, f.z - oz],
+    [f.x + ox, f.z + oz],
+    [f.x - ox, f.z + oz],
+  ]
+  const options: [number, number][][] = corners.map((c) => [c])
+  for (let k = 0; k < 4; k++) {
+    options.push([corners[k], corners[(k + 1) % 4]])
+    options.push([corners[(k + 1) % 4], corners[k]])
+  }
+  let best: [number, number][] | null = null
+  let bestLength = Infinity
+  for (const way of options) {
+    const legs = [a, ...way, b]
+    let length = 0
+    let clear = true
+    for (let i = 1; i < legs.length && clear; i++) {
+      length += Math.hypot(legs[i][0] - legs[i - 1][0], legs[i][1] - legs[i - 1][1])
+      clear = legClear(plan, legs[i - 1], legs[i]) && !crosses(legs[i - 1], legs[i], f)
+    }
+    if (clear && length < bestLength) {
+      best = way
+      bestLength = length
+    }
+  }
+  return best
+}
+
+/** Whether every point along a straight leg is somewhere a visitor may stand. */
+function legClear(plan: MuseumPlan, a: [number, number], b: [number, number]): boolean {
+  const steps = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.05)
+  for (let i = 0; i <= steps; i++) {
+    const t = i / Math.max(1, steps)
+    if (!walkable(plan, a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)) return false
+  }
+  return true
 }
 
 /** Whether the straight line from `a` to `b` passes through `f` (with the clearance around it). */

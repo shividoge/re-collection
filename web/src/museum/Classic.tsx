@@ -1,18 +1,16 @@
-// The classic picture gallery's details: panelled wainscot, the ivory cornice with gilded
-// brackets and a cove up to the ceiling, the skylight lantern, the arched doorway, carpets and
-// the bench. Repeated pieces are merged into one mesh per material, so a room of mouldings
+// The classic picture gallery's details: raised-panel wainscot, the ivory cornice with gilded
+// brackets and a cove up to the ceiling, the skylight lantern, the arched doorway, a dark wood
+// floor border and rugs, and the furniture: round tufted settees with an urn, candle torchères,
+// wall sconces between the pictures, a marble fireplace, pedestals with urns. Repeated pieces are merged into one mesh per material, so a room of mouldings
 // still draws cheaply.
 
-import { RoundedBox } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { fetchBytes } from '../api'
-import { parseRoomBin } from '../scene/formats'
 import { WALL, type Feature, type MuseumPlan, type Room } from './layout'
 import type { Look } from './looks'
-import { carpet, labelTexture, woodGrain, type SurfaceMaps } from './textures'
+import { carpet, lightPoolTexture, woodGrain, type SurfaceMaps } from './textures'
 
 const GOLD = '#c9a052'
 
@@ -82,7 +80,10 @@ function useMerged(build: () => THREE.BufferGeometry[], deps: unknown[]) {
   return geometry
 }
 
-/** Raised panels on the dark wood wainscot, and the rail that caps it. */
+/**
+ * Raised-panel wainscot: a tall skirting, a rounded cap rail, and between them panels about
+ * 1.2 m wide, each a bevelled frame around a raised field, as joiners make them.
+ */
 export function Wainscot({ plan, look }: { plan: MuseumPlan; look: Look }) {
   const H = look.wainscotHeight
   const geometry = useMerged(() => {
@@ -93,22 +94,33 @@ export function Wainscot({ plan, look }: { plan: MuseumPlan; look: Look }) {
       const along: [number, number] = [(w.b[0] - w.a[0]) / len, (w.b[1] - w.a[1]) / len]
       const face = { origin: w.a, along, normal: w.normal }
       const out = 0.012
-      // Cap rail and a lower rail.
-      parts.push(wallBox(face, len / 2, H, len, 0.06, 0.05, out))
-      parts.push(wallBox(face, len / 2, 0.12, len, 0.22, 0.03, out))
-      // Panels about 1.2 m wide, each a frame of four thin mouldings.
-      const n = Math.max(1, Math.round((len - 0.3) / 1.25))
-      const gap = 0.16
+      // Skirting, with a small moulding on top; the cap rail with a rounded nose.
+      parts.push(wallBox(face, len / 2, 0.11, len, 0.22, 0.04, out))
+      parts.push(wallBox(face, len / 2, 0.235, len, 0.03, 0.05, out))
+      parts.push(wallBox(face, len / 2, H - 0.02, len, 0.05, 0.05, out))
+      const nose = new THREE.CylinderGeometry(0.03, 0.03, len, 12)
+      nose.rotateZ(Math.PI / 2)
+      nose.rotateY(Math.atan2(face.normal[0], face.normal[1]))
+      const mid = [face.origin[0] + along[0] * (len / 2), face.origin[1] + along[1] * (len / 2)]
+      nose.translate(mid[0] + face.normal[0] * (out + 0.05), H + 0.02, mid[1] + face.normal[1] * (out + 0.05))
+      parts.push(nose)
+      const n = Math.max(1, Math.round((len - 0.3) / 1.2))
+      const gap = 0.12
       const pw = (len - 0.3 - gap * (n - 1)) / n
-      const y0 = 0.32
-      const y1 = H - 0.14
-      const t = 0.035
+      const y0 = 0.36
+      const y1 = H - 0.16
+      const ph = y1 - y0
+      const cy = (y0 + y1) / 2
+      const t = 0.075
       for (let i = 0; i < n; i++) {
         const c = 0.15 + pw / 2 + i * (pw + gap)
-        parts.push(wallBox(face, c, y1, pw, t, 0.02, out))
-        parts.push(wallBox(face, c, y0, pw, t, 0.02, out))
-        parts.push(wallBox(face, c - pw / 2 + t / 2, (y0 + y1) / 2, t, y1 - y0, 0.02, out))
-        parts.push(wallBox(face, c + pw / 2 - t / 2, (y0 + y1) / 2, t, y1 - y0, 0.02, out))
+        // The frame: four mouldings, a bevelled step inside them, then the raised field.
+        parts.push(wallBox(face, c, y1 - t / 2, pw, t, 0.03, out))
+        parts.push(wallBox(face, c, y0 + t / 2, pw, t, 0.03, out))
+        parts.push(wallBox(face, c - pw / 2 + t / 2, cy, t, ph - t * 2, 0.03, out))
+        parts.push(wallBox(face, c + pw / 2 - t / 2, cy, t, ph - t * 2, 0.03, out))
+        parts.push(wallBox(face, c, cy, pw - t * 2, ph - t * 2, 0.014, out))
+        parts.push(wallBox(face, c, cy, pw - t * 2 - 0.08, ph - t * 2 - 0.08, 0.024, out))
       }
     }
     return parts
@@ -116,6 +128,68 @@ export function Wainscot({ plan, look }: { plan: MuseumPlan; look: Look }) {
   const material = useMemo(() => varnishedWood(), [])
   useEffect(() => () => material.dispose(), [material])
   return <mesh geometry={geometry} material={material} />
+}
+
+/**
+ * Dark wood around the edge of each floor, between the wall and the rug, with a thin light
+ * inlay line: the floor deepens toward the panelling, as in old galleries.
+ */
+export function FloorBorder({ plan }: { plan: MuseumPlan }) {
+  const band = 0.5
+  const geometry = useMerged(() => {
+    const parts: THREE.BufferGeometry[] = []
+    for (const room of plan.rooms) {
+      const w = room.x1 - room.x0
+      const d = room.zFront - room.zBack
+      const cz = (room.zFront + room.zBack) / 2
+      for (const [x, z, bw, bd] of [
+        [0, room.zFront - band / 2, w, band],
+        [0, room.zBack + band / 2, w, band],
+        [room.x0 + band / 2, cz, band, d - band * 2],
+        [room.x1 - band / 2, cz, band, d - band * 2],
+      ]) {
+        const g = new THREE.PlaneGeometry(bw, bd)
+        g.rotateX(-Math.PI / 2)
+        g.translate(x, 0.003, z)
+        parts.push(g)
+      }
+    }
+    return parts
+  }, [plan])
+  const inlay = useMerged(() => {
+    const parts: THREE.BufferGeometry[] = []
+    for (const room of plan.rooms) {
+      const w = room.x1 - room.x0 - band * 2
+      const d = room.zFront - room.zBack - band * 2
+      const cz = (room.zFront + room.zBack) / 2
+      for (const [x, z, bw, bd] of [
+        [0, cz + d / 2, w, 0.025],
+        [0, cz - d / 2, w, 0.025],
+        [-w / 2, cz, 0.025, d],
+        [w / 2, cz, 0.025, d],
+      ]) {
+        const g = new THREE.PlaneGeometry(bw, bd)
+        g.rotateX(-Math.PI / 2)
+        g.translate(x, 0.004, z)
+        parts.push(g)
+      }
+    }
+    return parts
+  }, [plan])
+  const material = useMemo(() => {
+    const m = varnishedWood()
+    m.color.set('#6a4632')
+    m.clearcoat = 0.35
+    return m
+  }, [])
+  const inlayMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: '#c9a27a', roughness: 0.5 }), [])
+  useEffect(() => () => [material, inlayMaterial].forEach((m) => m.dispose()), [material, inlayMaterial])
+  return (
+    <group>
+      <mesh geometry={geometry} material={material} />
+      <mesh geometry={inlay} material={inlayMaterial} />
+    </group>
+  )
 }
 
 /**
@@ -323,41 +397,6 @@ export function Carpets({ plan }: { plan: MuseumPlan }) {
   )
 }
 
-/** A gallery bench: a varnished wood frame, a red cushion and a slatted back, at `f`. */
-function Bench({ f, wood }: { f: Feature; wood: THREE.Material }) {
-  return (
-    <group position={[f.x, 0, f.z]}>
-      <RoundedBox args={[1.5, 0.1, 0.48]} radius={0.04} smoothness={3} position={[0, 0.45, 0]}>
-        <meshStandardMaterial color="#9a2f2c" roughness={0.85} />
-      </RoundedBox>
-      <mesh position={[0, 0.38, 0]} material={wood}>
-        <boxGeometry args={[1.56, 0.06, 0.52]} />
-      </mesh>
-      {[-0.72, 0.72].flatMap((x) =>
-        [-0.22, 0.22].map((z) => (
-          <mesh key={`${x},${z}`} position={[x, 0.19, z]} material={wood}>
-            <boxGeometry args={[0.06, 0.38, 0.06]} />
-          </mesh>
-        )),
-      )}
-      {/* Slatted back, toward the back of the room. */}
-      {[-0.72, 0.72].map((x) => (
-        <mesh key={x} position={[x, 0.68, 0.24]} material={wood}>
-          <boxGeometry args={[0.06, 0.5, 0.05]} />
-        </mesh>
-      ))}
-      <mesh position={[0, 0.92, 0.24]} material={wood}>
-        <boxGeometry args={[1.5, 0.07, 0.06]} />
-      </mesh>
-      {Array.from({ length: 7 }, (_, i) => (
-        <mesh key={i} position={[-0.6 + i * 0.2, 0.68, 0.24]} material={wood}>
-          <boxGeometry args={[0.035, 0.42, 0.03]} />
-        </mesh>
-      ))}
-    </group>
-  )
-}
-
 /**
  * The ornate gilded frame of a classic gallery, as one mesh: a back slab, an outer bead, a
  * hollow cove, a middle bead, a lip and a fine bead at the picture's edge, with rosettes at the
@@ -437,173 +476,394 @@ export function ornateFrameGeometry(outerW: number, outerH: number, border: numb
   return merged
 }
 
-/** A sculpture on a plinth: alternately a bronze amphora and a polished marble knot. */
-function Plinth({ f, index, ivory }: { f: Feature; index: number; ivory: THREE.Material }) {
-  const amphora = index % 2 === 0
-  const vase = useMemo(() => {
-    const profile = [
-      [0.0, 0],
-      [0.07, 0],
-      [0.08, 0.02],
-      [0.06, 0.05],
-      [0.11, 0.16],
-      [0.15, 0.3],
-      [0.14, 0.42],
-      [0.08, 0.52],
-      [0.055, 0.6],
-      [0.07, 0.66],
-      [0.075, 0.68],
-    ].map(([x, y]) => new THREE.Vector2(x, y))
-    return new THREE.LatheGeometry(profile, 48)
-  }, [])
-  useEffect(() => () => vase.dispose(), [vase])
+const pool = lightPoolTexture()
+const BRASS = '#b8913f'
+
+/** A classical urn's outline (radius, height in meters), turned on a lathe. */
+const URN = [
+  [0.0, 0],
+  [0.09, 0],
+  [0.1, 0.025],
+  [0.06, 0.06],
+  [0.05, 0.1],
+  [0.1, 0.16],
+  [0.17, 0.27],
+  [0.19, 0.36],
+  [0.17, 0.45],
+  [0.11, 0.52],
+  [0.085, 0.56],
+  [0.1, 0.6],
+  [0.13, 0.62],
+  [0.125, 0.64],
+].map(([x, y]) => new THREE.Vector2(x, y))
+
+/** A candle flame: a soft glowing teardrop with a halo, flickering a little. */
+function Flame({ position, size = 1 }: { position: [number, number, number]; size?: number }) {
+  const flame = useRef<THREE.Mesh>(null)
+  const halo = useRef<THREE.Mesh>(null)
+  const seed = useMemo(() => Math.random() * 100, [])
+  useFrame(({ clock, camera }) => {
+    const t = clock.elapsedTime + seed
+    const k = 1 + Math.sin(t * 9) * 0.06 + Math.sin(t * 23) * 0.04
+    flame.current?.scale.set(0.011 * size, 0.028 * size * k, 0.011 * size)
+    if (halo.current) {
+      halo.current.quaternion.copy(camera.quaternion)
+      ;(halo.current.material as THREE.MeshBasicMaterial).opacity = 0.32 * k
+    }
+  })
   return (
-    <group position={[f.x, 0, f.z]}>
-      <mesh position={[0, 0.5, 0]} material={ivory}>
-        <boxGeometry args={[0.46, 1, 0.46]} />
+    <group position={position}>
+      <mesh ref={flame}>
+        <sphereGeometry args={[1, 12, 10]} />
+        <meshBasicMaterial color="#ffd27a" toneMapped={false} />
       </mesh>
-      <mesh position={[0, 1.02, 0]} material={ivory}>
-        <boxGeometry args={[0.54, 0.05, 0.54]} />
+      <mesh ref={halo} renderOrder={3}>
+        <planeGeometry args={[0.14 * size, 0.14 * size]} />
+        <meshBasicMaterial map={pool} color="#ffb24d" transparent opacity={0.32} blending={THREE.AdditiveBlending} depthWrite={false} toneMapped={false} />
       </mesh>
-      <mesh position={[0, 0.04, 0]} material={ivory}>
-        <boxGeometry args={[0.54, 0.08, 0.54]} />
-      </mesh>
-      {amphora ? (
-        <mesh geometry={vase} position={[0, 1.045, 0]}>
-          <meshPhysicalMaterial color="#8a5a2c" metalness={1} roughness={0.38} clearcoat={0.2} envMapIntensity={1.3} />
-        </mesh>
-      ) : (
-        <mesh position={[0, 1.27, 0]} rotation={[0.4, 0.3, 0]}>
-          <torusKnotGeometry args={[0.13, 0.04, 160, 20, 2, 3]} />
-          <meshPhysicalMaterial color="#efe9e1" roughness={0.22} clearcoat={0.5} clearcoatRoughness={0.2} envMapIntensity={1.1} />
-        </mesh>
-      )}
     </group>
   )
 }
 
-/** A visit's room scan as a small model: its colored points, scaled to fit the case. */
-function useMiniature(captureId: string | null): THREE.BufferGeometry | null {
-  const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null)
-  useEffect(() => {
-    if (!captureId) return
-    let cancelled = false
-    fetchBytes(captureId, 'room.bin')
-      .then((buf) => {
-        if (cancelled) return
-        const cloud = parseRoomBin(buf)
-        const step = Math.max(1, Math.ceil(cloud.count / 70000))
-        const n = Math.floor(cloud.count / step)
-        const pos = new Float32Array(n * 3)
-        const col = new Float32Array(n * 3)
-        for (let i = 0; i < n; i++) {
-          const j = i * step
-          pos.set(cloud.positions.subarray(j * 3, j * 3 + 3), i * 3)
-          // sRGB bytes to linear: the museum renders in linear light.
-          for (let c = 0; c < 3; c++) col[i * 3 + c] = Math.pow(cloud.colors[j * 3 + c] / 255, 2.2)
-        }
-        // Fit the middle 96% of the points into a 0.55 m cube, standing on the case floor.
-        const axis = (a: number) => {
-          const v = Array.from({ length: n }, (_, i) => pos[i * 3 + a]).sort((p, q) => p - q)
-          return [v[Math.floor(n * 0.02)], v[Math.floor(n * 0.98)]]
-        }
-        const [x0, x1] = axis(0)
-        const [y0, y1] = axis(1)
-        const [z0, z1] = axis(2)
-        const scale = 0.55 / Math.max(x1 - x0, y1 - y0, z1 - z0)
-        const keep: number[] = []
-        const keepCol: number[] = []
-        for (let i = 0; i < n; i++) {
-          const x = pos[i * 3]
-          const y = pos[i * 3 + 1]
-          const z = pos[i * 3 + 2]
-          if (x < x0 || x > x1 || y < y0 || y > y1 || z < z0 || z > z1) continue
-          keep.push((x - (x0 + x1) / 2) * scale, (y - y0) * scale, (z - (z0 + z1) / 2) * scale)
-          keepCol.push(col[i * 3], col[i * 3 + 1], col[i * 3 + 2])
-        }
-        const g = new THREE.BufferGeometry()
-        g.setAttribute('position', new THREE.Float32BufferAttribute(keep, 3))
-        g.setAttribute('color', new THREE.Float32BufferAttribute(keepCol, 3))
-        setGeometry(g)
-      })
-      .catch(() => {
-        // No scan to show: the case stays empty rather than showing something made up.
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [captureId])
-  useEffect(() => () => geometry?.dispose(), [geometry])
-  return geometry
+/** A wax candle with its flame, standing at `y` on a holder. */
+function Candle({ x, y, z, h = 0.16 }: { x: number; y: number; z: number; h?: number }) {
+  return (
+    <group position={[x, y, z]}>
+      <mesh position={[0, h / 2, 0]}>
+        <cylinderGeometry args={[0.012, 0.013, h, 12]} />
+        <meshStandardMaterial color="#f4ecdc" roughness={0.6} emissive="#ffcf8a" emissiveIntensity={0.08} />
+      </mesh>
+      <Flame position={[0, h + 0.03, 0]} />
+    </group>
+  )
 }
 
-/** A glass case on a varnished base, with a visit's 3D room scan turning slowly inside, and its label. */
-function Vitrine({ f, capture, wood }: { f: Feature; capture: { id: string; title: string } | null; wood: THREE.Material }) {
-  const miniature = useMiniature(capture?.id ?? null)
-  const turn = useRef<THREE.Group>(null)
-  useFrame((_, dt) => {
-    if (turn.current) turn.current.rotation.y += dt * 0.12
-  })
-  const label = useMemo(
-    () => (capture ? labelTexture(capture.title, 'The room, as the phone scanned it', '', true) : null),
-    [capture],
+/** Three candles on a brass candelabrum: a turned stem and two curved arms. */
+function Candelabrum({ x, y, z, scale = 1 }: { x: number; y: number; z: number; scale?: number }) {
+  const brass = useMemo(() => new THREE.MeshPhysicalMaterial({ color: BRASS, metalness: 1, roughness: 0.3, clearcoat: 0.3 }), [])
+  useEffect(() => () => brass.dispose(), [brass])
+  return (
+    <group position={[x, y, z]} scale={scale}>
+      <mesh position={[0, 0.015, 0]} material={brass}>
+        <cylinderGeometry args={[0.07, 0.08, 0.03, 24]} />
+      </mesh>
+      <mesh position={[0, 0.17, 0]} material={brass}>
+        <cylinderGeometry args={[0.012, 0.02, 0.3, 12]} />
+      </mesh>
+      <mesh position={[0, 0.3, 0]} rotation={[0, 0, 0]} material={brass}>
+        <torusGeometry args={[0.11, 0.008, 8, 24, Math.PI]} />
+      </mesh>
+      {[-0.11, 0, 0.11].map((dx) => (
+        <group key={dx}>
+          <mesh position={[dx, dx === 0 ? 0.33 : 0.3, 0]} material={brass}>
+            <cylinderGeometry args={[0.025, 0.018, 0.025, 16]} />
+          </mesh>
+          <Candle x={dx} y={dx === 0 ? 0.34 : 0.31} z={0} />
+        </group>
+      ))}
+    </group>
   )
-  useEffect(() => () => label?.texture.dispose(), [label])
-  const glass = useMemo(
-    () => new THREE.MeshPhysicalMaterial({ color: '#ffffff', roughness: 0.04, metalness: 0, transparent: true, opacity: 0.12, envMapIntensity: 1.6, depthWrite: false }),
+}
+
+/** A brass wall sconce with two candles, between pictures. */
+function Sconce({ position, yaw }: { position: [number, number, number]; yaw: number }) {
+  const brass = useMemo(() => new THREE.MeshPhysicalMaterial({ color: BRASS, metalness: 1, roughness: 0.28, clearcoat: 0.3 }), [])
+  useEffect(() => () => brass.dispose(), [brass])
+  return (
+    <group position={position} rotation={[0, yaw, 0]}>
+      {/* Back plate and arms. */}
+      <mesh position={[0, 0, 0.012]} material={brass}>
+        <cylinderGeometry args={[0.05, 0.05, 0.02, 24]} />
+      </mesh>
+      <mesh position={[0, 0, 0.05]} rotation={[Math.PI / 2, 0, 0]} material={brass}>
+        <cylinderGeometry args={[0.01, 0.01, 0.08, 8]} />
+      </mesh>
+      <mesh position={[0, -0.02, 0.1]} rotation={[Math.PI / 2, 0, 0]} material={brass}>
+        <torusGeometry args={[0.12, 0.008, 8, 24, Math.PI]} />
+      </mesh>
+      {[-0.12, 0.12].map((dx) => (
+        <group key={dx}>
+          <mesh position={[dx, -0.02, 0.1]} material={brass}>
+            <cylinderGeometry args={[0.035, 0.02, 0.025, 16]} />
+          </mesh>
+          <Candle x={dx} y={-0.005} z={0.1} h={0.13} />
+        </group>
+      ))}
+      {/* The warm glow they throw on the wall. */}
+      <mesh position={[0, 0.08, 0.004]}>
+        <planeGeometry args={[0.9, 0.9]} />
+        <meshBasicMaterial map={pool} color="#ffb867" transparent opacity={0.28} blending={THREE.AdditiveBlending} depthWrite={false} />
+      </mesh>
+    </group>
+  )
+}
+
+/** Sconces on the side walls, halfway between neighbouring pictures. */
+export function Sconces({ plan, count }: { plan: MuseumPlan; count: number }) {
+  const spots: { p: [number, number, number]; yaw: number }[] = []
+  const hung = plan.slots.slice(0, count)
+  for (const a of hung)
+    for (const b of hung) {
+      if (b.index <= a.index || a.room !== b.room || a.normal[0] === 0 || a.normal[0] !== b.normal[0]) continue
+      // Neighbours on the same side wall: one slot step apart along z.
+      const step = plan.spec.depth / plan.spec.perSide
+      if (Math.abs(Math.abs(a.center[2] - b.center[2]) - step) > 0.01) continue
+      spots.push({ p: [a.center[0], plan.spec.hang + 0.05, (a.center[2] + b.center[2]) / 2], yaw: Math.atan2(a.normal[0], a.normal[1]) })
+    }
+  return (
+    <group>
+      {spots.map((s, i) => (
+        <Sconce key={i} position={s.p} yaw={s.yaw} />
+      ))}
+    </group>
+  )
+}
+
+/**
+ * A round tufted settee (a "borne") in red velvet, with gilt trim and turned feet, and a
+ * pedestal rising from its middle with a bronze urn: the centre of the room.
+ */
+function Settee({ f, wood, gold }: { f: Feature; wood: THREE.Material; gold: THREE.Material }) {
+  const r = 0.72
+  const velvet = useMemo(() => new THREE.MeshPhysicalMaterial({ color: '#7d1f24', roughness: 0.8, sheen: 1, sheenRoughness: 0.45, sheenColor: new THREE.Color('#d0555a') }), [])
+  const buttonMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#4a1014', roughness: 0.6 }), [])
+  const urn = useMemo(() => new THREE.LatheGeometry(URN, 48), [])
+  // The seat: a soft domed cushion over a straight side, as a lathe profile listed from the
+  // bottom up (the lathe faces outward that way).
+  const seat = useMemo(
+    () =>
+      new THREE.LatheGeometry(
+        [
+          [0, 0.12],
+          [r * 0.96, 0.12],
+          [r, 0.14],
+          [r, 0.38],
+          [r * 0.98, 0.42],
+          [r * 0.85, 0.45],
+          [r * 0.55, 0.465],
+          [0, 0.47],
+        ].map(([x, y]) => new THREE.Vector2(x, y)),
+        64,
+      ),
     [],
   )
-  useEffect(() => () => glass.dispose(), [glass])
+  useEffect(() => () => [velvet, buttonMat].forEach((m) => m.dispose()), [velvet, buttonMat])
+  useEffect(() => () => [urn, seat].forEach((g) => g.dispose()), [urn, seat])
+  // Buttons in two rings across the cushion, and pleats down the side.
+  const buttons: [number, number, number][] = []
+  for (const [ring, n, y] of [
+    [0.32, 8, 0.468],
+    [0.56, 14, 0.452],
+  ] as [number, number, number][])
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + ring
+      buttons.push([Math.cos(a) * ring, y, Math.sin(a) * ring])
+    }
   return (
     <group position={[f.x, 0, f.z]}>
-      <mesh position={[0, 0.45, 0]} material={wood}>
-        <boxGeometry args={[0.8, 0.9, 0.8]} />
-      </mesh>
-      <mesh position={[0, 0.92, 0]} material={wood}>
-        <boxGeometry args={[0.86, 0.05, 0.86]} />
-      </mesh>
-      <mesh position={[0, 0.05, 0]} material={wood}>
-        <boxGeometry args={[0.86, 0.1, 0.86]} />
-      </mesh>
-      {/* The case: glass on four sides and the top, a thin gilded edge. */}
-      <mesh position={[0, 1.27, 0]} material={glass} renderOrder={2}>
-        <boxGeometry args={[0.76, 0.66, 0.76]} />
-      </mesh>
-      <mesh position={[0, 1.605, 0]}>
-        <boxGeometry args={[0.78, 0.012, 0.78]} />
-        <meshPhysicalMaterial color={GOLD} metalness={1} roughness={0.3} />
-      </mesh>
-      {miniature && (
-        <group ref={turn} position={[0, 0.96, 0]}>
-          <points geometry={miniature}>
-            <pointsMaterial size={0.006} vertexColors sizeAttenuation toneMapped={false} />
-          </points>
-        </group>
-      )}
-      {label && (
-        <mesh position={[0, 0.72, 0.402]}>
-          <planeGeometry args={[0.3, 0.3 / label.aspect]} />
-          <meshStandardMaterial map={label.texture} roughness={0.6} />
+      <mesh geometry={seat} material={velvet} />
+      {buttons.map((p, i) => (
+        <mesh key={i} position={p} material={buttonMat}>
+          <sphereGeometry args={[0.014, 10, 8]} />
         </mesh>
-      )}
+      ))}
+      {/* Gilt trim round the seat edge and the base, on turned feet. */}
+      <mesh position={[0, 0.39, 0]} rotation={[Math.PI / 2, 0, 0]} material={gold}>
+        <torusGeometry args={[r + 0.004, 0.012, 8, 72]} />
+      </mesh>
+      <mesh position={[0, 0.13, 0]} rotation={[Math.PI / 2, 0, 0]} material={gold}>
+        <torusGeometry args={[r - 0.01, 0.016, 8, 72]} />
+      </mesh>
+      {Array.from({ length: 8 }, (_, i) => {
+        const a = (i / 8) * Math.PI * 2
+        return (
+          <group key={i} position={[Math.cos(a) * (r - 0.08), 0, Math.sin(a) * (r - 0.08)]}>
+            <mesh position={[0, 0.07, 0]} material={wood}>
+              <sphereGeometry args={[0.055, 16, 12]} />
+            </mesh>
+            <mesh position={[0, 0.012, 0]} material={gold}>
+              <cylinderGeometry args={[0.03, 0.035, 0.024, 16]} />
+            </mesh>
+          </group>
+        )
+      })}
+      {/* The pedestal in the middle: a fluted column in varnished wood with gilt rings, and the urn. */}
+      <mesh position={[0, 0.78, 0]} material={wood}>
+        <cylinderGeometry args={[0.13, 0.16, 0.62, 24]} />
+      </mesh>
+      {[0.48, 1.08].map((y) => (
+        <mesh key={y} position={[0, y, 0]} rotation={[Math.PI / 2, 0, 0]} material={gold}>
+          <torusGeometry args={[y < 1 ? 0.17 : 0.14, 0.015, 8, 48]} />
+        </mesh>
+      ))}
+      <mesh position={[0, 1.11, 0]} material={wood}>
+        <cylinderGeometry args={[0.2, 0.18, 0.05, 32]} />
+      </mesh>
+      <mesh geometry={urn} position={[0, 1.135, 0]}>
+        <meshPhysicalMaterial color="#7c5129" metalness={1} roughness={0.36} clearcoat={0.25} envMapIntensity={1.3} />
+      </mesh>
     </group>
   )
 }
 
-/** Everything standing on the floor of a furnished room: benches, vitrines, plinths. */
-export function Furniture({ plan, look, captures }: { plan: MuseumPlan; look: Look; captures: { id: string; title: string }[] }) {
+/** A tall bronze torchère: a tripod foot, a turned stem, and a crown of five candles. */
+function Torchere({ f, gold }: { f: Feature; gold: THREE.Material }) {
+  const bronze = useMemo(() => new THREE.MeshPhysicalMaterial({ color: '#6d4a26', metalness: 1, roughness: 0.4, clearcoat: 0.2 }), [])
+  useEffect(() => () => bronze.dispose(), [bronze])
+  return (
+    <group position={[f.x, 0, f.z]}>
+      {[0, 1, 2].map((i) => {
+        const a = (i / 3) * Math.PI * 2
+        return (
+          <mesh key={i} position={[Math.cos(a) * 0.12, 0.08, Math.sin(a) * 0.12]} rotation={[Math.sin(a) * 0.6, 0, -Math.cos(a) * 0.6]} material={bronze}>
+            <cylinderGeometry args={[0.018, 0.03, 0.2, 10]} />
+          </mesh>
+        )
+      })}
+      <mesh position={[0, 0.2, 0]} material={gold}>
+        <sphereGeometry args={[0.06, 20, 14]} />
+      </mesh>
+      <mesh position={[0, 0.9, 0]} material={bronze}>
+        <cylinderGeometry args={[0.022, 0.035, 1.4, 16]} />
+      </mesh>
+      {[0.55, 1.1].map((y) => (
+        <mesh key={y} position={[0, y, 0]} material={gold}>
+          <sphereGeometry args={[0.04, 16, 12]} />
+        </mesh>
+      ))}
+      <mesh position={[0, 1.62, 0]} material={bronze}>
+        <cylinderGeometry args={[0.17, 0.05, 0.08, 24]} />
+      </mesh>
+      {[0, 1, 2, 3, 4].map((i) => {
+        const a = (i / 5) * Math.PI * 2
+        const x = i === 0 ? 0 : Math.cos(a) * 0.13
+        const z = i === 0 ? 0 : Math.sin(a) * 0.13
+        return (
+          <group key={i}>
+            <mesh position={[x, 1.67, z]} material={gold}>
+              <cylinderGeometry args={[0.028, 0.02, 0.02, 14]} />
+            </mesh>
+            <Candle x={x} y={1.68} z={z} h={i === 0 ? 0.22 : 0.17} />
+          </group>
+        )
+      })}
+    </group>
+  )
+}
+
+/** A pedestal in varnished wood with gilt mouldings, and a marble urn on it. */
+function Pedestal({ f, wood, gold }: { f: Feature; wood: THREE.Material; gold: THREE.Material }) {
+  const urn = useMemo(() => new THREE.LatheGeometry(URN, 48), [])
+  useEffect(() => () => urn.dispose(), [urn])
+  return (
+    <group position={[f.x, 0, f.z]}>
+      <mesh position={[0, 0.05, 0]} material={wood}>
+        <boxGeometry args={[0.52, 0.1, 0.52]} />
+      </mesh>
+      <mesh position={[0, 0.55, 0]} material={wood}>
+        <boxGeometry args={[0.4, 0.9, 0.4]} />
+      </mesh>
+      {[0.12, 0.98].map((y) => (
+        <mesh key={y} position={[0, y, 0]} material={gold}>
+          <boxGeometry args={[0.44, 0.03, 0.44]} />
+        </mesh>
+      ))}
+      <mesh position={[0, 1.03, 0]} material={wood}>
+        <boxGeometry args={[0.5, 0.06, 0.5]} />
+      </mesh>
+      <mesh geometry={urn} position={[0, 1.06, 0]} scale={1.15}>
+        <meshPhysicalMaterial color="#f0ebe3" roughness={0.2} clearcoat={0.6} clearcoatRoughness={0.15} envMapIntensity={1.1} />
+      </mesh>
+    </group>
+  )
+}
+
+/**
+ * A carved marble fireplace on the entrance wall: pilasters and a mantel shelf, a fire of
+ * logs glowing and flickering in the firebox, a stone hearth, candelabra on the mantel.
+ */
+function Fireplace({ f }: { f: Feature }) {
+  const marble = useMemo(() => new THREE.MeshPhysicalMaterial({ color: '#efe8de', roughness: 0.22, clearcoat: 0.6, clearcoatRoughness: 0.15, envMapIntensity: 1 }), [])
+  const soot = useMemo(() => new THREE.MeshStandardMaterial({ color: '#141010', roughness: 0.95 }), [])
+  const logMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#3a2618', roughness: 0.9, emissive: '#ff5a1a', emissiveIntensity: 0.25 }), [])
+  useEffect(() => () => [marble, soot, logMat].forEach((m) => m.dispose()), [marble, soot, logMat])
+  const fire = useRef<THREE.PointLight>(null)
+  const flames = useRef<THREE.Group>(null)
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime
+    if (fire.current) fire.current.intensity = 2.4 + Math.sin(t * 7) * 0.4 + Math.sin(t * 17) * 0.3
+    flames.current?.children.forEach((c, i) => {
+      const k = 1 + Math.sin(t * (6 + i) + i) * 0.18
+      c.scale.set(1, k, 1)
+    })
+  })
+  // The wall is at local z = 0; the fireplace faces +z (into the room, after the turn below).
+  return (
+    <group position={[f.x, 0, f.z + f.hd]} rotation={[0, Math.PI, 0]}>
+      {/* Hearth stone. */}
+      <mesh position={[0, 0.025, 0.32]} material={marble}>
+        <boxGeometry args={[2.1, 0.05, 0.62]} />
+      </mesh>
+      {/* Pilasters, frieze, mantel shelf. */}
+      {[-0.82, 0.82].map((x) => (
+        <group key={x}>
+          <mesh position={[x, 0.58, 0.14]} material={marble}>
+            <boxGeometry args={[0.26, 1.06, 0.28]} />
+          </mesh>
+          <mesh position={[x, 1.03, 0.16]} material={marble}>
+            <boxGeometry args={[0.32, 0.08, 0.32]} />
+          </mesh>
+        </group>
+      ))}
+      <mesh position={[0, 1.08, 0.13]} material={marble}>
+        <boxGeometry args={[1.9, 0.22, 0.26]} />
+      </mesh>
+      <mesh position={[0, 1.22, 0.2]} material={marble}>
+        <boxGeometry args={[2.15, 0.06, 0.42]} />
+      </mesh>
+      {/* The firebox: a dark opening with the fire inside. */}
+      <mesh position={[0, 0.5, 0.02]} material={soot}>
+        <boxGeometry args={[1.38, 0.9, 0.04]} />
+      </mesh>
+      <mesh position={[0, 0.06, 0.18]} material={soot}>
+        <boxGeometry args={[1.3, 0.04, 0.32]} />
+      </mesh>
+      {[
+        [-0.18, 0.12, 0.15, 0.3],
+        [0.16, 0.12, 0.17, -0.25],
+        [0, 0.2, 0.16, 0.05],
+      ].map(([x, y, z, rot], i) => (
+        <mesh key={i} position={[x, y, z]} rotation={[0, rot, Math.PI / 2]} material={logMat}>
+          <cylinderGeometry args={[0.055, 0.06, 0.5, 12]} />
+        </mesh>
+      ))}
+      <group ref={flames}>
+        {[-0.2, -0.05, 0.1, 0.22].map((x, i) => (
+          <mesh key={i} position={[x, 0.3, 0.17]}>
+            <coneGeometry args={[0.07, 0.3 + (i % 2) * 0.08, 12]} />
+            <meshBasicMaterial color={i % 2 ? '#ffb347' : '#ff7a1f'} transparent opacity={0.85} blending={THREE.AdditiveBlending} depthWrite={false} toneMapped={false} />
+          </mesh>
+        ))}
+      </group>
+      <pointLight ref={fire} color="#ff9a4a" intensity={2.6} distance={5} decay={2} position={[0, 0.45, 0.6]} />
+      <Candelabrum x={-0.75} y={1.25} z={0.22} />
+      <Candelabrum x={0.75} y={1.25} z={0.22} />
+    </group>
+  )
+}
+
+/** Everything standing on the floor of a furnished room. */
+export function Furniture({ plan }: { plan: MuseumPlan }) {
   const wood = useMemo(() => varnishedWood(), [])
-  const ivory = useMemo(() => new THREE.MeshPhysicalMaterial({ color: look.trim, roughness: 0.45, clearcoat: 0.25, clearcoatRoughness: 0.4 }), [look])
-  useEffect(() => () => [wood, ivory].forEach((m) => m.dispose()), [wood, ivory])
-  // Number each kind in plan order: plinths alternate sculptures, vitrines take visits in turn.
-  const nth = (i: number) => plan.features.slice(0, i).filter((g) => g.kind === plan.features[i].kind).length
+  const gold = useMemo(() => gilding(), [])
+  useEffect(() => () => [wood, gold].forEach((m) => m.dispose()), [wood, gold])
   return (
     <group>
       {plan.features.map((f, i) => {
-        if (f.kind === 'bench') return <Bench key={i} f={f} wood={wood} />
-        if (f.kind === 'plinth') return <Plinth key={i} f={f} index={nth(i)} ivory={ivory} />
-        const capture = captures.length ? captures[nth(i) % captures.length] : null
-        return <Vitrine key={i} f={f} capture={capture} wood={wood} />
+        if (f.kind === 'settee') return <Settee key={i} f={f} wood={wood} gold={gold} />
+        if (f.kind === 'torch') return <Torchere key={i} f={f} gold={gold} />
+        if (f.kind === 'pedestal') return <Pedestal key={i} f={f} wood={wood} gold={gold} />
+        return <Fireplace key={i} f={f} />
       })}
     </group>
   )

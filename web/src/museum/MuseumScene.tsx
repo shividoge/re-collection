@@ -5,7 +5,7 @@ import { ToneMappingMode } from 'postprocessing'
 import { useMemo, type Ref } from 'react'
 import * as THREE from 'three'
 import { Artwork } from './Artwork'
-import { Furniture } from './Classic'
+import { Furniture, Sconces } from './Classic'
 import type { Exhibition } from './exhibitions'
 import { walkable, type MuseumPlan } from './layout'
 import { LOOKS } from './looks'
@@ -43,13 +43,6 @@ export function MuseumScene({
     if (walkable(plan, to[0], to[1])) walk.current.walkTo(to)
   }
 
-  // The visits in this exhibition, for the vitrines (each shows one visit's 3D room scan).
-  const captures = useMemo(() => {
-    const seen = new Map<string, string>()
-    for (const a of exhibition.items) if (a.captureId && !seen.has(a.captureId)) seen.set(a.captureId, a.title ?? 'A visit')
-    return [...seen].map(([id, title]) => ({ id, title }))
-  }, [exhibition])
-
   const first = plan.rooms[0]
   const last = plan.rooms[plan.rooms.length - 1]
   const lights = useMemo(
@@ -79,7 +72,12 @@ export function MuseumScene({
       </Environment>
 
       <Rooms plan={plan} look={look} title={exhibition.title} subtitle={exhibition.subtitle ?? ''} reflections={handheld ? 512 : 1024} />
-      {plan.features.length > 0 && <Furniture plan={plan} look={look} captures={captures} />}
+      {plan.features.length > 0 && (
+        <>
+          <Furniture plan={plan} />
+          <Sconces plan={plan} count={exhibition.items.length} />
+        </>
+      )}
       {/* An invisible floor to tap on (the visible one is a reflector). */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.001, (first.zFront + last.zBack) / 2]} onClick={onFloor}>
         <planeGeometry args={[plan.spec.width, first.zFront - last.zBack]} />

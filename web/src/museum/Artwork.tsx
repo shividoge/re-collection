@@ -106,7 +106,7 @@ export function Artwork({
 
   const label = useMemo(() => labelTexture(art.title ?? '', art.date ?? '', art.caption ?? '', look.darkLabel), [art.title, art.date, art.caption, look.darkLabel])
   useEffect(() => () => label.texture.dispose(), [label])
-  const labelW = 0.26
+  const labelW = 0.34
 
   // Gilded frames are carved (ornate profile, one mesh); the others are plain rails.
   const gilded = look.frame.metalness > 0.5
