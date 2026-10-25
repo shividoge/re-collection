@@ -8,7 +8,7 @@ import { roomHash } from './roomSync'
 import { MuseumSound } from './sound'
 import { StepIn, type Stage } from './StepIn'
 import { Streaks } from './Streaks'
-import { HelperTogether, PatientTogether } from './Together'
+import { HelperTogether } from './Together'
 import { useMuseumRoom } from './useMuseumRoom'
 // TEMPORARY: from '../data' once it exists.
 import { dataMode, loadCaptureAssets } from '../data'
@@ -445,12 +445,11 @@ export function MuseumPage({
         </footer>
       )}
 
-      {together &&
-        (helper ? (
-          <HelperTogether room={room} join={join} openTitle={room.state?.window ? (exhibition.items.find((a) => a.captureId === room.state?.window)?.title ?? null) : null} />
-        ) : (
-          !inside && !family && <PatientTogether room={room} at={focus} />
-        ))}
+      {/* The "Visit together" button is gone: family join with her link (the live visit). A
+          helper's phone opened from an old ?join= code still walks with her. */}
+      {together && helper && (
+        <HelperTogether room={room} join={join} openTitle={room.state?.window ? (exhibition.items.find((a) => a.captureId === room.state?.window)?.title ?? null) : null} />
+      )}
 
       {session && <Presence session={session} snapshot={snapshot} />}
       {!chosen && (
