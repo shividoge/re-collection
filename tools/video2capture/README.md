@@ -8,7 +8,15 @@ Everything it makes is an estimate; the manifest says so (`"source": "video"`,
 
 Differences from a phone capture: depth comes at the model's sample rate (about 2 Hz, written in
 `depth.rateHz`), not the phone's 10 Hz, on the same 256×192 grid; there's no scan phase and no
-transcript.
+transcript. The viewer's people replay picks the depth frame nearest in time (up to one
+`1/depth.rateHz` away), so it plays through at either rate.
+
+Timing: every line of `frames.jsonl` carries the video frame's real presentation time, so
+variable-frame-rate videos (common from phones) stay in sync. The model frames are the exact
+frames that get a `d`, spaced evenly in time.
+
+The script stops with an error instead of writing a capture if the model's depth, scale, poses or
+intrinsics aren't finite. Pixels without usable depth are written as depth 0, confidence 0.
 
 ## Setup on a Mac (MPS), once
 

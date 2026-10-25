@@ -91,36 +91,38 @@ def check_ffmpeg(codec: str) -> None:
 
 
 def transcode(src: Path, dst: Path, has_audio: bool) -> None:
-    """H.264 + AAC mp4, upright (ffmpeg applies rotation metadata), at most 1920 wide, even sizes."""
+    """H.264 + AAC mp4, upright (ffmpeg applies rotation metadata), at most 1920 wide, even sizes.
+    Frame timing is kept as is (variable frame rate stays variable); frames.jsonl uses the real timestamps."""
     cmd = [FFMPEG, "-v", "error", "-y", "-i", str(src),
-           "-vf", "scale='min(1920,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+           "-vf", "scale='trunc(min(1920,iw)/2)*2':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
            "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
     cmd += ["-c:a", "aac", "-b:a", "128k", "-ac", "1"] if has_audio else ["-an"]
     run(cmd + [str(dst)])
 
 
-def frame_count_and_size(path: Path) -> tuple[int, int, int, float]:
-    out = run([FFPROBE, "-v", "error", "-select_streams", "v:0", "-count_frames",
-               "-show_entries", "stream=nb_read_frames,width,height,avg_frame_rate", "-of", "json", str(path)])
-    s = json.loads(out)["streams"][0]
+def frame_times_and_size(path: Path) -> tuple[np.ndarray, int, int, float]:
+    """Every frame's presentation time (s, first frame at 0), width, height and average fps.
+    Real timestamps, not i/fps: phone videos are often variable frame rate."""
+    out = run([FFPROBE, "-v", "error", "-select_streams", "v:0", "-show_entries",
+               "stream=width,height,avg_frame_rate:frame=best_effort_timestamp_time", "-of", "json", str(path)])
+    info = json.loads(out)
+    s = info["streams"][0]
     num, den = (int(x) for x in s["avg_frame_rate"].split("/"))
-    return int(s["nb_read_frames"]), int(s["width"]), int(s["height"]), num / den
+    ts = np.array([float(f["best_effort_timestamp_time"]) for f in info.get("frames", [])
+                   if f.get("best_effort_timestamp_time") not in (None, "N/A")])
+    if len(ts) == 0 or len(ts) != len(info.get("frames", [])) or np.any(np.diff(ts) <= 0):
+        raise SystemExit(f"{path}: frame timestamps are missing or out of order; can't line poses up with playback.")
+    return ts - ts[0], int(s["width"]), int(s["height"]), num / den if den else len(ts) / max(ts[-1] - ts[0], 1e-6)
 
 
-def extract_frames(video: Path, times: list[float], folder: Path, width: int | None = None) -> list[Path]:
-    paths = []
-    for k, t in enumerate(times):
-        p = folder / f"f{k:04d}.jpg"
-        vf = ["-vf", f"scale={width}:-2"] if width else []
-        # Some phone videos end a little before their stated duration; step back until a frame comes out.
-        for back in (0.0, 0.25, 0.5, 1.0):
-            run([FFMPEG, "-v", "error", "-y", "-ss", f"{max(0.0, t - back):.3f}", "-i", str(video), "-frames:v", "1",
-                 *vf, "-pix_fmt", "yuvj420p", "-q:v", "2", str(p)])
-            if p.exists():
-                break
-        else:
-            raise SystemExit(f"Couldn't read a frame near {t:.2f}s from {video}")
-        paths.append(p)
+def extract_frames(video: Path, indices: list[int], folder: Path) -> list[Path]:
+    """The video frames at these indices (presentation order), exactly, in one decode pass."""
+    expr = "+".join(f"eq(n,{i})" for i in indices)
+    run([FFMPEG, "-v", "error", "-y", "-i", str(video), "-vf", f"select='{expr}'", "-fps_mode", "passthrough",
+         "-pix_fmt", "yuvj420p", "-q:v", "2", "-start_number", "0", str(folder / "f%04d.jpg")])
+    paths = sorted(folder.glob("f*.jpg"))
+    if len(paths) != len(indices):
+        raise SystemExit(f"Read {len(paths)} of the {len(indices)} frames the model needs from {video}.")
     return paths
 
 
@@ -252,16 +254,20 @@ def main() -> None:
     print(f"[1/6] Transcoding {src.name} ({info['duration']:.1f} s) to H.264…")
     video = out / "video.mp4"
     transcode(src, video, info["has_audio"])
-    frame_count, W, H, fps = frame_count_and_size(video)
-    duration = frame_count / fps
+    frame_times, W, H, fps = frame_times_and_size(video)
+    frame_count = len(frame_times)
+    duration = float(frame_times[-1]) + 1.0 / fps
 
     # Frames for the model, evenly spaced, at most --max-frames.
     # Short clips still get enough views to reconstruct from (at least 16, never more than exist).
     n = max(2, min(args.max_frames, frame_count, max(16, int(duration * args.sample_fps) + 1)))
-    sample_times = list(np.linspace(0, max(0.0, duration - 1.0 / fps), n))
+    # Evenly spaced in time, each snapped to the nearest real frame (frames.jsonl gives those frames `d`).
+    sample_frames = sorted({int(np.abs(frame_times - t).argmin()) for t in np.linspace(0, frame_times[-1], n)})
+    n = len(sample_frames)
+    sample_times = [float(frame_times[i]) for i in sample_frames]
     with tempfile.TemporaryDirectory() as tmp:
         print(f"[2/6] Extracting {n} frames…")
-        paths = extract_frames(video, sample_times, Path(tmp))
+        paths = extract_frames(video, sample_frames, Path(tmp))
 
         device = args.device or ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
         print(f"[3/6] Depth Anything 3 ({args.model}) on {device}…")
@@ -270,31 +276,46 @@ def main() -> None:
             pred = model.inference([str(p) for p in paths])
 
     depth = np.asarray(pred.depth, dtype=np.float32)            # N, h, w
-    conf = np.asarray(pred.conf, dtype=np.float32) if pred.conf is not None else np.ones_like(depth)
+    has_conf = pred.conf is not None
+    conf = np.asarray(pred.conf, dtype=np.float32) if has_conf else np.ones_like(depth)
     images = np.asarray(pred.processed_images)                   # N, h, w, 3
     _, h, w = depth.shape
+    # Only finite, positive depth is data; everything else becomes "no data" (0) below.
+    valid = np.isfinite(depth) & (depth > 0)
+    conf = np.where(valid & np.isfinite(conf), conf, 0).astype(np.float32)
+    if not valid.any():
+        raise SystemExit("Depth Anything 3 returned no usable depth for this video.")
     # Scale: the model's units are arbitrary unless it reports metric depth.
-    good = conf > np.median(conf)
+    # Typical depth of the more confident pixels; all valid pixels if confidence is missing or uniform.
+    good = valid & (conf > np.median(conf[valid]))
+    if not good.any():
+        good = valid
     scale = 1.0 if pred.is_metric else args.median_depth / float(np.median(depth[good]))
-    depth *= scale
+    if not math.isfinite(scale) or scale <= 0:
+        raise SystemExit(f"Couldn't scale the depth (scale {scale}); not writing a capture from it.")
+    depth = np.where(valid, depth * scale, 0).astype(np.float32)
     poses = []
     for k in range(n):
         w2c = np.asarray(pred.extrinsics[k], dtype=np.float64).copy()
         w2c[:3, 3] *= scale
         poses.append(to_capture_pose(w2c))
     Ks = [np.asarray(pred.intrinsics[k], dtype=np.float64) for k in range(n)]
+    if not all(np.isfinite(T).all() for T in poses) or not all(np.isfinite(K).all() and K[0, 0] > 0 and K[1, 1] > 0 for K in Ks):
+        raise SystemExit("Depth Anything 3 returned a camera pose or intrinsics that aren't finite; not writing a capture from it.")
 
     # ---- room.bin: fuse the confident pixels of every frame ----
     print("[4/6] Fusing the room…")
     pts, cols = [], []
     for k in range(n):
-        keep_mask = (conf[k] >= np.percentile(conf[k], 40)) & (depth[k] > 0)
+        keep_mask = (conf[k] >= np.percentile(conf[k], 40)) & valid[k]
         world, idx = unproject(depth[k], Ks[k], poses[k], stride=2)
         m = keep_mask[idx[:, 0], idx[:, 1]]
         pts.append(world[m])
         cols.append(images[k][idx[m, 0], idx[m, 1]])
     points = np.concatenate(pts)
     colors = np.concatenate(cols)
+    if len(points) == 0 or not np.isfinite(points).all():
+        raise SystemExit("The fused room has no points or non-finite points; not writing a capture from it.")
     points, colors = voxel_downsample(points, colors, voxel=0.015)
     write_room_bin(out / "room.bin", points, colors)
     write_room_ply(out / "room.ply", points, colors)
@@ -309,18 +330,21 @@ def main() -> None:
             c = np.asarray(Image.fromarray(conf[k]).resize((dw, dh), Image.NEAREST))
             lo, hi = np.percentile(c, 30), np.percentile(c, 60)
             c8 = np.where(c >= hi, 2, np.where(c >= lo, 1, 0)).astype(np.uint8)
-            mm = np.clip(np.round(d * 1000), 0, 65535).astype("<u2")
-            mm[c8 == 0] = 0  # low confidence counts as no data
+            if not has_conf:
+                c8[:] = 1  # no confidence from the model: say medium, never high
+            mm_f = np.round(d * 1000)
+            c8[(mm_f <= 0) | (mm_f > 65535)] = 0  # no depth, or beyond what UInt16 mm can hold
+            mm = np.where(c8 > 0, mm_f, 0).astype("<u2")  # low confidence counts as no data
             fd.write(mm.tobytes())
             fc.write(c8.tobytes())
 
     # ---- frames.jsonl: one line per video frame; poses between samples are interpolated ----
     print("[5/6] Writing the camera path…")
     sx, sy = W / w, H / h
-    nearest = {int(round(t * fps)): k for k, t in enumerate(sample_times)}
+    has_depth = {i: k for k, i in enumerate(sample_frames)}
     with open(out / "frames.jsonl", "w") as f:
         for i in range(frame_count):
-            t = i / fps
+            t = float(frame_times[i])
             T = interpolate_pose(poses, sample_times, t)
             k = int(np.argmin([abs(t - s) for s in sample_times]))
             K = Ks[k]
@@ -328,9 +352,9 @@ def main() -> None:
                 "i": i, "t": round(t, 6),
                 "T": [float(v) for v in T.T.ravel()],  # column-major
                 "K": [float(K[0, 0] * sx), float(K[1, 1] * sy), float(K[0, 2] * sx), float(K[1, 2] * sy)],
-                "track": "normal", "d": nearest.get(i), "phase": "moment",
+                "track": "normal", "d": has_depth.get(i), "phase": "moment",
             }
-            f.write(json.dumps(line, separators=(",", ":")) + "\n")
+            f.write(json.dumps(line, separators=(",", ":"), allow_nan=False) + "\n")
 
     # ---- keyframes, thumbnail ----
     print("[6/6] Keyframes and manifest…")
