@@ -59,7 +59,7 @@ Bun 1.4+ (`curl -fsSL https://bun.sh/install | bash`), then `bun install` in `wo
 
 Same steps: Bun has aarch64 Linux builds, and `sharp` installs its linux-arm64 binary. The bake is
 CPU only (single-threaded per job), so `--concurrency` up to the number of fast cores is fine;
-a job holds ~0.5 GB at peak for a 30 s capture.
+a job peaks at about 1 GB of memory for a 30 s, 1 M-point capture (9 s of baking on the Fedora desktop).
 
 ## As a service
 
