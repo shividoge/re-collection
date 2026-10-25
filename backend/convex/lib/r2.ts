@@ -280,9 +280,10 @@ export function stableGetUrl(cfg: R2Config, key: string, rev: number, now: numbe
 export function putTarget(
   cfg: R2Config,
   key: string,
-  p: { contentType: string; contentEncoding?: string; now: number },
+  p: { contentType: string; contentEncoding?: string; now: number; contentLength?: number },
 ): { url: string; headers: Record<string, string> } {
-  const headers = objectHeaders(p)
+  // Signing the length means a PUT of any other size is refused, so it can't replace the object.
+  const headers = { ...objectHeaders(p), ...(p.contentLength !== undefined ? { 'Content-Length': String(p.contentLength) } : {}) }
   const url = presign(cfg, { method: 'PUT', key, expiresSec: PUT_EXPIRES, now: p.now, signedHeaders: headers })
   return { url, headers }
 }
@@ -357,13 +358,28 @@ async function s3(
   })
   if (res.ok || p.ok?.includes(res.status)) return res
   const text = method === 'HEAD' ? '' : await res.text().catch(() => '')
-  throw new Error(s3Error(op, key, res.status, text))
+  throw s3Error(op, key, res.status, text)
 }
 
-function s3Error(op: string, key: string, status: number, xml: string): string {
+/** A failed R2 request: HTTP status and S3 error code (e.g. NoSuchUpload). */
+export class R2Error extends Error {
+  readonly status: number
+  readonly code: string | null
+  constructor(message: string, status: number, code: string | null) {
+    super(message)
+    this.status = status
+    this.code = code
+  }
+  /** Worth trying again (R2 overloaded or briefly failing). */
+  get retryable(): boolean {
+    return this.status >= 500 || this.status === 429
+  }
+}
+
+function s3Error(op: string, key: string, status: number, xml: string): R2Error {
   const code = xmlOne(xml, 'Code')
   const message = xmlOne(xml, 'Message')
-  return `R2 ${op} failed for ${key || '(bucket)'}: HTTP ${status}${code ? ` ${code}` : ''}${message ? ` (${message})` : ''}`
+  return new R2Error(`R2 ${op} failed for ${key || '(bucket)'}: HTTP ${status}${code ? ` ${code}` : ''}${message ? ` (${message})` : ''}`, status, code)
 }
 
 /** Starts a multipart upload; the object gets Content-Type, Cache-Control and Content-Encoding. Returns the UploadId. */
@@ -418,7 +434,7 @@ export async function completeMultipart(
   })
   // S3 can answer 200 and still put an <Error> in the body.
   const xml = await res.text()
-  if (/<Error>/.test(xml)) throw new Error(s3Error('CompleteMultipartUpload', key, res.status, xml))
+  if (/<Error>/.test(xml)) throw s3Error('CompleteMultipartUpload', key, res.status, xml)
 }
 
 /** Aborts a multipart upload; an upload that's already gone (404) is fine. */

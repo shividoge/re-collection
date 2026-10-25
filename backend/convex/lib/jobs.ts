@@ -70,6 +70,9 @@ export async function enqueue(ctx: MutationCtx, capture: Doc<'captures'>, kind: 
   return jobId
 }
 
+/** Wait before retrying a failed facts attempt: 30 s, then 60 s (so a rate limit can pass). */
+export const FACTS_RETRY_MS = 30_000
+
 /** Leases a facts job to Convex itself and schedules the action that runs it. */
 export async function dispatchFacts(ctx: MutationCtx, jobId: Id<'jobs'>): Promise<void> {
   const job = await ctx.db.get(jobId)
@@ -110,7 +113,7 @@ export async function markFailed(ctx: MutationCtx, job: Doc<'jobs'>, error: stri
   if (retryable && attempts < MAX_ATTEMPTS && capture) {
     await ctx.db.patch(job._id, { status: 'queued', attempts, leaseUntil: null, workerId: null, progress: null, error, updatedAt: now })
     await patchStatus(ctx, capture, { [job.kind]: 'queued', progress: null })
-    if (job.kind === 'facts') await dispatchFacts(ctx, job._id)
+    if (job.kind === 'facts') await ctx.scheduler.runAfter(FACTS_RETRY_MS * attempts, internal.factsJob.dispatch, { jobId: job._id })
     return 'queued'
   }
   await ctx.db.patch(job._id, { status: 'failed', attempts, leaseUntil: null, progress: null, error, updatedAt: now })

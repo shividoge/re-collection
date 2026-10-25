@@ -11,9 +11,15 @@ import { r2Config, stableGetUrl } from './lib/r2'
 import { completeUpload } from './lib/stages'
 import { convertFrames, isFileName } from './lib/validate'
 import { createTarget, finishUpload, loadUpload } from './uploads'
+import { shown } from './lib/errors'
 import { area, derived, finishedPart, jobKind, progress, uploadTarget, type Area, type UploadTarget } from './validators'
 
 const token = v.string()
+/** The `attempt` claim returned. When given, calls from a worker whose lease was taken over are ignored. */
+const attempt = v.optional(v.number())
+
+/** Is this call from the worker holding the current lease? (No attempt given: assume so.) */
+const holdsLease = (job: Doc<'jobs'>, a: number | undefined) => job.status === 'leased' && (a === undefined || a === job.attempts + 1)
 
 async function requireJob(ctx: MutationCtx, jobId: Doc<'jobs'>['_id']): Promise<Doc<'jobs'>> {
   const job = await ctx.db.get(jobId)
@@ -43,12 +49,12 @@ export const claim = mutation({
 })
 
 export const heartbeat = mutation({
-  args: { token, jobId: v.id('jobs'), progress: v.optional(progress) },
+  args: { token, jobId: v.id('jobs'), progress: v.optional(progress), attempt },
   returns: v.object({ ok: v.boolean(), cancelled: v.boolean() }),
-  handler: async (ctx, { token: t, jobId, progress: p }) => {
+  handler: async (ctx, { token: t, jobId, progress: p, attempt: a }) => {
     requireToken(t)
     const job = await ctx.db.get(jobId)
-    if (!job || job.status !== 'leased' || !(await getCapture(ctx, job.captureId))) return { ok: false, cancelled: true }
+    if (!job || !holdsLease(job, a) || !(await getCapture(ctx, job.captureId))) return { ok: false, cancelled: true }
     await extendLease(ctx, job, p)
     if (job.workerId) await seeWorker(ctx, { workerId: job.workerId })
     return { ok: true, cancelled: false }
@@ -99,7 +105,7 @@ export const outputUrls = action({
     for (const f of files) {
       if (!isFileName(f.name)) throw invalid(`"${f.name}" isn't an allowed file name.`)
       if (!Number.isInteger(f.bytes) || f.bytes < 0) throw invalid(`${f.name}: bytes must be a whole number.`)
-      const target = await createTarget(ctx, { captureId: job.captureId, ...f, key: fileKey(job.captureId, f.area, f.name), jobId })
+      const target = await shown(() => createTarget(ctx, { captureId: job.captureId, ...f, key: fileKey(job.captureId, f.area, f.name), jobId }))
       out.push({ name: f.name, target })
     }
     return out
@@ -113,7 +119,7 @@ export const finishOutput = action({
     requireToken(t)
     const upload = await loadUpload(ctx, uploadId)
     if (upload.jobId !== jobId) throw invalid("This upload doesn't belong to that job.")
-    return { ok: true as const, bytes: await finishUpload(ctx, upload, parts) }
+    return { ok: true as const, bytes: await shown(() => finishUpload(ctx, upload, parts)) }
   },
 })
 
@@ -134,12 +140,16 @@ export const complete = mutation({
       v.object({ kind: v.literal('convert'), manifestJson: v.string() }),
       v.object({ kind: v.literal('splat'), splat: splatInfo }),
     ),
+    attempt,
   },
   returns: v.object({ ok: v.literal(true) }),
-  handler: async (ctx, { token: t, jobId, result }) => {
+  handler: async (ctx, { token: t, jobId, result, attempt: a }) => {
     requireToken(t)
     const job = await requireJob(ctx, jobId)
-    if (job.status === 'done') return { ok: true as const }
+    // Done, failed or superseded: nothing to do. Leased to another worker: it will finish it.
+    // A reaped job nobody holds yet (queued) is still taken.
+    if (job.status === 'done' || job.status === 'failed') return { ok: true as const }
+    if (job.status === 'leased' && !holdsLease(job, a)) return { ok: true as const }
     if (result.kind !== job.kind) throw invalid(`This is a ${job.kind} job, not ${result.kind}.`)
     const capture = await getCapture(ctx, job.captureId)
     if (!capture) {
@@ -180,12 +190,13 @@ export const complete = mutation({
 })
 
 export const fail = mutation({
-  args: { token, jobId: v.id('jobs'), error: v.string(), retryable: v.boolean() },
+  args: { token, jobId: v.id('jobs'), error: v.string(), retryable: v.boolean(), attempt },
   returns: v.object({ ok: v.literal(true) }),
-  handler: async (ctx, { token: t, jobId, error, retryable }) => {
+  handler: async (ctx, { token: t, jobId, error, retryable, attempt: a }) => {
     requireToken(t)
     const job = await requireJob(ctx, jobId)
-    if (job.status === 'leased' || job.status === 'queued') await markFailed(ctx, job, error.slice(0, 2000) || 'The worker failed without saying why.', retryable)
+    // Only the worker holding the lease can fail the job (a stale one would fail someone else's run).
+    if (holdsLease(job, a)) await markFailed(ctx, job, error.slice(0, 2000) || 'The worker failed without saying why.', retryable)
     return { ok: true as const }
   },
 })

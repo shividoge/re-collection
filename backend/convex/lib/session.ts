@@ -109,6 +109,8 @@ export function narrationRequest(p: {
     schema: NARRATION_SCHEMA,
     effort: 'low',
     maxTokens: 4000,
+    timeoutMs: 60_000,
+    maxRetries: 1,
     mock: () => mockSentences(p.allowed),
   }
 }
@@ -128,6 +130,8 @@ export function turnRequest(p: {
     schema: REPLY_SCHEMA,
     effort: 'low',
     maxTokens: 4000,
+    timeoutMs: 60_000,
+    maxRetries: 1,
     mock: () => ({ ...mockSentences(focusedFacts(p.allowed, p.focus)), branch: null, distress: false }),
   }
 }
@@ -175,6 +179,8 @@ export function scoringRequest(models: Models, moment: Moment, allowedIds: strin
     schema: SCORING_SCHEMA,
     effort: 'high',
     maxTokens: 16000,
+    timeoutMs: 3 * 60_000,
+    maxRetries: 1,
     mock: () => ({ scores: [], branches: [], note: "[mock] Mock mode is on; this session wasn't really scored." }),
   }
 }

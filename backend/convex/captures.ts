@@ -3,7 +3,7 @@ import { parseManifest } from '../../shared/manifest'
 import { internal } from './_generated/api'
 import type { Doc } from './_generated/dataModel'
 import { action, internalAction, internalMutation, mutation, query } from './_generated/server'
-import { getCapture, getMomentDoc, initialStatus, invalid, listFiles, requireCapture } from './lib/data'
+import { getCapture, getFile, getMomentDoc, initialStatus, invalid, listFiles, manifestOf, requireCapture } from './lib/data'
 import { abortMultipart, deletePrefix, r2Config, r2ConfigOrNull, stableGetUrl, type R2Config } from './lib/r2'
 import { completeUpload } from './lib/stages'
 import { captureStatus, derived, fileUrl } from './validators'
@@ -41,7 +41,7 @@ export function signFiles(cfg: R2Config, files: readonly Doc<'files'>[], now = D
 }
 
 export async function thumbUrl(ctx: Parameters<typeof listFiles>[0], captureId: string): Promise<string | null> {
-  const thumb = (await listFiles(ctx, captureId, 'raw')).find((f) => f.name === 'thumb.jpg')
+  const thumb = await getFile(ctx, captureId, 'raw', 'thumb.jpg')
   return thumb ? stableGetUrl(r2Config(), thumb.key, thumb.rev, Date.now()) : null
 }
 
@@ -65,6 +65,13 @@ export const begin = mutation({
     const existing = await ctx.db.query('captures').withIndex('by_captureId', (q) => q.eq('captureId', manifest.id)).unique()
     if (existing?.deleting) throw invalid('This capture is being deleted.')
     if (existing) {
+      // Keep a splat the splat job added, if this manifest doesn't bring one.
+      const splat = manifestOf(existing)?.room?.splat
+      if (splat && manifest.room && !manifest.room.splat) {
+        const merged = JSON.parse(manifestJson) as { room: Record<string, unknown> }
+        merged.room.splat = splat
+        fields.manifestJson = JSON.stringify(merged)
+      }
       await ctx.db.patch(existing._id, fields)
     } else {
       const source = manifest.source === 'video' ? 'video' : 'phone'

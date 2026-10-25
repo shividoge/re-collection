@@ -69,7 +69,12 @@ export default defineSchema({
 
   moments: defineTable(momentFields).index('by_captureId', ['captureId']),
 
-  sessions: defineTable({ sessionId: v.string(), ...sessionFields })
+  sessions: defineTable({
+    sessionId: v.string(),
+    ...sessionFields,
+    /** Set while `end` scores the session: new turns are refused, a second `end` waits. */
+    endingAt: v.optional(v.number()),
+  })
     .index('by_sessionId', ['sessionId'])
     .index('by_capture', ['captureId', 'startedAt']),
 

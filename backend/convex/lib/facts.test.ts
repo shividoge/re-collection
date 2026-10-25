@@ -90,6 +90,11 @@ describe('merging with the review', () => {
     expect(mergeFacts(previous, []).map((f) => f.id)).toEqual(['f1', 'f2'])
   })
 
+  test('a replaced pending fact never lends its id to a new one', () => {
+    const previous = [fact('f1', 'A', 'approved'), fact('f2', 'B', 'pending'), fact('f3', 'C', 'pending')]
+    expect(mergeFacts(previous, [{ text: 'D', kind: 'object', salience: 1, evidence: [], cue: '' }]).map((f) => [f.id, f.text])).toEqual([['f1', 'A'], ['f4', 'D']])
+  })
+
   test('the moment header falls back to the family title', () => {
     expect(momentHeader({}, 'Sunday')).toEqual({ title: 'Sunday', place: '', occasion: '', summary: '' })
     expect(momentHeader(goodReply, 'Sunday').title).toBe('Cake visit')

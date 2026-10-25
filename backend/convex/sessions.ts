@@ -7,6 +7,7 @@ import type { Doc } from './_generated/dataModel'
 import { action, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
 import { claudeConfig, claudeFromEnv } from './lib/claude'
 import { attendeesOf, conflict, getCapture, getMomentDoc, getPerson, invalid, momentOf, notFound, requireCapture } from './lib/data'
+import { toConvexError, shown } from './lib/errors'
 import { soundsDistressed, words } from './lib/grounding'
 import {
   NOTHING_SAID_NOTE,
@@ -43,12 +44,22 @@ async function sessionContext(ctx: QueryCtx | MutationCtx, sessionId: string) {
   return { session: s, capture, moment, ground: groundingContext(moment, attendeesOf(capture), s.person.preferredAddress) }
 }
 
+/**
+ * The person's line goes where it was said: a narration saved while Claude was answering them
+ * comes after it, so scoring's "said before" stays true to what happened.
+ */
+function inOrder(turns: Doc<'sessions'>['turns'], turn: Doc<'sessions'>['turns'][number]) {
+  let at = turns.length
+  while (at > 0 && turns[at - 1].t > turn.t) at--
+  return [...turns.slice(0, at), turn, ...turns.slice(at)]
+}
+
 function summaryOf(s: Doc<'sessions'>) {
   return { scores: s.scores ?? [], branches: s.branches, note: s.note ?? '', alerts: s.alerts }
 }
 
 function publicFields(s: Doc<'sessions'>) {
-  const { _id, _creationTime, ...rest } = s
+  const { _id, _creationTime, endingAt, ...rest } = s
   return rest
 }
 
@@ -94,7 +105,7 @@ export const narrationInput = internalQuery({
   args: { sessionId: v.string(), chapterIndex: v.union(v.number(), v.null()) },
   handler: async (ctx, { sessionId, chapterIndex }) => {
     const { session: s, moment, ground } = await sessionContext(ctx, sessionId)
-    if (s.endedAt) throw conflict('This session has ended.')
+    if (s.endedAt || s.endingAt !== undefined) throw conflict('This session has ended.')
     const chapter = chapterIndex !== null && Number.isInteger(chapterIndex) ? moment.chapters[chapterIndex] : null
     if (chapterIndex !== null && Number.isInteger(chapterIndex) && !chapter) throw invalid(`This moment has no chapter ${chapterIndex}.`)
     return { address: s.person.preferredAddress, allowed: [...ground.allowed.values()], chapter: chapter ?? null, said: s.said }
@@ -106,7 +117,7 @@ export const commitNarration = internalMutation({
   returns: reply,
   handler: async (ctx, { sessionId, chapterIndex, sentences }) => {
     const { session: s, ground } = await sessionContext(ctx, sessionId)
-    if (s.endedAt) throw conflict('This session has ended.')
+    if (s.endedAt || s.endingAt !== undefined) throw conflict('This session has ended.')
     const grounded = finalReply(sentences, ground)
     const t = new Date().toISOString()
     await ctx.db.patch(s._id, {
@@ -132,7 +143,7 @@ export const narrate = action({
   handler: async (ctx, { sessionId, chapterIndex }): Promise<{ reply: Reply }> => {
     const input = await ctx.runQuery(internal.sessions.narrationInput, { sessionId, chapterIndex })
     const allowed = new Map(input.allowed.map((f) => [f.id, f]))
-    const { data } = await claudeFromEnv().json(narrationRequest({ models: claudeConfig().models, address: input.address, allowed, chapter: input.chapter, said: input.said }))
+    const { data } = await shown(() => claudeFromEnv().json(narrationRequest({ models: claudeConfig().models, address: input.address, allowed, chapter: input.chapter, said: input.said })))
     const grounded = await ctx.runMutation(internal.sessions.commitNarration, {
       sessionId,
       chapterIndex: input.chapter ? chapterIndex : null,
@@ -148,7 +159,7 @@ export const turnInput = internalQuery({
   args: { sessionId: v.string() },
   handler: async (ctx, { sessionId }) => {
     const { session: s, ground } = await sessionContext(ctx, sessionId)
-    if (s.endedAt) throw conflict('This session has ended.')
+    if (s.endedAt || s.endingAt !== undefined) throw conflict('This session has ended.')
     return { address: s.person.preferredAddress, allowed: [...ground.allowed.values()], history: s.turns.slice(-16) }
   },
 })
@@ -166,7 +177,7 @@ export const commitTurn = internalMutation({
   returns: v.object({ reply: reply, branch: v.union(v.string(), v.null()), distress: v.boolean() }),
   handler: async (ctx, args) => {
     const { session: s, ground } = await sessionContext(ctx, args.sessionId)
-    if (s.endedAt) throw conflict('This session has ended.')
+    if (s.endedAt || s.endingAt !== undefined) throw conflict('This session has ended.')
     const flagged = soundsDistressed(args.text)
     const distress = flagged || args.distress
     const cleanedFocus = cleanFocus(args.focus, ground.allowed)
@@ -176,8 +187,7 @@ export const commitTurn = internalMutation({
       said: addSaid(s.said, grounded),
       dropped: [...s.dropped, ...grounded.dropped.map((d) => ({ t, ...d }))],
       turns: [
-        ...s.turns,
-        { t: args.saidAt, speaker: 'patient' as const, text: args.text, ...(cleanedFocus ? { focus: cleanedFocus } : {}) },
+        ...inOrder(s.turns, { t: args.saidAt, speaker: 'patient' as const, text: args.text, ...(cleanedFocus ? { focus: cleanedFocus } : {}) }),
         { t, speaker: 'claude' as const, text: replyText(grounded), kind: 'reply' as const, factIds: grounded.sentences.flatMap((x) => x.factIds) },
       ],
       branches: args.branch ? [...s.branches, { t, quote: args.branch, note: '' }] : s.branches,
@@ -199,7 +209,7 @@ export const turn = action({
     const input = await ctx.runQuery(internal.sessions.turnInput, { sessionId })
     const allowed = new Map(input.allowed.map((f) => [f.id, f]))
     const cleanedFocus = cleanFocus(rawFocus, allowed)
-    const { data } = await claudeFromEnv().json(turnRequest({ models: claudeConfig().models, address: input.address, allowed, history: input.history, latest: said, focus: cleanedFocus }))
+    const { data } = await shown(() => claudeFromEnv().json(turnRequest({ models: claudeConfig().models, address: input.address, allowed, history: input.history, latest: said, focus: cleanedFocus })))
     const r = readReply(data)
     return ctx.runMutation(internal.sessions.commitTurn, {
       sessionId,
@@ -215,15 +225,40 @@ export const turn = action({
 
 // ---- end and scoring ----------------------------------------------------------------------
 
-export const endInput = internalQuery({
+/** How long an `end` may hold the session while scoring before another `end` may take over. */
+const ENDING_MS = 5 * 60_000
+
+/** Claims the session for scoring (or says it's ended, or being ended by another call). */
+export const beginEnd = internalMutation({
   args: { sessionId: v.string() },
   handler: async (ctx, { sessionId }) => {
     const s = await loadSession(ctx, sessionId)
-    if (s.endedAt) return { ended: true as const, summary: summaryOf(s) }
+    if (s.endedAt) return { state: 'ended' as const, summary: summaryOf(s) }
+    const now = Date.now()
+    if (s.endingAt !== undefined && now - s.endingAt < ENDING_MS) return { state: 'ending' as const }
+    await ctx.db.patch(s._id, { endingAt: now })
     const moment = momentOf(await getMomentDoc(ctx, s.captureId))
-    if (!moment) throw conflict('This capture has no facts any more.')
-    const allowedIds = s.allowedFactIds.filter((id) => moment.facts.some((f) => f.id === id))
-    return { ended: false as const, moment, allowedIds, turns: s.turns }
+    const allowedIds = moment ? s.allowedFactIds.filter((id) => moment.facts.some((f) => f.id === id)) : []
+    return { state: 'scoring' as const, moment, allowedIds, turns: s.turns }
+  },
+})
+
+/** Scoring failed: let the next `end` try again. */
+export const abandonEnd = internalMutation({
+  args: { sessionId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { sessionId }) => {
+    const s = await loadSession(ctx, sessionId)
+    if (!s.endedAt) await ctx.db.patch(s._id, { endingAt: undefined })
+    return null
+  },
+})
+
+export const summary = internalQuery({
+  args: { sessionId: v.string() },
+  handler: async (ctx, { sessionId }) => {
+    const s = await loadSession(ctx, sessionId)
+    return s.endedAt ? summaryOf(s) : s.endingAt !== undefined ? 'ending' : null
   },
 })
 
@@ -247,28 +282,46 @@ export const commitEnd = internalMutation({
       note: args.note,
       branches: mergeBranches(s.branches, args.branches, args.endedAt),
     }
-    await ctx.db.patch(s._id, next)
+    await ctx.db.patch(s._id, { ...next, endingAt: undefined })
     return summaryOf({ ...s, ...next })
   },
 })
 
-/** Runs scoring once; calling it again returns the same result. */
+export const NO_FACTS_NOTE = "The moment's facts were removed, so this session wasn't scored."
+
+/** Runs scoring once; calling it again (even while the first call is scoring) returns the same result. */
 export const end = action({
   args: { sessionId: v.string(), reason: endReason },
   returns: endSummary,
   handler: async (ctx, { sessionId, reason }): Promise<Infer<typeof endSummary>> => {
-    const input = await ctx.runQuery(internal.sessions.endInput, { sessionId })
-    if (input.ended) return input.summary
-    const endedAt = new Date().toISOString()
-    const { lines, patientLines } = scoringLines(input.turns)
-    let scored: ReturnType<typeof applyScores>
-    if (patientLines.size === 0) {
-      scored = { scores: input.allowedIds.map((factId) => ({ factId, result: 'not_mentioned' as const })), branches: [], note: NOTHING_SAID_NOTE }
-    } else {
-      const { data } = await claudeFromEnv().json(scoringRequest(claudeConfig().models, input.moment, input.allowedIds, lines))
-      scored = applyScores(data, input.allowedIds, input.turns, patientLines)
+    const input = await ctx.runMutation(internal.sessions.beginEnd, { sessionId })
+    if (input.state === 'ended') return input.summary
+    if (input.state === 'ending') {
+      for (let i = 0; i < 90; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+        const done = await ctx.runQuery(internal.sessions.summary, { sessionId })
+        if (done === null) break
+        if (done !== 'ending') return done
+      }
+      throw conflict('This session is still being scored. Try again in a minute.')
     }
-    return ctx.runMutation(internal.sessions.commitEnd, { sessionId, endedAt, reason, ...scored })
+    const endedAt = new Date().toISOString()
+    try {
+      const { lines, patientLines } = scoringLines(input.turns)
+      let scored: ReturnType<typeof applyScores>
+      if (!input.moment) {
+        scored = { scores: [], branches: [], note: NO_FACTS_NOTE }
+      } else if (patientLines.size === 0) {
+        scored = { scores: input.allowedIds.map((factId) => ({ factId, result: 'not_mentioned' as const })), branches: [], note: NOTHING_SAID_NOTE }
+      } else {
+        const { data } = await claudeFromEnv().json(scoringRequest(claudeConfig().models, input.moment, input.allowedIds, lines))
+        scored = applyScores(data, input.allowedIds, input.turns, patientLines)
+      }
+      return await ctx.runMutation(internal.sessions.commitEnd, { sessionId, endedAt, reason, ...scored })
+    } catch (error) {
+      await ctx.runMutation(internal.sessions.abandonEnd, { sessionId })
+      throw toConvexError(error)
+    }
   },
 })
 

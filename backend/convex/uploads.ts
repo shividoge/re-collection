@@ -16,8 +16,10 @@ import {
   putTarget,
   r2Config,
   stableGetUrl,
+  R2Error,
   type R2Config,
 } from './lib/r2'
+import { shown } from './lib/errors'
 import { afterFileRegistered, registerFile } from './lib/stages'
 import { isFileName, isSourceName, readDepthIndex } from './lib/validate'
 import { area, finishedPart, uploadTarget, type Area, type UploadTarget } from './validators'
@@ -106,7 +108,7 @@ export async function createTarget(ctx: ActionCtx, input: TargetInput): Promise<
   const cfg = r2Config()
   const now = Date.now()
   if (input.bytes <= SINGLE_MAX) {
-    const single = putTarget(cfg, input.key, { contentType: input.contentType, contentEncoding: input.contentEncoding, now })
+    const single = putTarget(cfg, input.key, { contentType: input.contentType, contentEncoding: input.contentEncoding, contentLength: input.bytes, now })
     const uploadId = await ctx.runMutation(internal.uploads.open, input)
     return { uploadId, key: input.key, single }
   }
@@ -128,7 +130,7 @@ export async function resumeTarget(upload: Doc<'uploads'>): Promise<{ target: Up
   const cfg = r2Config()
   const now = Date.now()
   if (!upload.r2UploadId) {
-    const single = putTarget(cfg, upload.key, { contentType: upload.contentType, contentEncoding: upload.contentEncoding, now })
+    const single = putTarget(cfg, upload.key, { contentType: upload.contentType, contentEncoding: upload.contentEncoding, contentLength: upload.bytes, now })
     return { target: { uploadId: upload._id, key: upload.key, single }, done: [] }
   }
   const have = await listParts(cfg, upload.key, upload.r2UploadId)
@@ -147,8 +149,13 @@ export async function finishUpload(ctx: ActionCtx, upload: Doc<'uploads'>, parts
   if (upload.status !== 'open') throw invalid('This upload is already finished.')
   const cfg = r2Config()
   if (upload.r2UploadId) {
-    const list = parts ?? (await listParts(cfg, upload.key, upload.r2UploadId)).map(({ partNumber, etag }) => ({ partNumber, etag }))
-    await completeMultipart(cfg, upload.key, upload.r2UploadId, list)
+    try {
+      const list = parts ?? (await listParts(cfg, upload.key, upload.r2UploadId)).map(({ partNumber, etag }) => ({ partNumber, etag }))
+      await completeMultipart(cfg, upload.key, upload.r2UploadId, list)
+    } catch (error) {
+      // Completed by an earlier finish that failed afterwards: the size check below decides.
+      if (!(error instanceof R2Error && error.code === 'NoSuchUpload')) throw error
+    }
   }
   const head = await headObject(cfg, upload.key)
   if (!head) throw invalid(`${upload.name} didn't arrive in storage. Upload it again.`)
@@ -167,7 +174,13 @@ export async function finishUpload(ctx: ActionCtx, upload: Doc<'uploads'>, parts
     extra.manifestJson = text
   }
   if (upload.area === 'raw' && upload.name === 'depth.index.json') {
-    const index = readDepthIndex(JSON.parse(await fetchText(cfg, upload.key)) as unknown)
+    let json: unknown
+    try {
+      json = JSON.parse(await fetchText(cfg, upload.key))
+    } catch {
+      throw invalid("depth.index.json isn't valid JSON.")
+    }
+    const index = readDepthIndex(json)
     if ('error' in index) throw invalid(index.error)
     extra.indexedBytes = index.bytes
     extra.indexedCount = index.count
@@ -196,7 +209,7 @@ export const start = action({
   returns: uploadTarget,
   handler: async (ctx, args): Promise<UploadTarget> => {
     const where = await ctx.runQuery(internal.uploads.prepare, { captureId: args.captureId, name: args.name, bytes: args.bytes })
-    return createTarget(ctx, { ...where, name: args.name, bytes: args.bytes, contentType: args.contentType || 'application/octet-stream' })
+    return shown(() => createTarget(ctx, { ...where, name: args.name, bytes: args.bytes, contentType: args.contentType || 'application/octet-stream' }))
   },
 })
 
@@ -204,7 +217,7 @@ export const start = action({
 export const resume = action({
   args: { uploadId: v.string() },
   returns: v.object({ target: uploadTarget, done: v.array(finishedPart) }),
-  handler: async (ctx, { uploadId }): Promise<{ target: UploadTarget; done: { partNumber: number; etag: string }[] }> => resumeTarget(await loadUpload(ctx, uploadId)),
+  handler: async (ctx, { uploadId }): Promise<{ target: UploadTarget; done: { partNumber: number; etag: string }[] }> => shown(async () => resumeTarget(await loadUpload(ctx, uploadId))),
 })
 
 /** Completes the upload, checks the stored size, registers the file (→ stage triggers). */
@@ -214,6 +227,6 @@ export const finish = action({
   handler: async (ctx, { uploadId, parts }): Promise<{ ok: true; bytes: number }> => {
     const upload = await loadUpload(ctx, uploadId)
     if (upload.jobId) throw invalid('This upload belongs to a worker job; finish it with worker.finishOutput.')
-    return { ok: true as const, bytes: await finishUpload(ctx, upload, parts) }
+    return { ok: true as const, bytes: await shown(() => finishUpload(ctx, upload, parts)) }
   },
 })

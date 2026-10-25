@@ -2,7 +2,7 @@
 // "sessions through the API"), plus progress and the race the transactional grounding closes.
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { moment } from './lib/grounding.fixture'
-import { CAPTURE_ID, api, claude, putMoment, setup, tinyCapture, type T } from './test.helpers'
+import { CAPTURE_ID, api, claude, internal, putMoment, setup, tinyCapture, type T } from './test.helpers'
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -138,6 +138,63 @@ describe('sessions', () => {
     const turn = await t.action(api.sessions.turn, { sessionId, text: 'Tell me about it.' })
     expect(turn.reply.sentences.map((s) => s.sentence)).toEqual(["I'm right here with you."])
     expect(turn.reply.dropped[0].reason).toMatch(/don't bring this up/)
+  })
+
+  test('a turn that lands while the session is being scored is refused, not lost silently', async () => {
+    const { sessionId } = await t.mutation(api.sessions.start, { captureId: CAPTURE_ID })
+    claude.next = () => ({ sentences: [{ sentence: 'Priya brought the mango cake.', factIds: ['f1'], free: false }], branch: null, distress: false })
+    claude.during = async () => {
+      claude.during = null
+      await t.mutation(internal.sessions.beginEnd, { sessionId })
+    }
+    await expect(t.action(api.sessions.turn, { sessionId, text: 'The cake!' })).rejects.toThrow(/has ended/)
+  })
+
+  test('a second end while the first is scoring waits for the same result', async () => {
+    const { sessionId } = await t.mutation(api.sessions.start, { captureId: CAPTURE_ID })
+    claude.next = () => ({ sentences: [{ sentence: "It's lovely to talk with you.", factIds: [], free: true }], branch: null, distress: false })
+    await t.action(api.sessions.turn, { sessionId, text: 'Hello there.' })
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    claude.next = () => ({ scores: [], branches: [], note: 'Scored once.' })
+    claude.during = () => gate
+    const first = t.action(api.sessions.end, { sessionId, reason: 'complete' })
+    await new Promise((r) => setTimeout(r, 50))
+    const second = t.action(api.sessions.end, { sessionId, reason: 'caregiver' })
+    await new Promise((r) => setTimeout(r, 50))
+    release()
+    const [a, b] = await Promise.all([first, second])
+    expect(a.note).toBe('Scored once.')
+    expect(b).toEqual(a)
+    expect(claude.calls.filter((c) => c.model === 'opus').length).toBe(1)
+    expect((await t.query(api.sessions.get, { sessionId }))?.endReason).toBe('complete')
+  }, 15_000)
+
+  test("the person's line stays before a narration saved while Claude answered them", async () => {
+    const { sessionId } = await t.mutation(api.sessions.start, { captureId: CAPTURE_ID })
+    claude.next = (r) => (r.schema === undefined ? {} : { sentences: [{ sentence: 'Priya brought the mango cake.', factIds: ['f1'], free: false }], branch: null, distress: false })
+    claude.during = async () => {
+      claude.during = null
+      await new Promise((r) => setTimeout(r, 5))
+      await t.action(api.sessions.narrate, { sessionId, chapterIndex: 0 })
+    }
+    await t.action(api.sessions.turn, { sessionId, text: 'Was there a mango cake?' })
+    const turns = (await t.query(api.sessions.get, { sessionId }))?.turns ?? []
+    expect(turns.map((x) => x.kind ?? x.speaker)).toEqual(['welcome', 'patient', 'narration', 'reply'])
+  })
+
+  test('scoring failure leaves the session open so end can be tried again', async () => {
+    const { sessionId } = await t.mutation(api.sessions.start, { captureId: CAPTURE_ID })
+    claude.next = () => ({ sentences: [{ sentence: "It's lovely to talk with you.", factIds: [], free: true }], branch: null, distress: false })
+    await t.action(api.sessions.turn, { sessionId, text: 'Hello there.' })
+    const { ClaudeError } = await import('./lib/claude')
+    claude.next = () => {
+      throw new ClaudeError('Claude is rate-limited right now. Try again in a minute.', true)
+    }
+    const error = await t.action(api.sessions.end, { sessionId, reason: 'complete' }).catch((e: unknown) => e)
+    expect((error as { data?: { code: string; message: string } }).data).toMatchObject({ code: 'claude', message: expect.stringMatching(/rate-limited/) })
+    claude.next = () => ({ scores: [], branches: [], note: 'Second try.' })
+    expect((await t.action(api.sessions.end, { sessionId, reason: 'complete' })).note).toBe('Second try.')
   })
 
   test('a session needs approved facts, and bad requests say why', async () => {

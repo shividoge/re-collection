@@ -122,12 +122,13 @@ export function reviewedFacts(facts: readonly Fact[] | undefined): Fact[] {
 
 /**
  * New extraction merged with the family's review: facts they already reviewed are kept as they
- * are; pending ones are replaced. New facts get ids after the highest reviewed one. Run inside a
+ * are; pending ones are replaced. New facts get ids after the highest id used so far, so an id
+ * never names two different facts (old scores and review clicks keep pointing at the right one). Run inside a
  * mutation against the moment as it is *now*, so review made during the Claude call survives.
  */
 export function mergeFacts(previous: readonly Fact[] | undefined, fresh: readonly FreshFact[]): Fact[] {
   const reviewed = reviewedFacts(previous)
-  let next = Math.max(0, ...reviewed.map((f) => Number(f.id.replace(/^f/, '')) || 0)) + 1
+  let next = Math.max(0, ...(previous ?? []).map((f) => Number(f.id.replace(/^f/, '')) || 0)) + 1
   const added = fresh.map((f): Fact => ({ id: `f${next++}`, ...f, status: 'pending', editedText: null, doNotRaise: false }))
   return [...reviewed, ...added]
 }

@@ -20,7 +20,7 @@ describe('uploads and stage triggers', () => {
     await t.mutation(api.captures.begin, { manifestJson: capture.manifestJson })
     const target = await t.action(api.uploads.start, { captureId: CAPTURE_ID, name: 'thumb.jpg', bytes: 4, contentType: 'image/jpeg' })
     expect(target.key).toBe(`captures/${CAPTURE_ID}/raw/thumb.jpg`)
-    expect(target.single?.headers).toEqual({ 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=31536000, immutable' })
+    expect(target.single?.headers).toEqual({ 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=31536000, immutable', 'Content-Length': '4' })
     await fetch(target.single!.url, { method: 'PUT', headers: target.single!.headers, body: capture.files['thumb.jpg'] })
     expect(await t.action(api.uploads.finish, { uploadId: target.uploadId })).toEqual({ ok: true, bytes: 4 })
     const detail = await t.query(api.captures.get, { captureId: CAPTURE_ID })
@@ -114,6 +114,27 @@ describe('uploads and stage triggers', () => {
     expect(intro.type === 'text' && intro.text).toMatch(/Transcript: none/)
     expect(claude.calls[0].content.some((b) => b.type === 'text' && b.text === 'thumb.jpg (t = 2 s)')).toBe(true)
     expect((await statusOf(t))?.facts).toBe('done')
+  })
+
+  test('a rate limit is retried after a pause instead of failing at once', async () => {
+    const t = setup()
+    const { ClaudeError } = await import('./lib/claude')
+    let calls = 0
+    claude.next = () => {
+      calls += 1
+      if (calls === 1) throw new ClaudeError('Claude is rate-limited right now. Try again in a minute.', true)
+      return goodReply
+    }
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    await uploadCapture(t, tinyCapture())
+    vi.runOnlyPendingTimers() // start the first run only
+    await t.finishInProgressScheduledFunctions()
+    expect(calls).toBe(1)
+    expect((await statusOf(t))?.facts).toBe('queued') // waiting out the back-off, not "running"
+    await t.finishAllScheduledFunctions(() => vi.runAllTimers())
+    vi.useRealTimers()
+    expect((await statusOf(t))?.facts).toBe('done')
+    expect(calls).toBe(2)
   })
 
   test('a Claude failure shows up in the status, in words', async () => {

@@ -37,3 +37,15 @@ export const importSession = mutation({
     return { ok: true as const, replaced: existing !== null }
   },
 })
+
+/** Removes a worker from the online list (a retired machine, or a test worker). */
+export const forgetWorker = mutation({
+  args: { token: v.string(), workerId: v.string() },
+  returns: v.object({ ok: v.literal(true), removed: v.boolean() }),
+  handler: async (ctx, { token, workerId }) => {
+    requireToken(token)
+    const row = await ctx.db.query('workers').withIndex('by_workerId', (q) => q.eq('workerId', workerId)).unique()
+    if (row) await ctx.db.delete(row._id)
+    return { ok: true as const, removed: row !== null }
+  },
+})

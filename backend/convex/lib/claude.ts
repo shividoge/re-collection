@@ -27,6 +27,9 @@ export type JsonRequest = {
   schema: JsonSchema
   effort?: Effort
   maxTokens?: number
+  /** Per attempt. The defaults keep a facts call inside Convex's 10-minute action limit. */
+  timeoutMs?: number
+  maxRetries?: number
   /** Canned output for MOCK_CLAUDE=1. */
   mock: () => unknown
 }
@@ -61,7 +64,7 @@ export function createClaude(config: ClaudeConfig, deps: { client?: Anthropic } 
 
   return {
     mock: false,
-    async json({ model, system, content, schema, effort = 'high', maxTokens = 64000 }) {
+    async json({ model, system, content, schema, effort = 'high', maxTokens = 64000, timeoutMs = 7 * 60_000, maxRetries = 0 }) {
       if (!anthropic) {
         throw new ClaudeError("ANTHROPIC_API_KEY isn't set in the Convex deployment, so Claude steps can't run. Set it with `bunx convex env set ANTHROPIC_API_KEY ...`.")
       }
@@ -76,7 +79,7 @@ export function createClaude(config: ClaudeConfig, deps: { client?: Anthropic } 
           output_config: { effort, format: { type: 'json_schema', schema } },
           betas: ['server-side-fallback-2026-07-01'],
           fallbacks: 'default',
-        })
+        }, { timeout: timeoutMs, maxRetries })
         message = await stream.finalMessage()
       } catch (error) {
         throw describeApiError(error)
@@ -103,6 +106,7 @@ function describeApiError(error: unknown): ClaudeError {
   if (error instanceof Anthropic.PermissionDeniedError) return new ClaudeError("This API key isn't allowed to use that model.")
   if (error instanceof Anthropic.RateLimitError) return new ClaudeError('Claude is rate-limited right now. Try again in a minute.', true)
   if (error instanceof Anthropic.BadRequestError) return new ClaudeError(`Claude rejected the request: ${error.message}`)
+  if (error instanceof Anthropic.APIConnectionTimeoutError) return new ClaudeError('Claude took too long to answer. Try again.', true)
   if (error instanceof Anthropic.APIConnectionError) return new ClaudeError("Can't reach the Anthropic API. Check the internet connection.", true)
   if (error instanceof Anthropic.APIError) {
     const status = typeof error.status === 'number' ? error.status : 0

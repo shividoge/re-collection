@@ -71,7 +71,12 @@ export async function completeUpload(ctx: MutationCtx, capture: Doc<'captures'>)
   }
   await patchStatus(ctx, capture, { upload: 'done', uploadErrors: [], warnings: check.warnings })
   await maybeQueueFacts(ctx, capture, true)
-  // A fresh upload is baked again even if an earlier bake finished.
-  if (!(await activeJob(ctx, capture.captureId, 'bake'))) await enqueue(ctx, (await ctx.db.get(capture._id)) ?? capture, 'bake', { gpu: false })
+  // A fresh upload is baked again, even if an earlier bake finished. A bake still running read the
+  // old inputs: it's superseded (its next heartbeat says cancelled) and a new one is queued.
+  const running = await activeJob(ctx, capture.captureId, 'bake')
+  if (running?.status === 'leased') {
+    await ctx.db.patch(running._id, { status: 'failed', error: 'A newer upload replaced its inputs.', leaseUntil: null, updatedAt: Date.now() })
+  }
+  if (running?.status !== 'queued') await enqueue(ctx, (await ctx.db.get(capture._id)) ?? capture, 'bake', { gpu: false })
   return check
 }

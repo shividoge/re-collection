@@ -134,6 +134,35 @@ describe('worker protocol', () => {
     expect(await statusOf(t)).toMatchObject({ bake: 'failed', errors: { bake: 'frames.jsonl has 2 moment lines, expected 3.' } })
   })
 
+  test('a worker whose lease was taken over can no longer heartbeat, fail or complete the job', async () => {
+    const t = await completedCapture()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const stale = await t.mutation(api.worker.claim, cpu)
+    vi.setSystemTime(Date.now() + 121_000)
+    await t.mutation(internal.jobsCron.reap, {})
+    const fresh = await t.mutation(api.worker.claim, gx10)
+    expect(fresh).toMatchObject({ jobId: stale!.jobId, attempt: 2 })
+    expect(await t.mutation(api.worker.heartbeat, { token: TOKEN, jobId: stale!.jobId, attempt: 1 })).toEqual({ ok: false, cancelled: true })
+    await t.mutation(api.worker.fail, { token: TOKEN, jobId: stale!.jobId, error: 'stale', retryable: false, attempt: 1 })
+    expect((await jobRow(t, stale!.jobId))?.status).toBe('leased')
+    const derivedMeta = { format: 'braindance.derived' as const, version: 1, captureId: CAPTURE_ID, bakedAt: 'x', bakeVersion: 'x', files: { points: 'p.pack' }, stats: { points: 1, bakeMs: 1 } }
+    await t.mutation(api.worker.complete, { token: TOKEN, jobId: stale!.jobId, result: { kind: 'bake', derived: derivedMeta }, attempt: 1 })
+    expect((await t.query(api.captures.get, { captureId: CAPTURE_ID }))?.derived).toBeNull()
+    expect(await t.mutation(api.worker.heartbeat, { token: TOKEN, jobId: fresh!.jobId, attempt: 2 })).toEqual({ ok: true, cancelled: false })
+  })
+
+  test('a new upload completion supersedes a running bake', async () => {
+    const t = await completedCapture()
+    const old = await t.mutation(api.worker.claim, cpu)
+    await t.action(api.captures.complete, { captureId: CAPTURE_ID })
+    expect(await t.mutation(api.worker.heartbeat, { token: TOKEN, jobId: old!.jobId })).toEqual({ ok: false, cancelled: true })
+    const derivedMeta = { format: 'braindance.derived' as const, version: 1, captureId: CAPTURE_ID, bakedAt: 'x', bakeVersion: 'x', files: { points: 'p.pack' }, stats: { points: 1, bakeMs: 1 } }
+    await t.mutation(api.worker.complete, { token: TOKEN, jobId: old!.jobId, result: { kind: 'bake', derived: derivedMeta } })
+    expect(await statusOf(t)).toMatchObject({ bake: 'queued' })
+    const next = await t.mutation(api.worker.claim, cpu)
+    expect(next?.jobId).not.toBe(old!.jobId)
+  })
+
   test('a deleted capture cancels its running job', async () => {
     const t = await completedCapture()
     const job = await t.mutation(api.worker.claim, cpu)

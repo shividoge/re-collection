@@ -9,9 +9,9 @@ import { internalAction, internalMutation, internalQuery } from './_generated/se
 import { ClaudeError, claudeConfig, claudeFromEnv } from './lib/claude'
 import { getCapture, getMomentDoc, listFiles } from './lib/data'
 import { chooseKeyframes, groundFacts, keyframeSecond, mergeFacts, mockFactsReply, momentHeader, parseSegments, reviewedFacts } from './lib/facts'
-import { markDone, markFailed } from './lib/jobs'
+import { dispatchFacts, markDone, markFailed } from './lib/jobs'
 import { FACTS_SCHEMA, FACTS_SYSTEM, factsContent, type FrameInput, type Segment } from './lib/prompts'
-import { r2Config, stableGetUrl, type R2Config } from './lib/r2'
+import { R2Error, r2Config, stableGetUrl, type R2Config } from './lib/r2'
 import { fact, momentFields } from './validators'
 
 const freshFact = v.object({ text: fact.fields.text, kind: fact.fields.kind, salience: fact.fields.salience, evidence: fact.fields.evidence, cue: fact.fields.cue })
@@ -78,7 +78,8 @@ export const run = internalAction({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error(`facts ${input.captureId}: ${message}`)
-      await ctx.runMutation(internal.factsJob.fail, { jobId, error: message, retryable: error instanceof ClaudeError && error.retryable })
+      const retryable = (error instanceof ClaudeError || error instanceof R2Error) ? error.retryable : error instanceof TypeError // fetch's network failure
+      await ctx.runMutation(internal.factsJob.fail, { jobId, error: message, retryable })
     }
     return null
   },
@@ -110,6 +111,16 @@ export const finish = internalMutation({
   },
 })
 
+/** A retry after its back-off: lease the job to Convex again and run it. */
+export const dispatch = internalMutation({
+  args: { jobId: v.id('jobs') },
+  returns: v.null(),
+  handler: async (ctx, { jobId }) => {
+    await dispatchFacts(ctx, jobId)
+    return null
+  },
+})
+
 export const fail = internalMutation({
   args: { jobId: v.id('jobs'), error: v.string(), retryable: v.boolean() },
   returns: v.null(),
@@ -122,7 +133,7 @@ export const fail = internalMutation({
 
 async function fetchBytes(cfg: R2Config, key: string, rev: number): Promise<Uint8Array> {
   const res = await fetch(stableGetUrl(cfg, key, rev, Date.now()))
-  if (!res.ok) throw new Error(`Couldn't read ${key} from storage (HTTP ${res.status}).`)
+  if (!res.ok) throw new R2Error(`Couldn't read ${key} from storage (HTTP ${res.status}).`, res.status, null)
   return new Uint8Array(await res.arrayBuffer())
 }
 
