@@ -334,6 +334,16 @@ Worker functions take `token` (env `WORKER_TOKEN` in Convex; workers read it fro
 - Routing: `convert` jobs set `needs.frames` from the video duration (the converter's own frame-count formula: `min(240, max(16, floor(durationSec × 10) + 1))`, `tools/video2capture/convert.py frames_needed`); `splat` jobs need no frames (training uses at most 240 views; a 30 s phone capture peaked at 9.5 GB on the 16 GB card). The Fedora worker advertises `maxFrames` ≈ 67 (16 GB), the GX10 ≈ 240. A job no live worker can take stays queued and the web says so ("Waiting for a GPU that can take a 31-second video. None is online right now."), checking each online worker with the scheduler's own rule (`canRun` in `shared/jobs.ts`) against the job's `needs` from `captures.list`/`get` `queued`.
 - The `workers` table records `{ workerId, kinds, gpu, maxFrames, lastSeen }` from claims/heartbeats so the web can show which workers are online.
 
+### Reviewed reconstruction selection
+
+An original capture may store `preferredReconstructionId`. `admin.preferReconstruction` takes
+`{ token, originalId, reconstructionId: string | null }` and requires the worker token. A non-null
+selection must be a completed, baked, non-empty package whose `reconstructionOf` equals the original
+ID. Null clears the preference. Family and public reads resolve this package ahead of density; if
+it is unavailable they use the existing densest-completed-package rule. Registration accepts
+smaller packages without making them the default. Facts, sessions and original files stay on the
+original memory.
+
 ## 8. Static site export
 
 `backend/scripts/export-static.ts` writes `.static-site/` for GitHub Pages from the public data: `data/captures.json`, `data/captures/<id>.json` (same shape as `public.capture`, with relative file URLs), `data/moments/<id>.json`, `data/progress/<id>.json`, `data/sessions/<id>.json`, `data/museum/arrangement.json`, and `data/files/<id>/...` holding the derived files (gzip removed, since Pages compresses), the video, keyframes, thumb, `frames.jsonl`, the depth v2 files and the splat. The web's static mode reads exactly these. **Every URL inside a `data/*.json` file is relative to that JSON file** (as in HTML), so the export works from any folder or sub-path: e.g. `../files/<id>/video.mp4` inside `data/captures/<id>.json`, and `files/<id>/thumb.jpg` for `thumbUrl` inside `data/captures.json`. `data/captures.json` has the shape of `public.captures`; a missing moment, progress or session file means none (the web treats a 404 as null).

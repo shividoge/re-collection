@@ -24,11 +24,31 @@ export const registerReconstruction = mutation({
     }
     const a = manifestOf(original)
     const b = manifestOf(scene)
-    if (!a || !b || (b.room?.points ?? 0) <= (a.room?.points ?? 0)) throw invalid('The reconstruction must contain more room points than the original.')
+    if (!a || !b || (b.room?.points ?? 0) <= 0) throw invalid('The reconstruction must contain room points.')
     if (Math.abs(original.durationSec - scene.durationSec) > Math.max(1, original.durationSec * 0.05)) throw invalid('The reconstruction must cover the same recording.')
     if (await activeJob(ctx, scene.captureId, 'facts')) throw invalid('Wait for this reconstruction\'s fact job to finish before linking it.')
     await ctx.db.patch(scene._id, { reconstructionOf: original.captureId, public: false })
     if (scene.status.facts === 'not_started') await patchStatus(ctx, scene, { facts: 'skipped' })
+    return { ok: true as const }
+  },
+})
+
+/** Select only a completed linked scene after visual review; null restores density selection. */
+export const preferReconstruction = mutation({
+  args: { token: v.string(), originalId: v.string(), reconstructionId: v.union(v.string(), v.null()) },
+  returns: v.object({ ok: v.literal(true) }),
+  handler: async (ctx, { token, originalId, reconstructionId }) => {
+    requireToken(token)
+    const original = await requireCapture(ctx, originalId)
+    if (original.reconstructionOf) throw invalid('Select a reconstruction on the original memory.')
+    if (reconstructionId !== null) {
+      const scene = await requireCapture(ctx, reconstructionId)
+      if (scene.reconstructionOf !== originalId) throw invalid('This scene is not linked to that memory.')
+      if (scene.status.upload !== 'done' || scene.status.bake !== 'done' || !scene.derived || scene.derived.stats.points <= 0) {
+        throw invalid('Wait for a non-empty completed reconstruction before selecting it.')
+      }
+    }
+    await ctx.db.patch(original._id, { preferredReconstructionId: reconstructionId ?? undefined })
     return { ok: true as const }
   },
 })

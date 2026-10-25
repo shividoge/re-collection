@@ -43,4 +43,4 @@ for (const [i, file] of plan.entries()) {
   console.log(`${i + 1}/${plan.length}: ${file.name}`)
 }
 if (plan.length || stored?.status.upload !== 'done') await client.action(api.captures.complete, { captureId: manifest.id })
-console.log(`${originalId}: linked ${manifest.id} (${manifest.room?.points.toLocaleString()} points); selected automatically once baked`)
+console.log(`${originalId}: linked ${manifest.id} (${manifest.room?.points.toLocaleString()} points); density selection applies once baked, unless an operator explicitly prefers a scene`)

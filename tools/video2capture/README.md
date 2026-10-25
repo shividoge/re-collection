@@ -260,3 +260,21 @@ smearing colour there. The people replay draws the people in those places.
 Known limits: away from the recorded path the splat gets thin and stretched where the camera
 barely looked, more so the less the camera moved. "Points (raw)" in the viewer shows exactly what
 was estimated. Splat files are 30–80 MB (PLY, SH degree 1): fine locally, slow over a tunnel.
+
+## Remove people from an existing reconstruction
+
+`python clean_static.py <capture> --out <new-folder> --cache <mask-cache.npz>` runs Mask R-CNN
+on every depth-indexed source frame, then projects the existing dense room into those views.
+Points need three unmasked color/depth agreements. Person evidence requires matching color
+and depth inside a mask, and repeated clear views of a surface can outweigh ambiguous intersections.
+Clear rays reaching farther surfaces reject floating geometry. This reuses the solved world and camera poses, including for long recordings. It
+only removes points; it cannot recover walls or furniture that the recording never exposed.
+
+The new package has a new UUID, retains the video, and writes null depth indices on its camera
+frames so existing viewers cannot replay people. The unvalidated original splat is omitted.
+`--exclude-regions recipes/family-kitchen.json` adds reviewed, depth-bounded exclusions for
+small residual sleeve/hand fragments in that recording. It refuses recipes for another source.
+`cleaning.json` records counts, settings and exclusions; the input remains untouched and
+the mask cache is reused. The adjacent `.votes.npz` is updated for the latest run. Import
+with `backend/scripts/import-reconstruction.ts`, inspect the actual viewer, then explicitly
+select it using `admin.preferReconstruction` if it improves the memory.

@@ -25,6 +25,7 @@ export async function preferredReconstruction(ctx: QueryCtx, capture: Doc<'captu
   let points = manifestOf(capture)?.room?.points ?? 0
   for (const candidate of candidates) {
     if (candidate.deleting || candidate.status.upload !== 'done' || candidate.status.bake !== 'done' || !candidate.derived) continue
+    if (candidate.captureId === capture.preferredReconstructionId) { best = candidate; break }
     const count = candidate.derived.stats.points
     if (count > points) { best = candidate; points = count }
   }

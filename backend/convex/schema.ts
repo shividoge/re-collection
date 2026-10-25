@@ -30,6 +30,8 @@ export default defineSchema({
     derived: v.union(derived, v.null()),
     /** Alternate scene package for this memory; excluded from memory lists. */
     reconstructionOf: v.optional(v.string()),
+    /** Operator-reviewed scene, even when cleaning reduced its point count. */
+    preferredReconstructionId: v.optional(v.string()),
     /**
      * Set when the capture is being deleted: everything ignores it from then on, and `begin` for
      * the same id is refused until the purge has deleted its objects and then this row.
