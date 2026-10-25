@@ -113,10 +113,10 @@ export function follow(s: RoomSync, followed: number, here: string | null): { ma
  * Memory Window opened from the museum, undefined anywhere else (nothing to follow there).
  */
 export function roomHere(hash: string): string | null | undefined {
-  if (/^#\/museum$/i.test(hash)) return null
+  if (/^#\/memories$/i.test(hash)) return null
   const window = /^#\/window\/([0-9a-f-]{36})\?from=museum$/i.exec(hash)
   return window ? window[1] : undefined
 }
 
 /** The address for a place on the iPad. */
-export const roomHash = (window: string | null): string => (window ? `#/window/${window}?from=museum` : '#/museum')
+export const roomHash = (window: string | null): string => (window ? `#/window/${window}?from=museum` : '#/memories')

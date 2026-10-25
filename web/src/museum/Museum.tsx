@@ -6,7 +6,7 @@ import { fileUrl, guide, type CaptureSummary } from '../api'
 import { roomHash } from './roomSync'
 import { HelperTogether, PatientTogether } from './Together'
 import { useMuseumRoom } from './useMuseumRoom'
-import './museum.css'
+import './frames.css'
 
 /** Meters between frames along the hall; frames alternate left and right walls. */
 const SPACING = 3.4
@@ -24,7 +24,7 @@ type Moment = CaptureSummary & { side: 1 | -1; z: number }
  * to get lost in: tap a frame and you're walked to it; tap it again, or "Step into this moment",
  * and it opens as a Memory Window you can look into. Made for a tablet in someone's lap.
  *
- * Visit together: the iPad can open a room; a helper who opens #/museum?join=CODE on their phone
+ * Visit together: the iPad can open a room; a helper who opens #/memories?join=CODE on their phone
  * walks with them. `join` is set only on the helper's phone.
  */
 export function Museum({ join }: { join?: string } = {}) {
@@ -75,9 +75,9 @@ export function Museum({ join }: { join?: string } = {}) {
     if (!helper) location.hash = roomHash(m.id)
   }
 
-  if (error) return <div className="museum-message">{error}</div>
-  if (!moments) return <div className="museum-message">Opening the museum…</div>
-  if (moments.length === 0) return <div className="museum-message">No moments yet. Film a visit with the app, or add an old video.</div>
+  if (error) return <div className="frames-message">{error}</div>
+  if (!moments) return <div className="frames-message">Opening the museum…</div>
+  if (moments.length === 0) return <div className="frames-message">No moments yet. Film a visit with the app, or add an old video.</div>
 
   const current = at >= 0 ? moments[at] : null
   const go = (i: number) => {
@@ -88,7 +88,7 @@ export function Museum({ join }: { join?: string } = {}) {
   const openTitle = room.state?.window ? (moments.find((m) => m.id === room.state?.window)?.title || 'A visit') : null
 
   return (
-    <div className="museum">
+    <div className="frames">
       <Canvas dpr={[1, 2]} camera={{ fov: 62, near: 0.05, far: 200, position: [0, EYE, 4] }} gl={{ antialias: true }}>
         <color attach="background" args={['#1b1512']} />
         <fog attach="fog" args={['#1b1512', 8, 26]} />
@@ -99,21 +99,21 @@ export function Museum({ join }: { join?: string } = {}) {
         <Walker moments={moments} at={at} />
       </Canvas>
 
-      <header className="museum-top">
-        <a className="museum-exit" href="#/captures">
+      <header className="frames-top">
+        <a className="frames-exit" href="#/captures">
           ← Family tools
         </a>
-        <div className="museum-title">
+        <div className="frames-title">
           <h1>Your memories</h1>
           <p>{current ? 'Tap the picture to step inside.' : 'Tap a picture, or press Next, to walk to it.'}</p>
         </div>
       </header>
 
-      <footer className="museum-bottom">
-        <button className="museum-nav" onClick={() => go(at - 1)} disabled={at < 0} aria-label="Previous moment">
+      <footer className="frames-bottom">
+        <button className="frames-nav" onClick={() => go(at - 1)} disabled={at < 0} aria-label="Previous moment">
           ← Previous
         </button>
-        <div className="museum-caption">
+        <div className="frames-caption">
           {current ? (
             <>
               <strong>{current.title || 'A visit'}</strong>
@@ -121,7 +121,7 @@ export function Museum({ join }: { join?: string } = {}) {
                 {current.createdAt ? new Date(current.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : ''}
                 {current.source === 'video' && <span className="estimated-badge">Estimated from a video</span>}
               </span>
-              <button className="museum-enter" onClick={() => enter(current)}>
+              <button className="frames-enter" onClick={() => enter(current)}>
                 Step into this moment
               </button>
             </>
@@ -129,7 +129,7 @@ export function Museum({ join }: { join?: string } = {}) {
             <strong>{moments.length} {moments.length === 1 ? 'moment' : 'moments'} to visit</strong>
           )}
         </div>
-        <button className="museum-nav" onClick={() => go(at + 1)} disabled={at >= moments.length - 1} aria-label="Next moment">
+        <button className="frames-nav" onClick={() => go(at + 1)} disabled={at >= moments.length - 1} aria-label="Next moment">
           Next →
         </button>
       </footer>
@@ -225,7 +225,7 @@ function Frame({ moment, index, active, onTap }: { moment: Moment; index: number
         {texture ? <meshBasicMaterial map={texture} toneMapped={false} /> : <meshStandardMaterial color="#3a3330" />}
       </mesh>
       <Html position={[0, -FRAME_H / 2 - 0.2, 0.05]} transform distanceFactor={1.6} occlude={false} pointerEvents="none">
-        <div className={`museum-plaque ${active ? 'on' : ''}`}>
+        <div className={`frames-plaque ${active ? 'on' : ''}`}>
           <strong>{moment.title || `Moment ${index + 1}`}</strong>
           <span>{moment.createdAt ? new Date(moment.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : ''}</span>
         </div>

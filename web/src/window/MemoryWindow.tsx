@@ -58,7 +58,7 @@ export function MemoryWindow({ id, from }: { id: string; from?: string }) {
   }
   if (!capture) return <div className="window-message">Opening the window…</div>
   if (!capture.cloud) return <div className="window-message">This visit has no room scan to look into.</div>
-  return <WindowStage id={id} capture={capture} back={from === 'museum' ? '#/museum' : `#/capture/${id}`} room={room} />
+  return <WindowStage id={id} capture={capture} back={from === 'museum' ? '#/memories' : `#/capture/${id}`} room={room} />
 }
 
 /** Drag distance, as a fraction of the screen's shorter side, for a full head movement. */
@@ -217,7 +217,7 @@ function WindowStage({ id, capture, back, room }: { id: string; capture: LoadedC
       <header className="window-top">
         {/* Tell the helper's phone too (the link then goes back as usual). */}
         <a href={back} className="window-exit" onClick={room.leave}>
-          {back === '#/museum' ? '← Back to the museum' : '← Back'}
+          {back === '#/memories' ? '← Back to the museum' : '← Back'}
         </a>
         <div className="window-title">
           {capture.label} <EstimatedBadge manifest={manifest} />

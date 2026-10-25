@@ -1,161 +1,273 @@
-/* Memory Museum: a calm hall for a tablet in someone's lap. Large type, large targets. */
+/* The museum's interface: warm, quiet, out of the way of the rooms (Relive's golden-hour
+   palette: plum night, amber to rose, cream). Big touch targets for a tablet. */
+
 .museum {
-  position: fixed;
-  inset: 0;
-  background: #1b1512;
-  color: #f6eee4;
-  font-family: ui-sans-serif, -apple-system, 'Segoe UI', system-ui, sans-serif;
-  touch-action: manipulation;
+  --m-ink: #f6eee4;
+  --m-muted: #c9b8ab;
+  --m-glass: rgba(26, 16, 22, 0.62);
+  --m-line: rgba(246, 238, 228, 0.16);
+  --m-accent: linear-gradient(90deg, #ffb35c, #ff7a8a);
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background: #140d14;
+  color: var(--m-ink);
+  font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+  touch-action: none;
+  user-select: none;
 }
 .museum canvas {
-  touch-action: none;
+  display: block;
+  cursor: grab;
 }
+.museum canvas:active {
+  cursor: grabbing;
+}
+
 .museum-message {
-  position: fixed;
-  inset: 0;
+  height: 100%;
   display: grid;
   place-items: center;
-  background: #1b1512;
-  color: #d9cbbb;
-  font-size: 22px;
-  padding: 24px;
-  text-align: center;
+  color: #c9b8ab;
+  background: #140d14;
+  font-family: 'Iowan Old Style', Palatino, Georgia, serif;
+  font-size: 20px;
 }
 
 .museum-top {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  top: 14px;
+  left: 14px;
+  right: 14px;
   display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  padding: 18px 20px;
-  background: linear-gradient(rgba(27, 21, 18, 0.85), rgba(27, 21, 18, 0));
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
   pointer-events: none;
 }
 .museum-top > * {
   pointer-events: auto;
 }
-.museum-title {
-  flex: 1;
-  text-align: center;
-  margin-right: 140px; /* keeps the title centred despite the link on the left */
-}
-.museum-title h1 {
-  margin: 0;
-  font-size: clamp(26px, 4vw, 36px);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-.museum-title p {
-  margin: 6px 0 0;
-  font-size: 18px;
-  color: #d9cbbb;
-}
-.museum-exit {
-  color: #d9cbbb;
+.museum-chip {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--m-glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--m-line);
+  color: var(--m-ink);
+  font: inherit;
   font-size: 14px;
   text-decoration: none;
-  padding: 8px 12px;
+  cursor: pointer;
+}
+.museum-chip.on {
+  border-color: transparent;
+  background: var(--m-accent);
+  color: #2a1418;
+  font-weight: 600;
+}
+.museum-styles {
+  display: flex;
+  gap: 6px;
+}
+.museum-select select {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  padding-right: 4px;
+  max-width: 46vw;
+  cursor: pointer;
+}
+.museum-select select option {
+  color: #140d14;
+}
+.museum-add {
+  margin-left: auto;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.museum-hint {
+  position: absolute;
+  left: 50%;
+  top: 70px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 8px 16px;
   border-radius: 999px;
-  border: 1px solid rgba(246, 238, 228, 0.18);
-  background: rgba(27, 21, 18, 0.6);
+  background: var(--m-glass);
+  color: var(--m-muted);
+  font-size: 13px;
   white-space: nowrap;
+  pointer-events: none;
+  animation: museum-fade 9s ease forwards;
+}
+@keyframes museum-fade {
+  0%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 .museum-bottom {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 20px;
-  background: linear-gradient(rgba(27, 21, 18, 0), rgba(27, 21, 18, 0.9));
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  width: min(720px, calc(100% - 28px));
+  display: grid;
+  grid-template-columns: 64px 1fr 64px;
+  gap: 10px;
+  align-items: end;
 }
-.museum-nav,
-.museum-enter {
-  font: inherit;
-  font-size: 20px;
-  border-radius: 999px;
-  padding: 16px 26px;
-  min-height: 60px;
+.museum-nav {
+  height: 64px;
+  border-radius: 50%;
+  border: 1px solid var(--m-line);
+  background: var(--m-glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--m-ink);
+  font-size: 26px;
   cursor: pointer;
-  border: 1px solid rgba(246, 238, 228, 0.25);
-  background: rgba(46, 36, 30, 0.85);
-  color: #f6eee4;
 }
 .museum-nav:disabled {
   opacity: 0.35;
   cursor: default;
 }
-.museum-enter {
-  background: #ff5c3a;
-  border-color: transparent;
-  color: #fff;
-  font-weight: 600;
-  margin-top: 6px;
-}
-.museum-nav:focus-visible,
-.museum-enter:focus-visible,
-.museum-exit:focus-visible {
-  outline: 3px solid #f6eee4;
-  outline-offset: 3px;
-}
 .museum-caption {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
+  padding: 14px 20px;
+  border-radius: 18px;
+  background: var(--m-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--m-line);
   text-align: center;
-  min-width: 0;
+  display: grid;
+  gap: 4px;
+  transition: transform 300ms ease, opacity 300ms ease;
+}
+.museum-caption-body {
+  display: grid;
+  gap: 4px;
+  animation: museum-caption-in 450ms ease both;
+}
+@keyframes museum-caption-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .museum-caption-body {
+    animation: none;
+  }
 }
 .museum-caption strong {
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
   font-size: 22px;
+  font-weight: 500;
 }
-.museum-caption > span {
-  font-size: 16px;
-  color: #d9cbbb;
-}
-
-.museum-plaque {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 220px;
-  padding: 8px 14px;
-  border-radius: 6px;
-  background: #2b211c;
-  color: #f1e6d6;
-  font-family: Georgia, 'Times New Roman', serif;
+.museum-caption p {
+  margin: 4px 0 0;
   font-size: 15px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  line-height: 1.4;
 }
-.museum-plaque strong {
-  font-weight: 600;
+.museum-date {
+  color: var(--m-muted);
+  font-size: 13px;
 }
-.museum-plaque span {
-  font-size: 12px;
-  opacity: 0.8;
+.museum-actions {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 6px;
 }
-.museum-plaque.on {
-  background: #3a2a1f;
-  outline: 1px solid #c9973f;
+.museum-actions a,
+.museum-actions button {
+  color: #ffc58a;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
-@media (max-width: 700px) {
-  .museum-title {
-    margin-right: 0;
+.museum-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  padding: 24px;
+  pointer-events: none;
+}
+.museum-empty h2 {
+  font-family: 'Iowan Old Style', Palatino, Georgia, serif;
+  font-weight: 400;
+  font-size: 34px;
+  margin: 0 0 8px;
+}
+.museum-empty p {
+  color: var(--m-muted);
+  max-width: 420px;
+}
+
+.museum-drop {
+  position: absolute;
+  inset: 10px;
+  border: 2px dashed #ffb35c;
+  border-radius: 22px;
+  background: rgba(20, 13, 20, 0.55);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  font-family: 'Iowan Old Style', Palatino, Georgia, serif;
+  font-size: 26px;
+}
+.museum-toast {
+  position: absolute;
+  left: 50%;
+  top: 70px;
+  transform: translateX(-50%);
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: var(--m-glass);
+  font-size: 14px;
+}
+
+@media (max-width: 760px) {
+  .museum-styles {
+    order: 3;
+    width: 100%;
   }
-  .museum-bottom {
-    flex-wrap: wrap;
+  .museum-add {
+    margin-left: 0;
   }
-  .museum-caption {
-    order: -1;
-    flex-basis: 100%;
+  .museum-hint {
+    white-space: normal;
+    width: calc(100% - 40px);
+    text-align: center;
   }
 }
