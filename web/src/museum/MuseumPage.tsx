@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type * as THREE from 'three'
 import { addFiles, followIndex, kindOf, loadExhibitions, MY_EXHIBITION, removeLocal, type Exhibition } from './exhibitions'
-import { planMuseum } from './layout'
+import { planMuseum, walkTarget } from './layout'
 import { MuseumScene } from './MuseumScene'
 import { paintToCanvas } from './painter'
-import { roomHash } from './roomSync'
+import { museumHash, roomHash } from './roomSync'
 import { MuseumSound } from './sound'
 import { StepIn, type Stage } from './StepIn'
 import { Streaks } from './Streaks'
@@ -88,6 +88,17 @@ export function MuseumPage({ id, join }: { id?: string; join?: string }) {
     return () => clearTimeout(t)
   }, [])
 
+  // The last guided walk asked for in this exhibition. The walker may not be there yet (the
+  // shared walk can arrive before the museum is drawn) or may start again at the entrance (a new
+  // plan), so it's kept and given again when the walker is ready.
+  const destination = useRef<{ exhibition: string; index: number } | null>(null)
+  const walkToDestination = useCallback(() => {
+    const d = destination.current
+    const w = walker.current
+    const target = d && d.exhibition === exhibition?.id ? walkTarget(plan, d.index) : null
+    if (w && target) w.walkTo(target.to, target.look)
+  }, [exhibition?.id, plan])
+
   /** Walks to piece `i` (−1: back to the entrance); `share` tells the other screen too. */
   const walkTo = useCallback(
     (i: number, share: boolean) => {
@@ -95,11 +106,11 @@ export function MuseumPage({ id, join }: { id?: string; join?: string }) {
       setFocus(i)
       setArrived(false)
       setHint(false)
-      if (i < 0) walker.current?.walkTo(plan.start)
-      else walker.current?.walkTo(plan.slots[i].view, plan.slots[i].center)
+      destination.current = { exhibition: exhibition.id, index: i }
+      walkToDestination()
       if (share) room.setAt(i, i >= 0 ? (exhibition.items[i].captureId ?? null) : null)
     },
-    [exhibition, plan, room],
+    [exhibition, room, walkToDestination],
   )
   const goTo = useCallback((i: number) => walkTo(i, true), [walkTo])
 
@@ -150,6 +161,7 @@ export function MuseumPage({ id, join }: { id?: string; join?: string }) {
         pendingStep.current = i
         setFocus(i)
         setArrived(false)
+        destination.current = { exhibition: exhibition.id, index: i }
         walker.current?.walkTo(slot.view, slot.center)
         return
       }
@@ -308,6 +320,7 @@ export function MuseumPage({ id, join }: { id?: string; join?: string }) {
             onLook={onLook}
             onMeasure={onMeasure}
             walker={walker}
+            onWalkerReady={walkToDestination}
             frozen={Boolean(inside)}
             paused={covered}
             dive={dive}
@@ -335,7 +348,7 @@ export function MuseumPage({ id, join }: { id?: string; join?: string }) {
         </a>
         <label className="museum-chip museum-select">
           <span className="sr-only">Exhibition</span>
-          <select value={exhibition.id} onChange={(e) => (location.hash = `#/museum/${e.target.value}`)}>
+          <select value={exhibition.id} onChange={(e) => (location.hash = museumHash(e.target.value, join))}>
             {exhibitions.map((e) => (
               <option key={e.id} value={e.id}>
                 {e.title} ({e.items.length})

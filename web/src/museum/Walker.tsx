@@ -48,6 +48,7 @@ export function Walker({
   plan,
   onArrive,
   onLook,
+  onReady,
   hung = 0,
   ref,
   frozen = false,
@@ -56,6 +57,11 @@ export function Walker({
   plan: MuseumPlan
   onArrive?: () => void
   onLook?: (slot: number) => void
+  /**
+   * The walker stands at the entrance, ready to take walks: once mounted, and again after every
+   * new plan. A walk asked for before then (`ref` not set yet) is given again here.
+   */
+  onReady?: () => void
   hung?: number
   ref?: Ref<WalkerHandle>
 }) {
@@ -69,10 +75,12 @@ export function Walker({
   const speed = useRef(0)
   const arrive = useRef(onArrive)
   const look = useRef(onLook)
+  const ready = useRef(onReady)
   useEffect(() => {
     arrive.current = onArrive
     look.current = onLook
-  }, [onArrive, onLook])
+    ready.current = onReady
+  }, [onArrive, onLook, onReady])
   const lookedAt = useRef(-2)
   const frozenRef = useRef(frozen)
   useEffect(() => {
@@ -90,6 +98,7 @@ export function Walker({
     lookGoal.current = null
     speed.current = 0
     lookedAt.current = -2
+    ready.current?.()
   }, [plan])
 
   useImperativeHandle(ref, () => ({
