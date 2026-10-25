@@ -1,5 +1,7 @@
 import * as THREE from 'three'
+import type { QuarterTurns } from '../scene/pose'
 import { brushStep, PAINT_GLSL } from './paint'
+import { flippedTurns, turnImage } from './upright'
 
 /*
  * Paints pictures as oil paintings (paint.ts) once, into a texture, instead of on every frame:
@@ -79,20 +81,22 @@ export function paintInto(gl: THREE.WebGLRenderer, source: THREE.Texture, aspect
   material.uniforms.uPicture.value = null
 }
 
-/** Decodes an image off the main thread into a texture (the right way up). */
-export async function loadPicture(src: string): Promise<{ texture: THREE.Texture; width: number; height: number }> {
+/** Decodes an image off the main thread into a texture (the right way up), turned `turns` quarter turns clockwise. */
+export async function loadPicture(src: string, turns: QuarterTurns = 0): Promise<{ texture: THREE.Texture; width: number; height: number }> {
   const loader = new THREE.ImageBitmapLoader()
   loader.setOptions({ imageOrientation: 'flipY' })
   loader.setCrossOrigin('anonymous')
   const bitmap = await loader.loadAsync(src)
-  const texture = new THREE.Texture(bitmap)
+  const image = turns ? turnImage(bitmap, bitmap.width, bitmap.height, flippedTurns(turns)) : bitmap
+  if (image !== bitmap) bitmap.close()
+  const texture = new THREE.Texture(image)
   texture.flipY = false
   texture.colorSpace = THREE.SRGBColorSpace
   // Mipmapped, so painting a big photo smaller doesn't shimmer.
   texture.minFilter = THREE.LinearMipmapLinearFilter
   texture.needsUpdate = true
-  texture.addEventListener('dispose', () => bitmap.close())
-  return { texture, width: bitmap.width, height: bitmap.height }
+  if (image === bitmap) texture.addEventListener('dispose', () => bitmap.close())
+  return { texture, width: image.width, height: image.height }
 }
 
 /**
@@ -100,8 +104,8 @@ export async function loadPicture(src: string): Promise<{ texture: THREE.Texture
  * into a picture lays it over the photo, then fades it to leave the photo as taken). Painted
  * with the museum's renderer and read back without stalling it.
  */
-export async function paintToCanvas(gl: THREE.WebGLRenderer, src: string, maxW: number, maxH: number): Promise<HTMLCanvasElement> {
-  const { texture, width, height } = await loadPicture(src)
+export async function paintToCanvas(gl: THREE.WebGLRenderer, src: string, maxW: number, maxH: number, turns: QuarterTurns = 0): Promise<HTMLCanvasElement> {
+  const { texture, width, height } = await loadPicture(src, turns)
   const [w, h] = paintSize(width, height, maxH, maxW)
   const target = paintTarget(w, h, false)
   try {

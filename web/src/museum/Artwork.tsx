@@ -9,12 +9,14 @@ import { gilding, pool } from './materials'
 import { loadPicture, paintInto, paintSize, paintTarget, PHOTO_HEIGHT, VIDEO_HEIGHT } from './painter'
 import { acquireVideo, releaseVideo, wantPlaying, type Playlist } from './playback'
 import { labelTexture } from './textures'
+import { flippedTurns, turnImage } from './upright'
+import type { QuarterTurns } from '../scene/pose'
 
 /** A painted picture ready to hang: its texture and its shape (width / height). */
 type Painted = { texture: THREE.Texture; aspect: number }
 
-/** Paints the photo at `src` once; null until it's ready (or if it can't be loaded). */
-function usePaintedPhoto(src: string | undefined): Painted | null {
+/** Paints the photo at `src` once, turned upright; null until it's ready (or if it can't be loaded). */
+function usePaintedPhoto(src: string | undefined, turns: QuarterTurns): Painted | null {
   const gl = useThree((s) => s.gl)
   const invalidate = useThree((s) => s.invalidate)
   const [painted, setPainted] = useState<{ src: string; value: Painted } | null>(null)
@@ -22,7 +24,7 @@ function usePaintedPhoto(src: string | undefined): Painted | null {
     if (!src) return
     let cancelled = false
     let target: THREE.WebGLRenderTarget | null = null
-    loadPicture(src)
+    loadPicture(src, turns)
       .then(({ texture, width, height }) => {
         if (cancelled) return texture.dispose()
         target = paintTarget(...paintSize(width, height, PHOTO_HEIGHT))
@@ -38,15 +40,16 @@ function usePaintedPhoto(src: string | undefined): Painted | null {
       cancelled = true
       target?.dispose()
     }
-  }, [src, gl, invalidate])
+  }, [src, turns, gl, invalidate])
   return painted && painted.src === src ? painted.value : null
 }
 
 /**
  * A video's painting, repainted whenever it shows a new frame while it plays; null until the
- * first frame is painted. Its element is shared with every other piece showing the same file.
+ * first frame is painted, each frame turned upright. Its element is shared with every other piece
+ * showing the same file.
  */
-function usePaintedVideo(src: string | undefined, hasPoster: boolean, playing: boolean, hz: number): Painted | null {
+function usePaintedVideo(src: string | undefined, hasPoster: boolean, playing: boolean, hz: number, turns: QuarterTurns): Painted | null {
   const gl = useThree((s) => s.gl)
   const invalidate = useThree((s) => s.invalidate)
   const [video, setVideo] = useState<HTMLVideoElement | null>(null)
@@ -80,6 +83,8 @@ function usePaintedVideo(src: string | undefined, hasPoster: boolean, playing: b
     source.generateMipmaps = false
     source.minFilter = THREE.LinearFilter
     source.flipY = false
+    // A turned video's frames are turned on this canvas, reused frame after frame.
+    const turned = turns ? document.createElement('canvas') : null
     let stopped = false
     let busy = false
     let lastPaint = -Infinity
@@ -89,13 +94,17 @@ function usePaintedVideo(src: string | undefined, hasPoster: boolean, playing: b
       if (stopped || busy || video.readyState < 2 || !video.videoWidth) return
       busy = true
       lastPaint = performance.now()
-      const aspect = video.videoWidth / video.videoHeight
-      const [w, h] = paintSize(video.videoWidth, video.videoHeight, VIDEO_HEIGHT)
+      // The painting's size as it hangs (upright), and the frame's size as stored.
+      const odd = turns % 2 === 1
+      const [uw, uh] = odd ? [video.videoHeight, video.videoWidth] : [video.videoWidth, video.videoHeight]
+      const aspect = uw / uh
+      const [w, h] = paintSize(uw, uh, VIDEO_HEIGHT)
+      const [fw, fh] = odd ? [h, w] : [w, h]
       try {
-        const bitmap = await createImageBitmap(video, { resizeWidth: w, resizeHeight: h, resizeQuality: 'medium', imageOrientation: 'flipY' })
+        const bitmap = await createImageBitmap(video, { resizeWidth: fw, resizeHeight: fh, resizeQuality: 'medium', imageOrientation: 'flipY' })
         if (stopped) return bitmap.close()
-        const previous = source.image as ImageBitmap | null
-        source.image = bitmap
+        const previous = source.image as ImageBitmap | HTMLCanvasElement | null
+        source.image = turned ? turnImage(bitmap, fw, fh, flippedTurns(turns), turned) : bitmap
         source.needsUpdate = true
         let t = target.current
         if (!t || t.width !== w || t.height !== h) {
@@ -104,7 +113,9 @@ function usePaintedVideo(src: string | undefined, hasPoster: boolean, playing: b
           setPainted({ texture: t.texture, aspect })
         }
         paintInto(gl, source, aspect, t)
-        previous?.close()
+        // The canvas is kept for the next frame; a bitmap is done with once painted from.
+        if (turned) bitmap.close()
+        else if (previous instanceof ImageBitmap) previous.close()
         invalidate()
       } catch {
         /* a frame that can't be read is skipped */
@@ -139,10 +150,11 @@ function usePaintedVideo(src: string | undefined, hasPoster: boolean, playing: b
       if ('cancelVideoFrameCallback' in video) video.cancelVideoFrameCallback(frame)
       cancelAnimationFrame(raf)
       video.removeEventListener('loadeddata', first)
-      ;(source.image as ImageBitmap | null)?.close?.()
+      const last = source.image as ImageBitmap | HTMLCanvasElement | null
+      if (last instanceof ImageBitmap) last.close()
       source.dispose()
     }
-  }, [video, playing, hasPoster, hz, gl, invalidate])
+  }, [video, playing, hasPoster, hz, turns, gl, invalidate])
   return painted
 }
 
@@ -176,9 +188,10 @@ export function Artwork({
 }) {
   const isVideo = art.kind === 'video'
   const playing = useSyncExternalStore(playlist?.subscribe ?? noSubscribe, () => playlist?.has(slot.index) ?? false)
-  const still = usePaintedPhoto(isVideo ? art.poster : art.src)
+  const turns = art.turns ?? 0
+  const still = usePaintedPhoto(isVideo ? art.poster : art.src, turns)
   // The piece in focus is repainted at full video pace; a neighbour playing nearby, at half.
-  const moving = usePaintedVideo(isVideo ? art.src : undefined, Boolean(art.poster), playing, focused ? 30 : 15)
+  const moving = usePaintedVideo(isVideo ? art.src : undefined, Boolean(art.poster), playing, focused ? 30 : 15, turns)
   // A video shows its poster until its first frame is painted, and keeps its poster if this
   // browser can't play it (an HEVC .mov in Chrome, say).
   const picture = moving ?? still

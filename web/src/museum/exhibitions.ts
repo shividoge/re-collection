@@ -6,6 +6,8 @@
 import type { Arrangement, ArrangementItem } from '../api'
 import type { CaptureAssets, Manifest } from '../data/assets'
 import { arrangements, loadVisitSources } from '../data'
+import type { QuarterTurns } from '../scene/pose'
+import { uprightTurns } from '../scene/upright'
 
 export type ArtworkKind = 'photo' | 'video'
 
@@ -14,6 +16,8 @@ export interface Artwork {
   kind: ArtworkKind
   /** URL of the image or video. */
   src: string
+  /** Quarter turns clockwise that stand the picture (and a video's poster) upright, as stored sideways by the phone. */
+  turns?: QuarterTurns
   /** For a video: a still shown until it plays (or if this browser can't play it). */
   poster?: string
   title?: string
@@ -46,6 +50,8 @@ export interface Visit {
   date: string
   thumb: boolean
   manifest: Manifest
+  /** Quarter turns clockwise that stand its pictures upright (scene/upright.ts). */
+  turns: QuarterTurns
   /** The visit's files (the same object stepping in uses, so nothing loads twice). */
   assets: CaptureAssets
 }
@@ -54,7 +60,18 @@ export interface Visit {
 export async function loadVisits(): Promise<Visit[]> {
   try {
     const sources = await loadVisitSources()
-    return sources.map((s) => ({ id: s.id, title: s.title || s.assets.manifest.title || 'A visit', date: formatDate(s.createdAt), thumb: s.hasThumb, manifest: s.assets.manifest, assets: s.assets }))
+    return await Promise.all(
+      sources.map(async (s) => ({
+        id: s.id,
+        title: s.title || s.assets.manifest.title || 'A visit',
+        date: formatDate(s.createdAt),
+        thumb: s.hasThumb,
+        manifest: s.assets.manifest,
+        // Without readable poses its pictures hang as stored.
+        turns: await uprightTurns(s.assets).catch(() => 0 as const),
+        assets: s.assets,
+      })),
+    )
   } catch {
     return []
   }
@@ -77,7 +94,7 @@ export function piecesOf(v: Visit): string[] {
 export function pieceArtwork(v: Visit, piece: string, title = '', caption = '', n = 0): Artwork | null {
   const url = (name: string) => v.assets.rawUrl(name) ?? undefined
   const poster = v.thumb ? url('thumb.jpg') : undefined
-  const base = { id: `${v.id}-${piece}-${n}`, title: title || v.title, date: v.date, caption: caption || undefined, captureId: v.id, estimated: v.manifest.source === 'video' || undefined }
+  const base = { id: `${v.id}-${piece}-${n}`, title: title || v.title, date: v.date, caption: caption || undefined, captureId: v.id, estimated: v.manifest.source === 'video' || undefined, turns: v.turns || undefined }
   const video = v.manifest.video?.file ? url(v.manifest.video.file) : undefined
   if (piece === 'video') return video ? { ...base, kind: 'video', src: video, poster, t: 0 } : null
   if (piece === 'thumb') return poster ? { ...base, kind: 'photo', src: poster, t: 0 } : null
