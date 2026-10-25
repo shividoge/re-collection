@@ -10,7 +10,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { WALL, type Feature, type MuseumPlan, type Room } from './layout'
 import type { Look } from './looks'
-import { carpet, frostedGlassTexture, imperialPorcelain, lightPoolTexture, persianRug, woodGrain, type SurfaceMaps } from './textures'
+import { carpet, frostedGlassTexture, imperialPorcelain, lightPoolTexture, persianRug, woodFloor, woodGrain, type SurfaceMaps } from './textures'
 
 const GOLD = '#c9a052'
 
@@ -36,6 +36,44 @@ export function varnishedWood(): THREE.MeshPhysicalMaterial {
     clearcoatRoughness: 0.28,
     envMapIntensity: 1,
   })
+}
+
+let parquetMaps: SurfaceMaps | null = null
+/**
+ * Darker herringbone parquet for the floor's edge and the doorways, in the same pattern as the
+ * floor itself. Geometry using it needs world UVs (`worldUV`), so the pattern runs on unbroken
+ * from one piece to the next.
+ */
+export function darkParquet(): THREE.MeshPhysicalMaterial {
+  parquetMaps ??= woodFloor('herringbone', [112, 70, 42], [54, 31, 18], 23)
+  const tile = (t: THREE.Texture) => {
+    const c = t.clone()
+    c.repeat.set(1 / 1.6, 1 / 1.6)
+    c.rotation = Math.PI / 4
+    c.needsUpdate = true
+    return c
+  }
+  return new THREE.MeshPhysicalMaterial({
+    map: tile(parquetMaps.map),
+    normalMap: tile(parquetMaps.normalMap),
+    roughnessMap: tile(parquetMaps.roughnessMap),
+    normalScale: new THREE.Vector2(0.6, 0.6),
+    roughness: 1,
+    clearcoat: 0.3,
+    clearcoatRoughness: 0.35,
+  })
+}
+
+/** Sets a floor piece's UVs to its world x, z, so textures line up across pieces. */
+function worldUV(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  const pos = g.attributes.position
+  const uv = new Float32Array(pos.count * 2)
+  for (let i = 0; i < pos.count; i++) {
+    uv[i * 2] = pos.getX(i)
+    uv[i * 2 + 1] = -pos.getZ(i)
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
+  return g
 }
 
 /** Gilding: warm gold leaf, polished on the high points. */
@@ -130,73 +168,67 @@ export function Wainscot({ plan, look }: { plan: MuseumPlan; look: Look }) {
   return <mesh geometry={geometry} material={material} />
 }
 
-let shadeMap: THREE.CanvasTexture | null = null
-/** A strip that is dark at one long edge and fades to nothing at the other. */
-function edgeShade(): THREE.CanvasTexture {
-  if (shadeMap) return shadeMap
-  const c = document.createElement('canvas')
-  c.width = 4
-  c.height = 256
-  const ctx = c.getContext('2d')!
-  const g = ctx.createLinearGradient(0, 0, 0, 256)
-  g.addColorStop(0, '#ffffff')
-  g.addColorStop(0.35, '#7a7a7a')
-  g.addColorStop(1, '#000000')
-  ctx.fillStyle = g
-  ctx.fillRect(0, 0, 4, 256)
-  shadeMap = new THREE.CanvasTexture(c)
-  return shadeMap
-}
-
 /**
- * The floor deepens toward the panelling, as an old floor does where feet and light rarely
- * reach: a soft darkening along each wall that fades out within a meter, and the same darkness
- * across the doorways. No band or inlay line, which would read as the edge of a rug.
+ * Darker parquet around the edge of each floor and through the doorways, in the floor's own
+ * herringbone, with a thin light inlay line: the floor deepens toward the panelling, as in old
+ * galleries, and runs on unbroken from one room to the next.
  */
-export function FloorShade({ plan }: { plan: MuseumPlan }) {
-  const reach = 0.9
-  const strips = useMerged(() => {
+export function FloorBorder({ plan }: { plan: MuseumPlan }) {
+  const band = 0.5
+  const geometry = useMerged(() => {
     const parts: THREE.BufferGeometry[] = []
     for (const room of plan.rooms) {
       const w = room.x1 - room.x0
       const d = room.zFront - room.zBack
       const cz = (room.zFront + room.zBack) / 2
-      // Each strip's v = 0 edge (dark) lies along its wall.
-      for (const [x, z, len, angle] of [
-        [0, room.zFront - reach / 2, w, 0],
-        [0, room.zBack + reach / 2, w, Math.PI],
-        [room.x0 + reach / 2, cz, d, -Math.PI / 2],
-        [room.x1 - reach / 2, cz, d, Math.PI / 2],
+      for (const [x, z, bw, bd] of [
+        [0, room.zFront - band / 2, w, band],
+        [0, room.zBack + band / 2, w, band],
+        [room.x0 + band / 2, cz, band, d - band * 2],
+        [room.x1 - band / 2, cz, band, d - band * 2],
       ]) {
-        const g = new THREE.PlaneGeometry(len, reach)
+        const g = new THREE.PlaneGeometry(bw, bd)
         g.rotateX(-Math.PI / 2)
-        g.rotateY(angle)
         g.translate(x, 0.003, z)
+        parts.push(worldUV(g))
+      }
+    }
+    // Through each doorway, joining the two rooms' borders.
+    for (const d of plan.doorways) {
+      const g = new THREE.PlaneGeometry(d.width, WALL + 0.02)
+      g.rotateX(-Math.PI / 2)
+      g.translate(0, 0.003, d.z)
+      parts.push(worldUV(g))
+    }
+    return parts
+  }, [plan])
+  const inlay = useMerged(() => {
+    const parts: THREE.BufferGeometry[] = []
+    for (const room of plan.rooms) {
+      const w = room.x1 - room.x0 - band * 2
+      const d = room.zFront - room.zBack - band * 2
+      const cz = (room.zFront + room.zBack) / 2
+      for (const [x, z, bw, bd] of [
+        [0, cz + d / 2, w, 0.025],
+        [0, cz - d / 2, w, 0.025],
+        [-w / 2, cz, 0.025, d],
+        [w / 2, cz, 0.025, d],
+      ]) {
+        const g = new THREE.PlaneGeometry(bw, bd)
+        g.rotateX(-Math.PI / 2)
+        g.translate(x, 0.004, z)
         parts.push(g)
       }
     }
     return parts
   }, [plan])
-  const doorways = useMerged(() => {
-    const parts: THREE.BufferGeometry[] = []
-    for (const d of plan.doorways) {
-      const g = new THREE.PlaneGeometry(d.width, WALL + 0.02)
-      g.rotateX(-Math.PI / 2)
-      g.translate(0, 0.003, d.z)
-      parts.push(g)
-    }
-    return parts
-  }, [plan])
-  const shade = useMemo(
-    () => new THREE.MeshBasicMaterial({ color: '#000000', alphaMap: edgeShade(), transparent: true, opacity: 0.42, depthWrite: false }),
-    [],
-  )
-  const flat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.42, depthWrite: false }), [])
-  useEffect(() => () => [shade, flat].forEach((m) => m.dispose()), [shade, flat])
+  const material = useMemo(() => darkParquet(), [])
+  const inlayMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: '#c9a27a', roughness: 0.5 }), [])
+  useEffect(() => () => [material, inlayMaterial].forEach((m) => m.dispose()), [material, inlayMaterial])
   return (
     <group>
-      <mesh geometry={strips} material={shade} renderOrder={1} />
-      <mesh geometry={doorways} material={flat} renderOrder={1} />
+      <mesh geometry={geometry} material={material} />
+      <mesh geometry={inlay} material={inlayMaterial} />
     </group>
   )
 }

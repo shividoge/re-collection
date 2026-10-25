@@ -2,7 +2,7 @@ import { MeshReflectorMaterial, RoundedBox } from '@react-three/drei'
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js'
-import { ArchDoorways, Carpets, Cornice, FloorShade, Lantern, varnishedWood, Wainscot } from './Classic'
+import { ArchDoorways, Carpets, Cornice, FloorBorder, Lantern, varnishedWood, Wainscot } from './Classic'
 import { WALL, type MuseumPlan, type Room } from './layout'
 import type { Look } from './looks'
 import { fabric, plaster, stoneFloor, titleTexture, woodFloor, type SurfaceMaps } from './textures'
@@ -226,7 +226,7 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
           <Wainscot plan={plan} look={look} />
           <Cornice plan={plan} look={look} />
           <ArchDoorways plan={plan} wallMaterial={wallMaterial} />
-          <FloorShade plan={plan} />
+          <FloorBorder plan={plan} />
           <Carpets plan={plan} />
         </>
       )}
