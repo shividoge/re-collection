@@ -107,7 +107,7 @@ A 3D Gaussian splat of the static room, made after the capture (never on the pho
 | Field | Meaning |
 |---|---|
 | `file` | The splat file in the capture folder. |
-| `format` | Always `3dgs-ply` for now. |
+| `format` | `spz` (SPZ v3, what the GPU worker writes; see `docs/architecture-v3.md` §4.5) or `3dgs-ply` (older captures). |
 | `count` | Number of Gaussians (`element vertex` in the PLY header). |
 | `shDegree` | Spherical-harmonics degree, 0 to 3. The file has `3·((shDegree+1)² − 1)` `f_rest_*` properties. |
 | `source` | `trained-from-video` (optimized against an old video's frames) or `trained-from-lidar-capture` (optimized against a phone capture's frames). |

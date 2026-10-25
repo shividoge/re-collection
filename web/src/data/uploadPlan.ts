@@ -84,6 +84,21 @@ export function findResumable(saved: SavedUpload[], captureId: string, name: str
   return saved.filter((s) => s.captureId === captureId && s.name === name && s.bytes === bytes).sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null
 }
 
+/**
+ * A video upload in progress, kept so dropping the same file again (same title and people) reuses
+ * its capture instead of making a new one. Keyed by `videoKey`.
+ */
+export type SavedVideo = { key: string; captureId: string; updatedAt: number }
+
+/** Same file (name, size, last change) and same title and people. */
+export const videoKey = (file: { name: string; size: number; lastModified: number }, meta: { title: string; attendees: string[] }): string =>
+  JSON.stringify([file.name, file.size, file.lastModified, meta.title, meta.attendees])
+
+/** Saved state older than this is dropped: R2 aborts unfinished multipart uploads after 7 days. */
+export const SAVED_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+
+export const isStale = (updatedAt: number, now: number): boolean => now - updatedAt > SAVED_MAX_AGE_MS
+
 /** Files the server already has with the same size: a re-dropped zip skips them. */
 export function alreadyThere(registered: { name: string; bytes: number }[], name: string, bytes: number): boolean {
   return registered.some((f) => f.name === name && f.bytes === bytes)

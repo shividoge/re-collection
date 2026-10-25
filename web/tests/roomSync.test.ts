@@ -129,6 +129,9 @@ describe('follow (the iPad)', () => {
   it('reads where the iPad is from the address', () => {
     expect(roomHere('#/memories')).toBe(null)
     expect(roomHere('#/museum')).toBe(null)
+    // An exhibition other than the first is the hall too, so the iPad still follows the helper there.
+    expect(roomHere('#/museum/curated-0')).toBe(null)
+    expect(roomHere('#/museum/edit')).toBe(undefined)
     expect(roomHere('#/museum?join=KTRB')).toBe(undefined)
     expect(roomHere(roomHash(A))).toBe(A)
     expect(roomHere(`#/window/${A}`)).toBe(undefined)

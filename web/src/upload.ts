@@ -3,24 +3,28 @@
 // captures.complete. A failed part is retried with backoff; after that, uploads.resume hands out
 // fresh URLs for what's left. Unfinished multipart uploads are saved in IndexedDB, so dropping the
 // same zip again after a reload carries on where it stopped, and files the server already has are
-// skipped.
+// skipped. An old video works the same way: the same file dropped again goes on into the capture
+// made the first time. Saved state older than a week is forgotten.
 import { unzip } from 'fflate'
 import { parseManifest } from '../../shared/manifest'
-import { errorList, errorMessage, uploadsApi, type UploadsApi, type UploadTarget } from './data'
+import { errorCode, errorList, errorMessage, uploadsApi, type UploadsApi, type UploadTarget } from './data'
 import {
   alreadyThere,
   backoffMs,
   contentType,
   findResumable,
+  isStale,
   mergeParts,
   pendingParts,
   pool,
   skipFile,
   uploadOrder,
+  videoKey,
   type Part,
   type SavedUpload,
+  type SavedVideo,
 } from './data/uploadPlan'
-import { uploadStore } from './data/uploadStore'
+import { uploadStore, videoStore } from './data/uploadStore'
 
 export type PackageFiles = { id: string; manifestJson: string; files: Map<string, Blob> }
 
@@ -71,6 +75,8 @@ export type UploadDeps = {
   /** PUTs one body, returns the response's ETag (null if the storage didn't expose it). */
   put(url: string, body: Blob, headers: Record<string, string>): Promise<string | null>
   saved: { all(): Promise<SavedUpload[]>; put(u: SavedUpload): Promise<void>; remove(uploadId: string): Promise<void> }
+  /** Which capture each old video being uploaded goes to. */
+  videos: { all(): Promise<SavedVideo[]>; put(v: SavedVideo): Promise<void>; remove(key: string): Promise<void> }
   sleep(ms: number): Promise<void>
 }
 
@@ -95,6 +101,7 @@ export const browserDeps: UploadDeps = {
   api: uploadsApi,
   put: browserPut,
   saved: uploadStore,
+  videos: videoStore,
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }
 
@@ -173,6 +180,13 @@ export async function uploadFile(
   await deps.saved.remove(uploadId)
 }
 
+/** Drops saved uploads and videos nobody came back to (R2 has aborted those uploads by now). */
+async function forgetStale(deps: UploadDeps): Promise<void> {
+  const now = Date.now()
+  for (const u of await deps.saved.all()) if (isStale(u.updatedAt, now)) await deps.saved.remove(u.uploadId)
+  for (const v of await deps.videos.all()) if (isStale(v.updatedAt, now)) await deps.videos.remove(v.key)
+}
+
 /** Uploads every file of a capture package in order, then asks the server to check it. */
 export async function uploadPackage(pkg: PackageFiles, onProgress: (p: UploadProgress) => void, deps: UploadDeps = browserDeps, api: UploadsApi = uploadsApi) {
   const files = uploadOrder([...pkg.files].map(([name, body]) => ({ name, body })))
@@ -180,6 +194,7 @@ export async function uploadPackage(pkg: PackageFiles, onProgress: (p: UploadPro
   const report = () => onProgress({ ...progress, files: progress.files.map((f) => ({ ...f })) })
   report()
 
+  await forgetStale(deps)
   const { captureId } = await api.begin(pkg.manifestJson)
   progress.captureId = captureId
   const registered = await api.registered(captureId).catch(() => [])
@@ -220,6 +235,7 @@ export async function uploadPackage(pkg: PackageFiles, onProgress: (p: UploadPro
 
 /** The video's length in seconds, read by the browser (null if it can't play this file). */
 export function videoDuration(file: File): Promise<number | null> {
+  if (typeof document === 'undefined') return Promise.resolve(null)
   return new Promise((resolve) => {
     const video = document.createElement('video')
     const url = URL.createObjectURL(file)
@@ -234,7 +250,11 @@ export function videoDuration(file: File): Promise<number | null> {
   })
 }
 
-/** An old video to turn into a moment: videos.create, then the file as source.<ext> (queues convert). */
+/**
+ * An old video to turn into a moment: videos.create, then the file as source.<ext> (queues
+ * convert). The same file dropped again (same title and people) goes on into the capture made the
+ * first time and resumes its upload; a new capture only if that one was deleted.
+ */
 export async function uploadVideo(
   file: File,
   meta: { title: string; attendees: string[] },
@@ -244,21 +264,44 @@ export async function uploadVideo(
 ) {
   const ext = (/\.([a-z0-9]{1,5})$/i.exec(file.name)?.[1] ?? 'mp4').toLowerCase()
   const name = `source.${ext}`
+  const key = videoKey(file, meta)
   const row: FileProgress = { name: file.name, bytes: file.size, sent: 0, state: 'uploading' }
   const report = (captureId: string | null, phase: UploadProgress['phase'] = 'uploading') => onProgress({ captureId, phase, files: [{ ...row }] })
   report(null)
-  const durationSec = (await videoDuration(file)) ?? undefined
-  const { captureId } = await api.createVideo({ ...meta, fileName: file.name, bytes: file.size, ...(durationSec ? { durationSec } : {}) })
-  try {
+
+  await forgetStale(deps)
+  const saved = (await deps.videos.all()).find((v) => v.key === key)
+  const create = async () => {
+    const durationSec = (await videoDuration(file)) ?? undefined
+    const { captureId } = await api.createVideo({ ...meta, fileName: file.name, bytes: file.size, ...(durationSec ? { durationSec } : {}) })
+    return captureId
+  }
+  const send = async (captureId: string) => {
+    await deps.videos.put({ key, captureId, updatedAt: Date.now() })
+    row.sent = 0
+    report(captureId)
     await uploadFile(deps, { captureId, name, body: file }, (sent) => {
       row.sent = sent
       report(captureId)
     })
+  }
+
+  let captureId = saved?.captureId ?? (await create())
+  try {
+    try {
+      await send(captureId)
+    } catch (error) {
+      // The capture from the last try was deleted since: start a new one.
+      if (!saved || errorCode(error) !== 'not_found') throw error
+      captureId = await create()
+      await send(captureId)
+    }
   } catch (error) {
     row.state = 'failed'
     report(captureId)
     throw new Error(`${errorMessage(error)} Drop the same video again to carry on.`)
   }
+  await deps.videos.remove(key)
   Object.assign(row, { state: 'done', sent: row.bytes })
   report(captureId, 'done')
   return { captureId }

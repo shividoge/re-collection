@@ -113,11 +113,26 @@ export function follow(s: RoomSync, followed: number, here: string | null): { ma
  * Memory Window opened from the museum, undefined anywhere else (nothing to follow there).
  */
 export function roomHere(hash: string): string | null | undefined {
-  // #/museum is the hall; #/memories is its old address (old links still land there).
-  if (/^#\/(museum|memories)$/i.test(hash)) return null
+  // #/museum (or one of its exhibitions, #/museum/<id>) is the hall; #/memories is its old
+  // address (old links still land there). The editor isn't.
+  if (/^#\/(museum(\/(?!edit$)[\w-]+)?|memories)$/i.test(hash)) return null
   const window = /^#\/window\/([0-9a-f-]{36})\?from=museum$/i.exec(hash)
   return window ? window[1] : undefined
 }
 
 /** The address for a place on the iPad. */
 export const roomHash = (window: string | null): string => (window ? `#/window/${window}?from=museum` : '#/museum')
+
+/**
+ * The museum's address for an exhibition (undefined: the first), keeping a helper's join code so
+ * switching exhibitions on their phone doesn't turn it into the iPad.
+ */
+export function museumHash(exhibition: string | undefined, join?: string): string {
+  return `#/museum${exhibition ? `/${exhibition}` : ''}${join !== undefined ? `?join=${join}` : ''}`
+}
+
+/** Where an old museum address (#/memories, #/memories?join=CODE) lives now; null for any other. */
+export function legacyMuseumHash(hash: string): string | null {
+  const old = /^#\/memories(?:\?join=([A-Za-z]*))?$/i.exec(hash)
+  return old ? museumHash(undefined, old[1]) : null
+}

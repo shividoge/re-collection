@@ -1,7 +1,7 @@
 // Everything a 3D view needs from one capture, read only from the baked files (plus the video,
 // keyframes and frames.jsonl). docs/architecture-v3.md §4. Nothing is rebuilt in the browser;
 // while the bake isn't done the state says so, and the view shows the capture's status instead.
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { parseDepthIndex, type DepthIndex } from '../../../shared/depth'
 import type { RoomSplat } from '../../../shared/manifest'
 import { fetchBytes, fetchText } from '../data'
@@ -45,6 +45,28 @@ export interface CaptureScene {
   canReplay: boolean
   /** Problems and notes to show next to the view (a missing file, the phone's warnings). */
   notes: string[]
+}
+
+/**
+ * How a part of the scene inside the canvas tells the view around it about a live problem
+ * (`key`: which part; `note`: what to show, or null once it's resolved).
+ */
+export type SceneNote = (key: string, note: string | null) => void
+
+/** The notes the scene's parts report, kept by key (pure, for tests). */
+export function withNote(notes: Record<string, string>, key: string, note: string | null): Record<string, string> {
+  if ((notes[key] ?? null) === note) return notes
+  const next = { ...notes }
+  if (note === null) delete next[key]
+  else next[key] = note
+  return next
+}
+
+/** The live notes for a view and the callback its scene parts report them through. */
+export function useSceneNotes(): [string[], SceneNote] {
+  const [notes, setNotes] = useState<Record<string, string>>({})
+  const onNote = useCallback<SceneNote>((key, note) => setNotes((n) => withNote(n, key, note)), [])
+  return [useMemo(() => Object.values(notes), [notes]), onNote]
 }
 
 export type CaptureSceneState =

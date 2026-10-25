@@ -4,6 +4,8 @@ import * as THREE from 'three'
 import { useKeyframeTexture } from './keyframeTexture'
 import type { SurfaceData } from './packs'
 import { SELECTION_GLSL, applySelection, selectionUniforms, type SelectionTint } from './selectionTint'
+import { trimStop } from './depthSource'
+import type { SceneNote } from './useCaptureScene'
 
 /**
  * The fused room surface from surface.pack (indexed; keyframe layers loaded straight to the GPU,
@@ -19,6 +21,7 @@ export function RoomSurfaceMesh({
   selection = null,
   dim = 1,
   visible = true,
+  onNote,
 }: {
   surface: SurfaceData
   /** URL of each keyframe layer (surface.keyframes[i].file), or null to use vertex colors only. */
@@ -27,6 +30,8 @@ export function RoomSurfaceMesh({
   /** Brightness multiplier. */
   dim?: number
   visible?: boolean
+  /** Told when the keyframe photos fail (the surface then shows its measured colors). */
+  onNote?: SceneNote
 }) {
   const invalidate = useThree((s) => s.invalidate)
   const geometry = useMemo(() => {
@@ -42,6 +47,12 @@ export function RoomSurfaceMesh({
   }, [surface])
   const keys = useKeyframeTexture(keyframeUrls)
   const keyTexture = keys.status === 'ready' ? keys.texture : null
+  const keysFailed = keys.status === 'failed' ? keys.message : null
+  useEffect(() => {
+    if (!onNote) return
+    onNote('keyframes', keysFailed && `Couldn't load the room's photos (${trimStop(keysFailed)}); showing measured colors.`)
+    return () => onNote('keyframes', null)
+  }, [onNote, keysFailed])
 
   const material = useMemo(
     () =>

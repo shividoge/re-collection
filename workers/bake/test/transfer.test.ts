@@ -78,3 +78,11 @@ test('a body that stalls mid-stream is abandoned at the per-try timeout and retr
   expect(new Uint8Array(await Bun.file(`${dir}/keyframes/k0000.jpg`).arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]))
   await rm(dir, { recursive: true, force: true })
 })
+
+test('a download into a folder that does not exist yet creates it', async () => {
+  const dir = `/tmp/bd-transfer-mkdir-${process.pid}`
+  const fetch: Fetch = () => Promise.resolve(new Response(new Uint8Array([9])))
+  await download('https://example.invalid/k', `${dir}/keyframes/k0000.jpg`, 1, { fetch })
+  expect(new Uint8Array(await Bun.file(`${dir}/keyframes/k0000.jpg`).arrayBuffer())).toEqual(new Uint8Array([9]))
+  await rm(dir, { recursive: true, force: true })
+})

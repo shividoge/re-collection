@@ -21,6 +21,14 @@ export function viewChanged(last: Float32Array, camera: THREE.Camera): boolean {
   return changed
 }
 
+/** drei's BlurPass has no dispose: its two render targets, material and full-screen triangle. */
+export function disposeBlurPass(pass: BlurPass) {
+  pass.renderTargetA.dispose()
+  pass.renderTargetB.dispose()
+  pass.convolutionMaterial.dispose()
+  pass.screen.geometry.dispose()
+}
+
 export type ReflectorProps = {
   size: [number, number]
   position: [number, number, number]
@@ -83,9 +91,11 @@ export function ReflectiveFloor({ size, position, resolution, blur, mixBlur, mix
   }, [gl, resolution, blur[0], blur[1], mixBlur, mixStrength, mixContrast, depthScale, minDepthThreshold, maxDepthThreshold, mirror])
   useEffect(
     () => () => {
+      parts.fbo1.depthTexture?.dispose()
       parts.fbo1.dispose()
       parts.fbo2.dispose()
       parts.material.dispose()
+      disposeBlurPass(parts.blurPass)
     },
     [parts],
   )
