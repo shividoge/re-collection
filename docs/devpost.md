@@ -5,8 +5,15 @@
 **Links**
 - Demo video (YouTube): https://youtu.be/FQ0vPIS4VM8
 - Live demo: https://shividoge.github.io/braindance-site/
-- Code: https://github.com/shividoge/braindance (make it public before submitting)
+- Code: https://github.com/shividoge/braindance (private until we submit; see step 1 below)
 - Gallery images: Shivin has them in `~/Downloads/re-collection-devpost-gallery/` (12 images, 3:2)
+
+**How to submit (in this order)**
+1. **Right before submitting, make the repo public:** GitHub → `shividoge/braindance` → Settings → General → Danger Zone → Change visibility → Public. (Shivin, as the owner, has to do this. The old API key in its history is already deleted and doesn't work.)
+2. Fill in each Devpost field from the sections below, top to bottom.
+3. Upload the 12 gallery images in order, and put the YouTube link in "Video demo link".
+4. Add all three team members, tick the prizes listed below, and submit by **8:30 AM PT** (hard deadline 9:00).
+5. Open the Devpost page in a private window and click every link (video, live demo, code) to check it works for a stranger.
 
 Everything for the Cal Hacks 13.0 Devpost form, in the order the form asks. Copy each section into its field. Notes for us (not for Devpost) are in *italics* under "Before you submit".
 
@@ -152,7 +159,7 @@ claude, anthropic, convex, cloudflare-r2, cartesia, moss, swift, swiftui, arkit,
 
 - **Live demo:** https://shividoge.github.io/braindance-site/ (all 9 rooms: 6 iPhone LiDAR scans and 3 rebuilt from old videos, plus the Memory Palace)
 - **Demo video:** https://youtu.be/FQ0vPIS4VM8
-- **Code:** https://github.com/shividoge/braindance (still private: make it public before submitting, or judges get a 404)
+- **Code:** https://github.com/shividoge/braindance (make it public right before submitting: step 1 at the top)
 
 ---
 
@@ -276,7 +283,6 @@ Thank you to every sponsor and organizer at Cal Hacks 13.0. The tools, the credi
 
 ## Before you submit (for us, not for Devpost)
 
-- *Make the GitHub repo public, or judges get a 404 on the code link. The old API key in its history is already deleted and doesn't work.*
 - *The live demo is the read-only public build of the current site: all 9 rooms, the Memory Palace scroll walk and stepping into any room. The voice guide and live family visit need the live backend, so they're not on the public copy; show them in the demo video.*
 - *The video's sponsor slide and end card list Meta, Microsoft and GoDaddy Registry. Make sure each is something we entered or used; if not, fix the slide or leave image 10 out.*
 - *If the live family visit wasn't tested on two devices, cut its WebRTC sentence from "How we built it".*
