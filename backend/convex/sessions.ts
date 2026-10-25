@@ -91,12 +91,12 @@ export const start = mutation({
 // ---- narration ----------------------------------------------------------------------------
 
 export const narrationInput = internalQuery({
-  args: { sessionId: v.string(), chapterIndex: v.number() },
+  args: { sessionId: v.string(), chapterIndex: v.union(v.number(), v.null()) },
   handler: async (ctx, { sessionId, chapterIndex }) => {
     const { session: s, moment, ground } = await sessionContext(ctx, sessionId)
     if (s.endedAt) throw conflict('This session has ended.')
-    const chapter = Number.isInteger(chapterIndex) ? moment.chapters[chapterIndex] : null
-    if (Number.isInteger(chapterIndex) && !chapter) throw invalid(`This moment has no chapter ${chapterIndex}.`)
+    const chapter = chapterIndex !== null && Number.isInteger(chapterIndex) ? moment.chapters[chapterIndex] : null
+    if (chapterIndex !== null && Number.isInteger(chapterIndex) && !chapter) throw invalid(`This moment has no chapter ${chapterIndex}.`)
     return { address: s.person.preferredAddress, allowed: [...ground.allowed.values()], chapter: chapter ?? null, said: s.said }
   },
 })
@@ -125,8 +125,9 @@ export const commitNarration = internalMutation({
   },
 })
 
+/** chapterIndex null (or not a whole number): narrate the moment as a whole, e.g. one without chapters. */
 export const narrate = action({
-  args: { sessionId: v.string(), chapterIndex: v.number() },
+  args: { sessionId: v.string(), chapterIndex: v.union(v.number(), v.null()) },
   returns: v.object({ reply: reply }),
   handler: async (ctx, { sessionId, chapterIndex }): Promise<{ reply: Reply }> => {
     const input = await ctx.runQuery(internal.sessions.narrationInput, { sessionId, chapterIndex })

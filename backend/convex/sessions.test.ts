@@ -102,6 +102,16 @@ describe('sessions', () => {
     await expect(t.action(api.sessions.turn, { sessionId, text: 'hello?' })).rejects.toThrow(/has ended/)
   })
 
+  test('chapterIndex null narrates the moment as a whole (moments without chapters)', async () => {
+    const { sessionId } = await t.mutation(api.sessions.start, { captureId: CAPTURE_ID })
+    claude.next = () => ({ sentences: [{ sentence: 'Priya brought a mango cake.', factIds: ['f1'], free: false }] })
+    const whole = await t.action(api.sessions.narrate, { sessionId, chapterIndex: null })
+    expect(whole.reply.sentences.length).toBe(1)
+    const wholePrompt = claude.calls.at(-1)?.content[0]
+    expect(wholePrompt?.type === 'text' && wholePrompt.text).toMatch(/The recording is playing from the start\./)
+    expect((await t.query(api.sessions.get, { sessionId }))?.turns.at(-1)?.chapterIndex).toBeUndefined()
+  })
+
   test('the distress phrase is caught even if Claude misses it, and logged as an alert', async () => {
     const { sessionId } = await t.mutation(api.sessions.start, { captureId: CAPTURE_ID })
     claude.next = () => ({ sentences: [{ sentence: 'Priya brought cake.', factIds: ['f1'], free: false }], branch: null, distress: false })
