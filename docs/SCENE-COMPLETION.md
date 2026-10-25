@@ -96,16 +96,33 @@ inspected. Keep experiments under `~/braindance/scene-completion/`; do not repla
 The official SAM 3D source is cloned at `~/braindance/scene-completion/sam-3d-objects`.
 On Oct 25 the GX10 was authenticated as `srinivasib` using `hf auth login` and its browser
 device-authorization flow. Credentials stay in the GX10's private HF cache, never in this
-repo. `HfApi().whoami()` succeeds, but downloading `facebook/sam-3d-objects/pipeline.yaml`
-returns `GatedRepoError`. This account still shows Meta's access-request form; model access
-must be approved before downloading weights. Videos need not be uploaded to Hugging Face.
+repo. After the user submitted Meta's access form, authenticated checkpoint downloads worked.
+All 20 checkpoint/license files (13,105,855,818 bytes) are downloaded at
+`~/braindance/scene-completion/models/sam-3d-objects`, pinned to Hugging Face revision
+`2e73555018d2741ccd486e56c24fac41155a1dc6`. File sizes and checkpoint SHA-256 hashes match
+the repository metadata; `download-verification.json` records the results beside the files.
+The configuration is `checkpoints/pipeline.yaml`, not the repository-root path shown in
+Hugging Face's generated usage snippet. Videos need not be uploaded to Hugging Face.
 
 Meta's published environment pins x86-64/CUDA 12.1 packages, including native spconv,
-PyTorch3D and Kaolin dependencies. The GX10 needs a compatible isolated ARM/CUDA environment.
-Its Docker socket is not accessible to the current SSH user. No dependency builds or system
-permission changes have been run. Resolve the runtime, download the approved weights, then
+PyTorch3D and Kaolin dependencies. A separate Python 3.12 environment now exists at
+`~/braindance/scene-completion/.venv`. The binary-only core install uses torch 2.9.1/cu130,
+torchvision 0.24.1, Kaolin 0.18.0, PyTorch3D 0.7.8, spconv-cu130 and Open3D 0.19.0,
+with the [DGX Spark wheel index](https://tlangmo.github.io/dgx-spark-wheels/index/) referenced
+by [the Spark port](https://github.com/tlangmo/sam-3d-objects-spark/tree/tl/spark).
+These packages are installed; `runtime-core.freeze.txt` in the scene-completion directory
+records their versions. CUDA matrix multiplication, PyTorch3D CUDA nearest-neighbor queries,
+and Open3D CUDA tensor creation pass. Kaolin and spconv import with JIT builds disabled
+(`SPCONV_DISABLE_JIT=1 CUMM_DISABLE_JIT=1`). Open3D requires
+`LD_PRELOAD=/home/asus/braindance/scene-completion/.venv/lib/python3.12/site-packages/open3d/cuda/libOpen3D.so.0.19`.
+Torch warns that its compiled architectures stop at sm_120 while GB10 is sm_121; the tested
+operations work, but full model execution still needs verification.
+Full dependency resolution with builds disabled fails: Hydra 1.3.2 requires
+`antlr4-python3-runtime==4.9.*`, which has no usable wheel. Dependency-build permission
+was requested because the workspace instructions prohibit builds without explicit approval.
+No dependency builds or system permission changes have been run. Finish the runtime, then
 test one masked object with a depth pointmap before integrating multi-view object association
-and appearance refinement. Existing model research is not a guarantee of quality on these clips.
+and appearance refinement. Model downloads are verified; inference is not yet verified.
 
 References: [SAM 3D setup](https://github.com/facebookresearch/sam-3d-objects/blob/main/doc/setup.md),
 [SAM 3D inference](https://github.com/facebookresearch/sam-3d-objects/blob/main/notebook/inference.py).

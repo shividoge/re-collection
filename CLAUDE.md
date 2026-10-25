@@ -270,7 +270,9 @@ authorized generated completion for ordinary video, kept separate from recorded 
 Local high-detail splat training and a default-off generated layer are implemented; the first
 real lab clip improves PSNR 22.16 → 22.83 dB, but coverage slips 96.7 → 96.2%. Plane filling is
 an experiment, not learned furniture completion. Full object/room completion remains unfinished.
-GX10 SSH and Hugging Face login are verified; SAM model-access approval and an ARM-compatible runtime are pending. Exact
+GX10 SSH, Hugging Face login and the 13.1 GB SAM checkpoint download are verified.
+Core ARM runtime packages are installed and GPU smoke checks pass; full SAM setup needs
+source dependency builds, which require an explicit exception. Exact
 connection, commands, measurements and remaining work: `docs/SCENE-COMPLETION.md`.
 
 **Last updated:** Sat Oct 24, 16:30 PT, by Shivin's Claude session. **What's left, who does it and the timeline: the top of `TASKS.md` ("Everything left until submission").** The final feature's plan: `docs/LAST-STEP.md`. Sponsor plan: `docs/SPONSOR-PLAN.md`. Theme: `docs/THEME.md` (public name **Relive With A Smile**; "Braindance" stays the internal code name).
@@ -355,3 +357,4 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 
 - 2026-10-25 04:40 CT | Srinivas + Codex | local detailed-splat experiment and separate generated-plane layer; lab held-out PSNR 22.16 to 22.83 dB, coverage 96.7 to 96.2%; browser toggle/orbit verified, Python/web/shared checks pass | Full object completion unfinished: authenticate approved SAM weights on GX10, resolve isolated ARM runtime, then implement and evaluate object generation; see docs/SCENE-COMPLETION.md
 - 2026-10-25 | Srinivas + Codex | authenticated GX10 Hugging Face CLI as srinivasib through browser device authorization; verified whoami | SAM configuration download still returns GatedRepoError; user must complete Meta's model-access form or use an approved account. ARM runtime and object generation remain unfinished.
+- 2026-10-25 | Srinivas + Codex | after access-form submission, downloaded 13.1 GB official SAM checkpoints and verified sizes/SHA-256; installed isolated ARM runtime core from wheels; Torch, PyTorch3D and Open3D GPU checks pass | Full SAM dependency resolution needs a source-build exception for Hydra's antlr runtime; permission requested. SAM inference and scene integration remain unfinished.
