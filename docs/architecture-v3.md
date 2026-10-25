@@ -231,12 +231,13 @@ The caretaker's `notes` ("Tell the guide about this memory") and `avoid` ("Never
 |---|---|---|---|
 | `guide.narration` | query | `{}` | `[{ key, status: 'preparing' \| 'ready' \| 'failed', intro, story, error }]` (reactive): `intro` is said at the frame, `story` once stepped inside |
 | `guideNode.ask` | action (Node) | `{ key, question }` | `{ say, distress, retrieval: 'moss' \| 'all', mossMs, dropped }`: Moss finds this memory's notes for the question (top 5, filtered by memory), Claude answers from only those, `lib/guide.ts` drops ungrounded sentences. Distress words get plain reassurance, no Claude call |
-| `guideNode.voiceToken` | action (Node) | `{}` | `{ token, expiresAt, voice, version }`: a 10-minute Cartesia access token (TTS + STT grants) so the browser streams to Cartesia without the key |
+| `guideNode.voiceToken` | action (Node) | `{}` | `{ token, expiresAt, voice, version, keyterms }`: a 10-minute Cartesia access token (TTS + STT grants) so the browser streams to Cartesia without the key, and up to 100 names and places from the palace for Ink-2's keyterm prompting |
 | `guideNode.prepare` / `guideNode.forget` | internal actions | `{ key }` / `{ docIds }` | index (upsert) or delete the memory's Moss documents; write and ground the intro and story into `guideNarration` |
+| `guideNode.remember` | internal action | `{ key, said, at }` | scheduled by `ask` for anything of four words or more: adds `"<key>#said-<at>"` ("They said: …") to Moss under that memory, so later questions can find it |
 
 - **Grounding (`lib/guide.ts`):** every sentence cites the sources it was given (`label`, `n1…` from the notes, fact ids); a sentence citing nothing passes the companion's free-sentence rules, once; any sentence touching a word that appears only in `avoid` is dropped, cited or not.
 - **Moss:** one index, `braindance-palace`; documents `"<key>#<source>"` with metadata `{ memory, source }`. Without Moss keys the guide still works, giving Claude all of the memory's notes (`retrieval: 'all'`).
-- **Cartesia (browser):** Sonic over `wss://api.cartesia.ai/tts/websocket` and Ink-2 over `wss://api.cartesia.ai/stt/websocket`, each with `?access_token=&cartesia_version=`.
+- **Cartesia (browser), API version `2026-08-14`:** Sonic 3.6 over `wss://api.cartesia.ai/tts/websocket`; Ink-2 over `wss://api.cartesia.ai/stt/turns/websocket` (auto turn detection, the "Patient" profile: thresholds 0.8 / 0.3 / 0.1, 8000 ms) with the `keyterm`s; both with `?access_token=&cartesia_version=`. The answer starts on `turn.eager_end` and is spoken on `turn.end`.
 - **Environment:** `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`, `CARTESIA_API_KEY`, optional `CARTESIA_VOICE_ID`; Claude uses `ANTHROPIC_API_KEY` and `MODEL_LIVE`. `backend/convex.json` marks `@moss-js/moss` as an external Node package (it has a native search engine).
 
 #### Live visit (family join her Memory Palace and talk)
