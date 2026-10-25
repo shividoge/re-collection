@@ -96,6 +96,7 @@ describe('package checks', () => {
     expect(readDepthIndex(index)).toEqual({ bytes: 150, count: 12 })
     expect(readDepthIndex({ ...index, chunks: [[0, 100], [101, 50]] })).toMatchObject({ error: expect.stringMatching(/back to back/) })
     expect(readDepthIndex({ ...index, version: 1 })).toMatchObject({ error: expect.any(String) })
+    expect(readDepthIndex({ ...index, filter: 'row-delta' }), 'the optional row-delta filter is accepted').toEqual({ bytes: 150, count: 12 })
   })
 })
 

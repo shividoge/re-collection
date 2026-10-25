@@ -175,7 +175,7 @@ Function names are the contract (`backend/convex/<module>.ts`). Validators live 
 | `captures.remove` | mutation | `{ captureId }` | `{ ok }` (deletes rows; a scheduled action deletes the R2 objects) |
 | `videos.create` | mutation | `{ title, attendees, fileName, bytes }` | `{ captureId }`; then upload the video with `uploads.start({ captureId, name: 'source.<ext>' ... })`, which routes to `videos/<id>/` and queues `convert` on finish |
 
-URLs in query results are presigned GETs (§6.4). Signing is pure HMAC-SHA256 over the day-floored date, so it's deterministic and can run inside a query (`crypto.subtle`, or a pure-JS HMAC if the query runtime doesn't allow `crypto.subtle`). If neither works in a query, the backend adds an action `files.urls({ captureId })` and records that here; the web data layer hides which one is used.
+URLs in query results are presigned GETs (§6.4). Signing is pure HMAC-SHA256 over the day-floored date, so it's deterministic and can run inside a query. **Decision (backend):** queries sign directly with a synchronous pure-JS SHA-256/HMAC (`backend/convex/lib/r2.ts`, checked against AWS's SigV4 test vectors); `crypto.subtle` also works in Convex queries (checked on the dev deployment) but isn't needed. There is no `files.urls` action: `captures.get`, `captures.list` and `public.*` return the URLs.
 
 ### 6.3 Facts and review (family)
 
