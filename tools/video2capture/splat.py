@@ -17,6 +17,7 @@ Files are standard INRIA 3DGS binary PLYs (docs/capture-format.md, `room.splat`)
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -288,15 +289,27 @@ def prune(g: dict[str, torch.Tensor], contrib: torch.Tensor, keep_max: int, min_
     return {k: v[alive] for k, v in g.items()}
 
 
+def is_lidar(capture: Path) -> bool:
+    """A phone capture (measured LiDAR depth, ARKit poses), not one converted from a video."""
+    import json
+
+    return json.loads((capture / "manifest.json").read_text()).get("source") != "video"
+
+
 def train_from_package(capture: Path, masks_model, device: str, holdout_frames: list[int] | None = None,
                        passes: float = 30, batch: int = 4, width: int = 1280, cap: int = 800_000,
                        keep_max: int = 500_000, sh_degree: int = 1, log=print, checkpoint=lambda: None,
                        progress=lambda fraction: None, timings: dict | None = None,
                        max_views: int = 240) -> dict[str, np.ndarray]:
-    """Train the room splat from a capture package on disk (video.mp4, frames.jsonl, depth,
-    room.bin): the model frames (lines with `d`) minus `holdout_frames`. Same inputs whether it
-    runs right after the conversion or as the GPU worker's separate splat job. At most
-    `max_views` frames, evenly spread, so memory stays bounded for long videos."""
+    """Train the room splat from a capture package on disk (video, frames.jsonl, depth,
+    room.bin): the video frames with depth (moment lines with `d`) minus `holdout_frames`. Same
+    inputs whether it runs right after the conversion or as the GPU worker's separate splat job.
+    At most `max_views` frames, evenly spread, so memory stays bounded for long videos.
+
+    A phone capture works the same way, with three differences: its scan lines have depth but no
+    video frame (skipped), its frames are stored in the sensor's orientation with intrinsics for
+    that (never turned upright, whatever the file's display matrix says), and only LiDAR depth the
+    phone rated high confidence guides the shape (lower levels are noisy at range and on edges)."""
     import json
     import time
 
@@ -308,7 +321,8 @@ def train_from_package(capture: Path, masks_model, device: str, holdout_frames: 
     timings = timings if timings is not None else {}
     dev = torch.device(device)
     manifest = json.loads((capture / "manifest.json").read_text())
-    lines = [l for l in package.read_frames(capture / "frames.jsonl") if l.get("d") is not None]
+    lidar = manifest.get("source") != "video"
+    lines = [l for l in package.read_frames(capture / "frames.jsonl") if l.get("d") is not None and l.get("i") is not None]
     skip = set(holdout_frames or [])
     lines = [l for l in lines if l["i"] not in skip]
     if len(lines) < 2:
@@ -316,19 +330,25 @@ def train_from_package(capture: Path, masks_model, device: str, holdout_frames: 
     if len(lines) > max_views:  # a long video: an even selection keeps memory bounded
         lines = [lines[int(j)] for j in np.linspace(0, len(lines) - 1, max_views).round()]
     info = decode.probe(capture / manifest["video"]["file"])
+    if lidar:  # K is for the stored frames (capture-format.md: never rotated)
+        info = replace(info, orientation=decode.Orientation(), width=info.coded_size[0], height=info.coded_size[1])
     dec = decode.decode(info, [l["i"] for l in lines], width, None, checkpoint=checkpoint)
     images_cpu = torch.from_numpy(np.stack([dec.frames[l["i"]] for l in lines]))
     _, H, W, _ = images_cpu.shape
     masks = masks_model(images_cpu).to(dev)
     images = images_cpu.to(dev)
-    mm = package.read_depth(capture, manifest)
-    depths = torch.from_numpy(np.stack([mm[l["d"]] for l in lines]).astype(np.float32) / 1000).to(dev)
+    mm, conf = package.read_depth_conf(capture, manifest)
+    # Video depth is already 0 wherever its confidence is 0, so `>= 1` changes nothing there.
+    trusted = np.stack([conf[l["d"]] for l in lines]) >= (2 if lidar else 1)
+    depths = torch.from_numpy(np.where(trusted, np.stack([mm[l["d"]] for l in lines]), 0).astype(np.float32) / 1000).to(dev)
     depths = torch.where(fusion.resize_mask(masks, *depths.shape[1:]), torch.zeros_like(depths), depths)
+    # K is for the manifest's video size (a converted video.mp4 is written at exactly that size).
+    video_w, video_h = manifest["video"].get("width") or info.width, manifest["video"].get("height") or info.height
     poses, Ks = [], []
     for l in lines:
         T, K = package.pose_of(l)
         poses.append(T)
-        Ks.append(fusion.scale_K(torch.tensor(K, dtype=torch.float32), W / info.width, H / info.height))
+        Ks.append(fusion.scale_K(torch.tensor(K, dtype=torch.float32), W / video_w, H / video_h))
     poses_t = torch.tensor(np.stack(poses), dtype=torch.float32, device=dev)
     Ks_t = torch.stack(Ks).to(dev)
     pts, cols = package.read_room_bin(capture / manifest["room"]["bin"])

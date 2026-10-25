@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 
-import { dataMode, loadCaptureAssets, publicData, type CaptureAssets, type Fact, type Moment, type Progress, type PublicCapture, type PublicSession } from '../data';
+import { loadCaptureAssets, publicData, type CaptureAssets, type Fact, type Moment, type Progress, type PublicCapture, type PublicSession } from '../data';
 import type { Layers } from '../showcase/Scenes';
 
 // The 3D scenes (three.js) load only once the page has something to show in them, so the front
@@ -8,7 +8,6 @@ import type { Layers } from '../showcase/Scenes';
 const HeroCloud = lazy(() => import('../showcase/Scenes').then((m) => ({ default: m.HeroCloud })));
 const MiniViewer = lazy(() => import('../showcase/Scenes').then((m) => ({ default: m.MiniViewer })));
 const WithCaptureAssets = lazy(() => import('../showcase/Scenes').then((m) => ({ default: m.WithCaptureAssets })));
-const STATIC = dataMode === 'static';
 import '../showcase/showcase.css';
 
 const MemoryLane = lazy(() => import('../showcase/MemoryLane'));
@@ -65,9 +64,9 @@ export function Showcase() {
   const scene = entries?.find((e) => e.capture.id === sceneId) ?? lead;
   const totals = useMemo(
     () => ({
-      captures: entries?.length ?? 0,
+      scans: entries?.filter((e) => !isVideo(e)).length ?? 0,
+      videos: entries?.filter(isVideo).length ?? 0,
       facts: entries?.reduce((n, e) => n + (e.moment?.facts.length ?? 0), 0) ?? 0,
-      sessions: entries?.reduce((n, e) => n + e.sessions.length, 0) ?? 0,
     }),
     [entries],
   );
@@ -75,14 +74,8 @@ export function Showcase() {
   return (
     <div className="site">
       <nav className="site-nav">
-        <a href="#/" className="sn-brand"><span className="mark">◉</span> Braindance</a>
+        <a href="#/" className="sn-brand"><SmileArc small /> Re:Collection</a>
         <div className="links">
-          <a href="#lane">Memory Palace</a>
-          <a href="#how">How it works</a>
-          <a href="#hood">Under the hood</a>
-          {entries && entries.length > 0 && <a href="#moments">Moments</a>}
-          <a href="#safety">Safety</a>
-          <a href="#research">Research</a>
           <a className="sn-museum" href="#/palace/edit"><span className="sn-long">Set up a Memory Palace</span><span className="sn-short">Palace</span> →</a>
         </div>
       </nav>
@@ -91,24 +84,20 @@ export function Showcase() {
         {lead && <Suspense fallback={null}><WithCaptureAssets id={lead.capture.id}>{(assets) => <HeroCloud assets={assets} />}</WithCaptureAssets></Suspense>}
         <div className="hero-fade" />
         <div className="hero-copy">
-          <p className="eyebrow">For families of people living with Alzheimer's</p>
-          <h1>A visit they can step back into.</h1>
-          <p className="lede">
-            Film a visit with an iPhone. Braindance rebuilds the room and the people in it, then lets Claude walk your loved one
-            through it again over the following days, saying only what you approved, and shows you which details they held on to.
-          </p>
+          <SmileArc />
+          <p className="eyebrow">Re:Collection · for families living with Alzheimer's</p>
+          <h1>A visit they can <em>step back into.</em></h1>
+          <p className="lede">A family visit, or an old home video, rebuilt as a 3D room they can walk back into.</p>
           <div className="hero-actions">
-            {lead && <a className="cta" href={`#/p/${lead.capture.id}`}>Walk into a moment</a>}
-            <a className="ghost" href="#how">See how it works</a>
+            <a className="cta" href="#/palace">Enter the Memory Palace</a>
           </div>
           {entries && entries.length > 0 && (
             <dl className="hero-stats">
-              <div><dt>{totals.captures}</dt><dd>real scans</dd></div>
-              <div><dt>{totals.facts}</dt><dd>facts the family approved</dd></div>
-              <div><dt>{totals.sessions}</dt><dd>revisit sessions</dd></div>
+              <div><dt>{totals.scans}</dt><dd>iPhone scans</dd></div>
+              <div><dt>{totals.videos}</dt><dd>old videos rebuilt</dd></div>
+              <div><dt>{totals.facts}</dt><dd>details the family approved</dd></div>
             </dl>
           )}
-          <p className="hero-credit">The room behind this text is a real scan, turning slowly.</p>
         </div>
       </header>
 
@@ -119,20 +108,29 @@ export function Showcase() {
       )}
 
       <section className="problem reveal">
-        <p>
-          In Alzheimer's, a visit can be gone by the next morning. The family remembers it; they don't. A photo or a diary entry
-          can remind them it happened, but it can't put them back in the room.
-        </p>
-        <p className="muted">
-          Research on reviewing a recording of a recent event suggests that helps (Woodberry et al., 2015). Braindance makes the recording
-          something they can walk back into, gently, at their pace, with the family in control of every word.
-        </p>
+        <p>In Alzheimer's, a visit can be gone by the next morning. A photo reminds them it happened. Re:Collection puts them back in the room.</p>
       </section>
 
       {entries && entries.length > 0 && (
         <Suspense fallback={null}>
           <MemoryLane captures={entries.map((e) => e.capture)} diveId={scene?.capture.id} />
         </Suspense>
+      )}
+
+      {entries && entries.length > 0 && (
+        <section id="moments" className="moments reveal">
+          <h2>Every room here was rebuilt</h2>
+          <RoomGroup
+            title="From an iPhone scan"
+            how="LiDAR measures the room while the camera films the visit, so the people replay in 3D where they stood."
+            entries={entries.filter((e) => !isVideo(e))}
+          />
+          <RoomGroup
+            title="From an old video"
+            how="Depth Anything 3 estimates depth in every frame of an ordinary video, and we fuse the frames into one room. Estimated, not measured."
+            entries={entries.filter(isVideo)}
+          />
+        </section>
       )}
 
       {entries && scene && <Walkthrough entries={entries} scene={scene} setSceneId={setSceneId} />}
@@ -146,83 +144,94 @@ export function Showcase() {
         </>
       )}
 
-      <Hood entries={entries} />
 
-      {entries && entries.length > 0 && (
-        <section id="moments" className="moments reveal">
-          <h2>Moments you can walk into</h2>
-          <p className="muted">Shared with the permission of the people who filmed them. Orbit the room, or ride the camera and watch the replay.</p>
-          <div className="moment-grid">
-            {entries.map((e) => (
-              <a key={e.capture.id} className="moment-card" href={`#/p/${e.capture.id}`}>
-                {e.capture.thumbUrl ? <img src={e.capture.thumbUrl} alt="" loading="lazy" /> : <div className="no-thumb" />}
-                <div>
-                  <strong>{e.capture.title || 'A visit'}</strong>
-                  <span className="muted small">
-                    {e.capture.durationSec ? `${Math.round(e.capture.durationSec)} s` : ''} · {e.capture.facts} approved facts
-                    {e.assets.manifest.room ? ` · ${(e.assets.manifest.room.points / 1000).toFixed(0)}k room points` : ''}
-                  </span>
-                  <span className="walk">Walk in →</span>
-                </div>
-              </a>
-            ))}
-          </div>
-        </section>
-      )}
 
       <section id="safety" className="safety reveal">
-        <h2>Safety and dignity are built in, not promised</h2>
+        <h2>Safe by design</h2>
         <div className="safety-grid">
-          <Safe title="The family decides" text="Nothing reaches your loved one until a family member approves it. Anything can be marked 'don't bring this up', and code makes sure it is never said." />
-          <Safe title="No invented details" text="Every sentence Claude speaks is checked against the approved facts before it plays. What fails the check is dropped and logged, never softened." />
-          <Safe title="No face recognition" text="Names come from the people who filmed, never from guessing at faces. Speech is transcribed on the phone." />
-          <Safe title="Gentle by design" text="Claude offers details instead of quizzing, follows their lead, and never corrects or argues. A sign of distress stops the moment and tells the family." />
-          <Safe title="Honest measurement" text="Scores are never shown to them. The family sees real session times, never relabelled, and a hackathon can't claim clinical benefit." />
-          <Safe title="Consent" text="Everyone filmed has to agree before a capture is published, and a capture is private until the family turns on sharing." />
-        </div>
-      </section>
-
-      <section id="research" className="research reveal">
-        <h2>The research, and what we can't claim</h2>
-        <div className="research-grid">
-          <div>
-            <h3>Why it should help</h3>
-            <ul>
-              <li>Reviewing a recording of a recent event with a wearable camera helped people with memory impairment recall it (Woodberry et al., 2015, <em>Memory</em>).</li>
-              <li>Reminiscence work is widely used in dementia care (Woods et al., 2018, Cochrane review).</li>
-              <li>Spaced retrieval helps people with Alzheimer's keep new information, which is why Braindance suggests revisits at +1, +3, +7 and +14 days.</li>
-            </ul>
-          </div>
-          <div>
-            <h3>What we measure</h3>
-            <ul>
-              <li>Facts recalled unprompted, and after a hint, per session.</li>
-              <li>Older memories the moment brought up.</li>
-              <li>Session length, and how often a session ends in distress.</li>
-            </ul>
-          </div>
-          <div>
-            <h3>The pilot we would run</h3>
-            <ul>
-              <li>One memory-care facility. The same visit reviewed with Braindance versus a written diary.</li>
-              <li>Recall tested at two weeks and at three months.</li>
-              <li>This weekend's sessions show the instrument works. They do not show it helps.</li>
-            </ul>
-          </div>
+          <Safe title="The family decides" text="Nothing reaches them until a family member approves it, and anything can be marked 'don't bring this up'." />
+          <Safe title="Nothing made up" text="Every sentence the guide says must cite an approved detail. Code checks it before it's spoken." />
+          <Safe title="Gentle" text="It never quizzes or corrects, waits while they find their words, and stops at any sign of distress." />
         </div>
       </section>
 
       <footer className="site-footer">
         <div>
-          <strong>Braindance</strong>
-          <p className="muted small">Built at Cal Hacks 13.0 with the Claude API. Prior reference: the HackMIT Rumi project and Déjà View, for which APIs worked and how a guide server is shaped. No code was copied.</p>
-        </div>
-        <div className="foot-links">
-          <a href="#how">How it works</a>
-          <a href="#hood">Under the hood</a>
-          {!STATIC && <a href="#/captures">Family tools</a>}
+          <strong>Re:Collection</strong>
+          <p className="muted small">Built at Cal Hacks 13.0 with Claude, Convex, Cartesia and Moss. Research basis: Woodberry et al., 2015 (SenseCam).</p>
         </div>
       </footer>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- mark */
+
+/**
+ * The Re:Collection mark: a smile made of LiDAR points, which also reads as a horizon at sunset.
+ * The large one draws itself dot by dot (CSS, skipped under reduced motion).
+ */
+function SmileArc({ small = false }: { small?: boolean }) {
+  const n = small ? 13 : 31;
+  const w = small ? 26 : 220;
+  const h = small ? 10 : 56;
+  const dots = Array.from({ length: n }, (_, i) => {
+    const a = Math.PI * (0.12 + (0.76 * i) / (n - 1));
+    return { x: w / 2 - Math.cos(a) * (w / 2 - 3), y: 3 + Math.sin(a) * (h - 6), i };
+  });
+  return (
+    <svg className={small ? 'smile smile-small' : 'smile'} viewBox={`0 0 ${w} ${h}`} width={w} height={h} aria-hidden>
+      <defs>
+        <linearGradient id={small ? 'smile-g-s' : 'smile-g'} x1="0" x2="1">
+          <stop offset="0" stopColor="#ffb35c" />
+          <stop offset="1" stopColor="#ff7a8a" />
+        </linearGradient>
+      </defs>
+      {dots.map((d) => (
+        <circle key={d.i} cx={d.x} cy={d.y} r={small ? 1.3 : 2.6} fill={`url(#${small ? 'smile-g-s' : 'smile-g'})`} style={{ animationDelay: `${0.25 + d.i * 0.045}s` }} />
+      ))}
+    </svg>
+  );
+}
+
+/* ---------------------------------------------------------------- rooms */
+
+/** Rebuilt from an ordinary video (estimated) rather than scanned with LiDAR. */
+function isVideo(e: Entry): boolean {
+  return e.assets.manifest.source === 'video';
+}
+
+/** A video capture's title is its file name ("Old clip IMG_9518"); show what it is instead. */
+function roomTitle(e: Entry, n: number): string {
+  const t = e.capture.title?.trim();
+  if (isVideo(e) && (!t || /^old clip\b/i.test(t))) return `Old home video ${n + 1}`;
+  return t || 'A visit';
+}
+
+function RoomGroup({ title, how, entries }: { title: string; how: string; entries: Entry[] }) {
+  if (entries.length === 0) return null;
+  return (
+    <div className="room-group">
+      <div className="room-group-head">
+        <h3>{title}</h3>
+        <p className="muted">{how}</p>
+      </div>
+      <div className="moment-grid">
+        {entries.map((e, n) => (
+          <a key={e.capture.id} className="moment-card" href={`#/p/${e.capture.id}`}>
+            {e.capture.thumbUrl ? <img src={e.capture.thumbUrl} alt="" loading="lazy" /> : <div className="no-thumb" />}
+            <div>
+              <span className="made">{isVideo(e) ? 'Rebuilt from video' : 'LiDAR scan'}</span>
+              <strong>{roomTitle(e, n)}</strong>
+              <span className="muted small">
+                {e.capture.durationSec ? `${Math.round(e.capture.durationSec)} s` : ''}
+                {e.assets.manifest.room ? ` · ${(e.assets.manifest.room.points / 1e6).toFixed(1)} M points` : ''}
+              </span>
+              <span className="walk">Walk in →</span>
+            </div>
+          </a>
+        ))}
+      </div>
     </div>
   );
 }
@@ -547,78 +556,6 @@ function RevisitStep({ entry }: { entry: Entry }) {
 }
 
 /* ------------------------------------------------------------ under the hood */
-
-function Hood({ entries }: { entries: Entry[] | null }) {
-  return (
-    <section id="hood" className="hood reveal">
-      <p className="eyebrow">Under the hood</p>
-      <h2>Small pieces, one honest loop</h2>
-      <svg className="arch" viewBox="0 0 900 300" role="img" aria-label="Architecture: the iPhone app uploads to the guide server, which talks to Claude and serves the website">
-        <defs>
-          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0 0 L10 5 L0 10 z" fill="currentColor" />
-          </marker>
-        </defs>
-        <g className="node">
-          <rect x="20" y="105" width="190" height="90" rx="12" />
-          <text x="115" y="140" textAnchor="middle" className="t1">iPhone app</text>
-          <text x="115" y="162" textAnchor="middle" className="t2">ARKit · LiDAR · Metal</text>
-          <text x="115" y="180" textAnchor="middle" className="t2">on-device transcript</text>
-        </g>
-        <g className="node accent">
-          <rect x="350" y="105" width="200" height="90" rx="12" />
-          <text x="450" y="140" textAnchor="middle" className="t1">Guide server</text>
-          <text x="450" y="162" textAnchor="middle" className="t2">Node · files on disk</text>
-          <text x="450" y="180" textAnchor="middle" className="t2">grounding check (code)</text>
-        </g>
-        <g className="node">
-          <rect x="690" y="20" width="190" height="96" rx="12" />
-          <text x="785" y="52" textAnchor="middle" className="t1">Claude</text>
-          <text x="785" y="74" textAnchor="middle" className="t2">Opus 5.5: facts, scoring</text>
-          <text x="785" y="92" textAnchor="middle" className="t2">Sonnet 5.5: narration, talk</text>
-        </g>
-        <g className="node">
-          <rect x="690" y="184" width="190" height="96" rx="12" />
-          <text x="785" y="216" textAnchor="middle" className="t1">Website</text>
-          <text x="785" y="238" textAnchor="middle" className="t2">family review · Revisit</text>
-          <text x="785" y="256" textAnchor="middle" className="t2">dashboard · this page</text>
-        </g>
-        <g className="edge">
-          <line x1="212" y1="150" x2="346" y2="150" markerEnd="url(#arrow)" />
-          <line x1="552" y1="130" x2="686" y2="80" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
-          <line x1="552" y1="170" x2="686" y2="222" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
-          <text x="279" y="138" textAnchor="middle" className="t3">capture package</text>
-          <text x="590" y="82" textAnchor="middle" className="t3">facts, replies</text>
-          <text x="585" y="232" textAnchor="middle" className="t3">approved facts only</text>
-        </g>
-      </svg>
-
-      <div className="hood-grid">
-        <div>
-          <h3>Two contracts, nothing implicit</h3>
-          <p className="muted">The phone's capture package and the guide's API are written down. Each side is built against the document, so the pieces fit the first time.</p>
-        </div>
-        <div>
-          <h3>Claude does the judgement, code does the rules</h3>
-          <p className="muted">Claude proposes facts, narration and scores. Code decides what may be said: evidence is required, approval is required, never-mention is absolute.</p>
-        </div>
-        <div>
-          <h3>Nothing fake</h3>
-          <p className="muted">No sample data stands in for a real capture or a real session. If something is missing, the page says so. Test runs are deleted so they never reach a chart.</p>
-        </div>
-      </div>
-
-      <div className="honest reveal">
-        <h3>Not every scan is clean, and we show that</h3>
-        <p>
-          LiDAR struggles with glossy floors, bright light and big open halls. In the same hall, the Anthropic booth kept about 70% high-confidence
-          depth. A scan of a lit-up sign kept 42%, and only 9% while filming, because of the shiny floor and the light. We keep the confident points and leave
-          the rest empty, so you can see how sure the sensor was{entries && entries.length > 1 ? ' (try the scene switcher above)' : ''}.
-        </p>
-      </div>
-    </section>
-  );
-}
 
 function Safe({ title, text }: { title: string; text: string }) {
   return (

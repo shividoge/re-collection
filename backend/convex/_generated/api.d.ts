@@ -36,6 +36,7 @@ import type * as people from "../people.js";
 import type * as progress from "../progress.js";
 import type * as public_ from "../public.js";
 import type * as sessions from "../sessions.js";
+import type * as splats from "../splats.js";
 import type * as system from "../system.js";
 import type * as uploads from "../uploads.js";
 import type * as validators from "../validators.js";
@@ -77,6 +78,7 @@ declare const fullApi: ApiFromModules<{
   progress: typeof progress;
   public: typeof public_;
   sessions: typeof sessions;
+  splats: typeof splats;
   system: typeof system;
   uploads: typeof uploads;
   validators: typeof validators;

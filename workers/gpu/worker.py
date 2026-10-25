@@ -49,7 +49,6 @@ class Pipeline(Protocol):
     """The GPU work itself (workers/gpu/pipeline.py). Created once; models stay loaded."""
 
     max_frames: int
-    splat_inputs: tuple[str, ...]
 
     def convert(
         self, video: Path, out: Path, *, capture_id: str, title: str, attendees: list[str],
@@ -292,10 +291,11 @@ class Worker:
 
     def _splat(self, job: _Job, inputs: Inputs, inp: Path, out: Path) -> JobResult:
         raw = {f["name"]: f for f in inputs["files"] if f["area"] == "raw"}
-        missing = [n for n in self._pipeline.splat_inputs if n not in raw]
+        names = splat_inputs(inputs["manifestJson"])
+        missing = [n for n in names if n not in raw]
         if missing:
             raise PermanentError(f"The capture is missing {', '.join(missing)}, which the splat needs.")
-        for name in self._pipeline.splat_inputs:
+        for name in names:
             self._download(job, raw[name], inp)
         info = _splat_info(self._pipeline.splat(inp, out, progress=job.progress, should_stop=job.should_stop))
         job.check()
@@ -373,6 +373,23 @@ def _safe_path(root: Path, name: str) -> Path:
     if not rel.parts or rel.is_absolute() or ".." in rel.parts:
         raise PermanentError(f"The server sent an unsafe file name: {name!r}.")
     return root.joinpath(*rel.parts)
+
+
+def splat_inputs(manifest_json: str | None) -> list[str]:
+    """The raw files a splat trains from, named by the capture's manifest: a video capture has
+    video.mp4 and depth v1 or v2; a phone capture may have video.mov, and depth v1 keeps its
+    confidence in confidence.bin."""
+    try:
+        m = json.loads(manifest_json or "")
+        depth = m["depth"]
+        extra = depth["index"] if depth.get("encoding") == "v2" else depth["confidenceFile"]
+        names = ["manifest.json", "frames.jsonl", m["video"]["file"], m["room"]["bin"], depth["file"], extra]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise PermanentError("The capture's manifest doesn't name the video, room, depth and confidence files "
+                             "the splat trains from.") from exc
+    if not all(isinstance(n, str) and n for n in names):
+        raise PermanentError("The capture's manifest has an empty or non-text file name.")
+    return list(dict.fromkeys(names))
 
 
 def _splat_info(info: Mapping[str, object]) -> SplatInfo:

@@ -262,6 +262,20 @@ export class CartesiaVoice {
     this.processor = processor
   }
 
+  /**
+   * Push-to-talk's second press: asks Ink-2 to finish the turn now (it flushes what it has and
+   * sends turn.end), then stops listening. Stops anyway after `ms` if nothing more comes.
+   */
+  endTurn(ms = 2500) {
+    const ws = this.stt
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'close' }))
+    this.processor?.disconnect()
+    this.mic?.getTracks().forEach((track) => track.stop())
+    setTimeout(() => {
+      if (this.stt === ws) this.unlisten()
+    }, ms)
+  }
+
   unlisten() {
     if (this.stt && this.stt.readyState === WebSocket.OPEN) this.stt.send(JSON.stringify({ type: 'close' }))
     this.stt?.close()

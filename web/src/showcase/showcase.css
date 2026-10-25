@@ -226,7 +226,7 @@
   padding: 12px 22px; border-radius: 14px; background: rgba(20, 13, 12, 0.72); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(246, 238, 228, 0.14); text-align: center; opacity: 0; transition: opacity 0.5s ease, transform 0.5s ease; max-width: calc(100% - 32px); }
 .site .lane-label.on { opacity: 1; transform: translate(-50%, 0); }
-.site .lane-label strong { font-size: clamp(18px, 2.4vw, 24px); font-family: Georgia, 'Times New Roman', serif; font-weight: 500; }
+.site .lane-label strong { font-size: clamp(18px, 2.4vw, 24px); font-family: var(--serif); font-weight: 650; }
 .site .lane-n { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; color: var(--accent); }
 .site .lane-end { position: absolute; inset: 0; background: var(--bg); }
 .site .lane-end .hero-cloud { opacity: 1; }
@@ -257,3 +257,83 @@
 }
 
 .site .lane-error { position: absolute; left: 0; right: 0; bottom: 24px; text-align: center; color: #ffb4a8; font-size: 14px; z-index: 2; }
+
+/* Every room, grouped by how it was made */
+.site .room-group { margin-top: 28px; }
+.site .room-group-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin-bottom: 14px; }
+.site .room-group-head h3 { margin: 0; font-size: 20px; }
+.site .room-group-head p { margin: 0; max-width: 64ch; font-size: 15px; }
+
+/* ---------------------------------------------------------------------------
+   Re:Collection identity (matches the demo video): plum night, warm cream,
+   an amber-to-rose glow used sparingly, Archivo heavy and tight for headlines,
+   Archivo to read, Plex Mono for small labels. Overrides the tokens above. */
+.site {
+  --bg: #140d14;
+  --text: #f6eee4;
+  --muted: #a8999a;
+  --line: rgba(246, 238, 228, 0.1);
+  --accent: #ffb35c;
+  --rose: #ff7a8a;
+  --accent-soft: rgba(255, 179, 92, 0.12);
+  --amber: #ffb35c;
+  --panel-solid: #1d141c;
+  --glow: linear-gradient(90deg, #ffb35c, #ff7a8a);
+  --radius: 14px;
+  --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --sans: 'Archivo', ui-sans-serif, -apple-system, system-ui, sans-serif;
+  /* Headlines: the same sans as the body, heavier and tighter, for readability. */
+  --serif: 'Archivo', ui-sans-serif, -apple-system, system-ui, sans-serif;
+  font-size: 16px;
+}
+.site h1,
+.site h2 { font-family: var(--serif); font-weight: 700; letter-spacing: -0.03em; }
+.site h2 { font-size: clamp(30px, 4.4vw, 48px); line-height: 1.05; }
+.site h3 { font-family: var(--sans); font-weight: 600; letter-spacing: -0.01em; }
+.site em { font-style: normal; background: var(--glow); -webkit-background-clip: text; background-clip: text; color: transparent; padding-right: 0.06em; }
+
+/* The mark */
+.site .smile { display: block; overflow: visible; margin: 0 0 18px -4px; }
+.site .smile circle { opacity: 0; animation: smile-dot 0.5s ease-out forwards; }
+.site .smile-small { display: inline-block; margin: 0 8px 0 0; vertical-align: -1px; }
+.site .smile-small circle { opacity: 1; animation: none; }
+@keyframes smile-dot { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .site .smile circle { animation: none; opacity: 1; } }
+
+/* Top bar */
+.site .site-nav { background: rgba(20, 13, 20, 0.7); }
+.site .site-nav .sn-brand { font-family: var(--serif); font-size: 18px; font-weight: 700; letter-spacing: -0.01em; display: inline-flex; align-items: center; }
+.site .site-nav .links a.sn-museum,
+.site .cta {
+  background: var(--glow); color: #2a1418; font-weight: 600; border: 0;
+  box-shadow: 0 6px 26px rgba(255, 122, 138, 0.28);
+}
+.site .site-nav .links a.sn-museum:hover { color: #2a1418; box-shadow: 0 8px 30px rgba(255, 122, 138, 0.42); }
+
+/* Hero: the live scan, the mark, one bold line */
+.site .hero h1 { font-size: clamp(46px, 8vw, 96px); line-height: 0.98; font-weight: 800; letter-spacing: -0.04em; max-width: 12ch; }
+.site .hero .lede { font-family: var(--sans); color: #e9ddd0; max-width: 42ch; font-size: clamp(18px, 2.1vw, 22px); }
+.site .eyebrow { color: var(--muted); letter-spacing: 0.12em; font-size: 12px; }
+.site .hero-fade {
+  background:
+    linear-gradient(90deg, rgba(20, 13, 20, 0.95) 0%, rgba(20, 13, 20, 0.7) 40%, rgba(20, 13, 20, 0.05) 80%),
+    linear-gradient(0deg, var(--bg) 0%, transparent 26%);
+}
+.site .hero-stats dt { font-family: var(--serif); font-weight: 700; font-size: 40px; letter-spacing: -0.03em; }
+.site .hero-stats dd { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+
+/* The one-line problem, set like a quote */
+.site .problem p { font-family: var(--serif); font-size: clamp(22px, 2.8vw, 30px); line-height: 1.3; font-weight: 500; letter-spacing: -0.015em; color: var(--text); }
+
+/* Rooms: cards that lift, a chip that says how each was made */
+.site .moment-card { background: var(--panel-solid); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; transition: transform 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease; }
+.site .moment-card img { transition: transform 0.6s ease, filter 0.6s ease; filter: saturate(0.9); }
+.site .moment-card:hover { transform: translateY(-4px); border-color: rgba(255, 179, 92, 0.45); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45); }
+.site .moment-card:hover img { transform: scale(1.04); filter: saturate(1.05); }
+.site .moment-card .made { display: inline-block; margin-bottom: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.site .moment-card strong { font-family: var(--serif); font-size: 18px; font-weight: 650; line-height: 1.2; letter-spacing: -0.01em; }
+.site .moment-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.site .room-group-head h3 { font-family: var(--serif); font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+@media (prefers-reduced-motion: reduce) { .site .moment-card, .site .moment-card img { transition: none; } }
+
+.site .site-footer strong { font-family: var(--serif); font-size: 18px; font-weight: 700; }

@@ -8,8 +8,12 @@ and to the presigned R2 URLs Convex hands out, so it runs anywhere with a GPU.
   `source: "video"`, `depth.estimated: true`, depth v2, `frames.jsonl`, `video.mp4`, `room.bin`,
   `keyframes/kNNNN.jpg` at 1 per second, `thumb.jpg`), uploads it and calls
   `worker.complete({ kind: 'convert', manifestJson })`. The backend then queues facts, bake and splat.
-- `splat` job: downloads the raw files, trains the splat, uploads `room.spz` (SPZ v3, gzip) and
-  calls `worker.complete({ kind: 'splat', splat: { file: 'room.spz', format: 'spz', count, shDegree: 1, source: 'trained-from-video' } })`.
+- `splat` job: downloads the raw files the manifest names (video, `frames.jsonl`, `room.bin`, depth v1
+  or v2), trains the splat, uploads `room.spz` (SPZ v3, gzip) and calls
+  `worker.complete({ kind: 'splat', splat: { file: 'room.spz', format: 'spz', count, shDegree: 1, source } })`.
+  `source` is `trained-from-video` for a converted video and `trained-from-lidar-capture` for a phone
+  capture: it trains on the moment's video frames (scan lines have no video), in the sensor's
+  orientation, with the phone's ARKit poses and only its high-confidence LiDAR depth.
 
 The pipeline itself is `tools/video2capture` (stages in `convert.py`, `splat.py`); this folder
 adds the job loop (`worker.py`), the Convex calls (`client.py`, over Convex's HTTP API: the `convex`

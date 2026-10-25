@@ -3,7 +3,7 @@ import { parseManifest } from '../../shared/manifest'
 import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import { action, internalAction, internalMutation, internalQuery, type ActionCtx } from './_generated/server'
-import { fileKey, invalid, notFound, requireCapture } from './lib/data'
+import { fileKey, invalid, keepSplat, notFound, requireCapture } from './lib/data'
 import {
   PART_SIZE,
   abortMultipart,
@@ -103,7 +103,7 @@ export const register = internalMutation({
     await ctx.db.patch(uploadId, { status: 'done' })
     if (manifestJson !== undefined) {
       const manifest = parseManifest(manifestJson)
-      await ctx.db.patch(capture._id, { manifestJson, title: manifest.title || capture.title, durationSec: manifest.video.durationSec ?? capture.durationSec })
+      await ctx.db.patch(capture._id, { manifestJson: keepSplat(capture, manifestJson), title: manifest.title || capture.title, durationSec: manifest.video.durationSec ?? capture.durationSec })
     }
     const file = await registerFile(ctx, capture, {
       area: upload.area,
