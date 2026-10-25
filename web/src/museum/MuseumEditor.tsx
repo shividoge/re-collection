@@ -176,19 +176,19 @@ export function MuseumEditor() {
       setSavedJson(JSON.stringify(toArrangement(draft)))
       setCustom(true)
       const at = saved.updatedAt ? new Date(saved.updatedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : ''
-      setStatus({ kind: 'ok', text: STATIC ? `Saved in this browser ${at}` : `Saved ${at}. Her museum shows it now.` })
+      setStatus({ kind: 'ok', text: STATIC ? `Saved in this browser ${at}` : `Saved ${at}. It's live now.` })
     } catch (e) {
       setStatus({ kind: 'error', text: (e as Error).message })
     }
   }
 
   async function reset() {
-    if (!window.confirm('Go back to the automatic museum (every visit, oldest first)? Your titles, captions and order are cleared.')) return
+    if (!window.confirm('Start over with every visit, oldest first? Your titles, captions and order are cleared.')) return
     try {
       await resetArrangement()
       await load()
       setSelected(-1)
-      setStatus({ kind: 'ok', text: 'Back to the automatic museum.' })
+      setStatus({ kind: 'ok', text: 'Started over with every visit.' })
     } catch (e) {
       setStatus({ kind: 'error', text: (e as Error).message })
     }
@@ -229,15 +229,15 @@ export function MuseumEditor() {
               Hide panel ⟩
             </button>
           </div>
-          <h1>Set up her museum</h1>
-          <p>Choose the pictures she'll see, put them in order, and write a few words for each label. She sees exactly this.</p>
+          <h1>Set up the Memory Palace</h1>
+          <p>Choose the memories to show, put them in order, and add a few words to each. This is exactly what they'll see.</p>
           {STATIC && <p className="me-note">This public demo has no server, so saving keeps it in this browser only.</p>}
         </header>
 
         <section className="me-section">
           <label className="me-field">
-            <span>Museum title</span>
-            <input value={draft.title} maxLength={TITLE_MAX} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Our visits" />
+            <span>Palace title</span>
+            <input value={draft.title} maxLength={TITLE_MAX} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Memory Palace" />
           </label>
           <label className="me-field">
             <span>Under the title</span>
@@ -245,7 +245,7 @@ export function MuseumEditor() {
               value={draft.subtitle}
               maxLength={TITLE_MAX}
               onChange={(e) => setDraft({ ...draft, subtitle: e.target.value })}
-              placeholder="Every visit the family filmed, oldest first"
+              placeholder="Moments with your family"
             />
           </label>
         </section>
@@ -380,7 +380,7 @@ export function MuseumEditor() {
                       value={row.caption}
                       maxLength={CAPTION_MAX}
                       rows={2}
-                      placeholder="A few words for her (optional)"
+                      placeholder="A few words (optional)"
                       onChange={(e) => change(i, { caption: e.target.value })}
                       onFocus={() => show(i)}
                       aria-label={`Caption of picture ${i + 1}`}
@@ -419,12 +419,12 @@ export function MuseumEditor() {
           </div>
           {status && <p className={`me-status ${status.kind}`}>{status.text}</p>}
           <label className="me-field me-link">
-            <span>Her link (for the iPad)</span>
+            <span>Link to the Memory Palace</span>
             <input readOnly value={patientLink} onFocus={(e) => e.target.select()} />
           </label>
           {custom && (
             <button className="me-reset" onClick={() => void reset()}>
-              Go back to the automatic museum
+              Start over with every visit
             </button>
           )}
         </footer>

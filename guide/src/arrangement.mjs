@@ -43,7 +43,7 @@ export function validateArrangement(body, captureIds, uploadIds = new Set()) {
     if (typeof item.piece !== 'string' || !PIECE.test(item.piece)) return { error: `Item ${i + 1}: "piece" must be video, thumb or kNNNN.` };
     items.push({ capture: item.capture, piece: item.piece, title: text(item.title, TITLE_MAX), caption: text(item.caption, CAPTION_MAX) });
   }
-  return { value: { title: text(body.title, TITLE_MAX) || 'Our visits', subtitle: text(body.subtitle, TITLE_MAX), items } };
+  return { value: { title: text(body.title, TITLE_MAX) || 'Memory Palace', subtitle: text(body.subtitle, TITLE_MAX), items } };
 }
 
 /** What a visitor may see: only the pictures from captures the family made public (never uploads). */

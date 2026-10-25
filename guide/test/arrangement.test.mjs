@@ -19,7 +19,7 @@ describe('validateArrangement', () => {
       },
       ids,
     );
-    assert.equal(value.title, 'Our visits');
+    assert.equal(value.title, 'Memory Palace');
     assert.deepEqual(value.items, [
       { capture: OTHER_ID, piece: 'k0012', title: 'Her 70th', caption: 'The whole family came.' },
       { capture: CAPTURE_ID, piece: 'video', title: '', caption: '' },

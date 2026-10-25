@@ -188,7 +188,7 @@ export function arrangedExhibition(a: Arrangement, visits: Visit[], uploads: Mus
     const art = v && item.piece ? pieceArtwork(v, item.piece, item.title, item.caption, n) : null
     return art ? [art] : []
   })
-  return { id: 'visits', title: a.title || 'Our visits', subtitle: a.subtitle || undefined, items, source: 'visits' }
+  return { id: 'visits', title: a.title || 'Memory Palace', subtitle: a.subtitle || undefined, items, source: 'visits' }
 }
 
 /** Pictures that fill two rooms of the gallery (layout.ts: 8 in the first, 6 in the last). */
@@ -212,7 +212,7 @@ export function automaticArrangement(visits: Visit[]): Arrangement {
     for (const [i, s] of stills.entries()) if (s[round] && items.length < TWO_ROOMS) hang(visits[i], s[round])
   }
   for (let i = 0; items.length < TWO_ROOMS && items.length > 0; i++) items.push({ ...items[i] })
-  return { title: 'Our visits', subtitle: 'Every visit the family filmed, oldest first', items }
+  return { title: 'Memory Palace', subtitle: 'Moments with your family', items }
 }
 
 /** "Our visits": the caretaker's arrangement if there is one, otherwise the automatic museum. */

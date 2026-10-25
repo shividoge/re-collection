@@ -270,7 +270,7 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
               <div key="title" className="museum-caption-body">
                 <strong>{exhibition.title}</strong>
                 <span className="museum-date">
-                  {total} {total === 1 ? 'piece' : 'pieces'} · press → to begin, or look at a picture
+                  {total} {total === 1 ? 'memory' : 'memories'} · tap → to begin
                 </span>
               </div>
             )}

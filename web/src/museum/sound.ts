@@ -8,7 +8,7 @@
 const MUSIC_URL = `${import.meta.env.BASE_URL}museum/audio/gymnopedie-1.mp3`
 const PREF_KEY = 'relive.museum.music'
 /** The music's normal level: clearly heard, still below a voice. */
-const MUSIC_LEVEL = 0.62
+const MUSIC_LEVEL = 0.85
 
 export class MuseumSound {
   private ctx: AudioContext | null = null
