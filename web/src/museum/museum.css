@@ -466,3 +466,12 @@
     animation: none;
   }
 }
+
+/* Visit together, in the museum: the iPad's button sits under the top bar; on the helper's
+   phone, what's open on the iPad shows above the caption. */
+.museum .together-corner {
+  top: 76px;
+}
+.museum .together-open {
+  bottom: 150px;
+}

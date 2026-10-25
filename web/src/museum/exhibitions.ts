@@ -29,6 +29,8 @@ export interface Artwork {
   t?: number
   /** Added on this device (can be removed again here). */
   local?: boolean
+  /** From a visit rebuilt from an ordinary video: its room is estimated, not measured. */
+  estimated?: boolean
 }
 
 export interface Exhibition {
@@ -105,7 +107,7 @@ export function piecesOf(v: Visit): string[] {
 export function pieceArtwork(v: Visit, piece: string, title = '', caption = '', n = 0): Artwork | null {
   const url = (name: string) => v.assets.rawUrl(name) ?? undefined
   const poster = v.thumb ? url('thumb.jpg') : undefined
-  const base = { id: `${v.id}-${piece}-${n}`, title: title || v.title, date: v.date, caption: caption || undefined, captureId: v.id }
+  const base = { id: `${v.id}-${piece}-${n}`, title: title || v.title, date: v.date, caption: caption || undefined, captureId: v.id, estimated: v.manifest.source === 'video' || undefined }
   const video = v.manifest.video?.file ? url(v.manifest.video.file) : undefined
   if (piece === 'video') return video ? { ...base, kind: 'video', src: video, poster, t: 0 } : null
   if (piece === 'thumb') return poster ? { ...base, kind: 'photo', src: poster, t: 0 } : null
@@ -270,4 +272,17 @@ export async function loadExhibitions(): Promise<Exhibition[]> {
     })
   }
   return all
+}
+
+/**
+ * The piece a shared walk points at (Visit together): `at` when that piece is still the visit
+ * `atId` names (the two screens' lists can differ), else the first piece of that visit, else
+ * `at` itself; −1 for the entrance or a piece this museum doesn't have.
+ */
+export function followIndex(items: Artwork[], at: number, atId: string | null): number {
+  const inRange = at >= 0 && at < items.length
+  if (atId === null) return inRange ? at : -1
+  if (inRange && items[at].captureId === atId) return at
+  const first = items.findIndex((a) => a.captureId === atId)
+  return first >= 0 ? first : inRange ? at : -1
 }

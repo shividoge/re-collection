@@ -215,3 +215,6 @@ export const arrangements = {
     }
   },
 }
+
+/** data/mode.ts: live (Convex) or the static public site. */
+export const dataMode: 'live' | 'static' = STATIC ? 'static' : 'live'

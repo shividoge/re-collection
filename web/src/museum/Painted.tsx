@@ -1,9 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { brushStep, PAINT_GLSL } from './paint'
 
 /**
- * The museum's painted look (paint.ts) laid over a photo or video on the page, filling the
+ * The museum's painted look (paint.ts) laid over a video on the page (photos use PaintedStill), filling the
  * screen as the element under it does (`contain` or `cover`), so it can lift away and leave the
  * picture exactly as taken. `painted` is where it's heading (true: painted, false: as taken),
  * over `ms`; once it's fully lifted the canvas hides and stops drawing.
@@ -125,9 +125,73 @@ export function Painted({ source, fit, painted, ms, onSettled }: { source: HTMLI
       texture.dispose()
       material.dispose()
       renderer.dispose()
+      // Let the context go now, not whenever the browser gets round to it (each one is costly on a tablet).
+      renderer.forceContextLoss()
     }
     // A new renderer per picture and fit; `painted` changes are picked up by the loop.
   }, [source, fit])
 
   return <canvas ref={canvas} className="stepin-painted" aria-hidden="true" />
+}
+
+/**
+ * The same painted look for a photo, without a second WebGL context: the museum's renderer
+ * paints it once (painter.ts paintToCanvas) and the page fades that painting over the photo.
+ * Fading in the page mixes the same way the shader did (in gamma), so it lifts the same.
+ */
+export function PaintedStill({
+  src,
+  paint,
+  fit,
+  painted,
+  ms,
+  onSettled,
+}: {
+  src: string
+  paint: (src: string, maxW: number, maxH: number) => Promise<HTMLCanvasElement>
+  fit: 'contain' | 'cover'
+  painted: boolean
+  ms: number
+  onSettled?: () => void
+}) {
+  const box = useRef<HTMLDivElement>(null)
+  const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    const k = Math.min(2, window.devicePixelRatio || 1)
+    const side = Math.min(2048, Math.ceil(Math.max(window.innerWidth, window.innerHeight) * k))
+    paint(src, side, side).then(
+      (c) => !cancelled && setCanvas(c),
+      () => !cancelled && setFailed(true),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [src, paint])
+  useEffect(() => {
+    const el = box.current
+    if (!el || !canvas) return
+    canvas.className = 'stepin-painted'
+    canvas.style.objectFit = fit
+    el.replaceChildren(canvas)
+  }, [canvas, fit])
+
+  // Fade toward the goal from wherever it is now, easing in and out.
+  const settled = useRef(onSettled)
+  useEffect(() => {
+    settled.current = onSettled
+  }, [onSettled])
+  useEffect(() => {
+    const el = box.current
+    // Nothing to lift (the painting couldn't be made): it's already as taken.
+    if (failed) return settled.current?.()
+    if (!el || !canvas) return
+    // Read where a running fade has got to before replacing it.
+    const from = Number(getComputedStyle(el).opacity)
+    el.getAnimations().forEach((a) => a.cancel())
+    const a = el.animate([{ opacity: from }, { opacity: painted ? 1 : 0 }], { duration: ms, easing: 'cubic-bezier(0.45, 0, 0.55, 1)', fill: 'forwards' })
+    a.onfinish = () => settled.current?.()
+  }, [painted, ms, canvas, failed])
+  return <div ref={box} className="stepin-painted" aria-hidden="true" />
 }

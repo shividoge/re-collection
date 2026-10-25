@@ -9,7 +9,6 @@ import { MuseumPage } from './museum/MuseumPage'
 import { RoomFile } from './views/RoomFile'
 import { Showcase } from './views/Showcase'
 import { MemoryWindow } from './window/MemoryWindow'
-import { Museum } from './museum/Museum'
 import { setPublicMode, STATIC } from './api'
 import './views/views.css'
 
@@ -24,11 +23,11 @@ const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
   // The Memory Window: the visit full screen, looked into with head tracking (TV, laptop, iPad).
   // #/window/<id>?from=museum comes back to the museum.
   [/^#\/window\/([0-9a-f-]{36})(?:\?from=(museum))?$/i, (id, from) => <MemoryWindow key={id} id={id} from={from} />],
-  // Your memories: every moment as a picture frame in a calm hall; tap one to step into its
-  // Memory Window. #/memories?join=CODE is a helper's phone joining the iPad's walk ("Visit together").
-  [/^#\/memories(\?join=[A-Za-z]*)?$/i, (join) => <Museum key={join ?? ''} join={join?.slice('?join='.length)} />],
-  // The walkable museum: #/museum, or #/museum/<exhibition id>.
-  [/^#\/museum(?:\/([\w-]+))?$/, (id) => <MuseumPage key="museum" id={id} />],
+  // The old hall's address now opens the museum (keeping a helper's join code).
+  [/^#\/memories(\?join=[A-Za-z]*)?$/i, (join) => (location.replace(`#/museum${join ?? ''}`), null)],
+  // The walkable museum: #/museum, or #/museum/<exhibition id>; #/museum?join=CODE is a helper's
+  // phone joining the iPad's walk ("Visit together").
+  [/^#\/museum(?:\/([\w-]+))?(?:\?join=([A-Za-z]*))?$/, (id, join) => <MuseumPage key="museum" id={id} join={join} />],
   // The caretaker's editor for that museum (after the line above, so it wins over an exhibition id).
   [/^#\/museum\/edit$/, () => <MuseumEditor />],
 ]
