@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { HANG_HEIGHT, STYLES, fitPicture, planMuseum, route, slide, walkable, type RoomStyle } from '../src/museum/layout'
+import { STYLES, fitPicture, planMuseum, route, slide, walkable, type RoomStyle } from '../src/museum/layout'
 
-const STYLE_NAMES: RoomStyle[] = ['calm', 'gallery', 'salon', 'hall']
+const STYLE_NAMES: RoomStyle[] = ['classic', 'calm', 'gallery', 'salon', 'hall']
 
 describe('museum layout', () => {
   it('gives every picture a slot, and adds rooms only as needed', () => {
@@ -18,12 +18,14 @@ describe('museum layout', () => {
     }
   })
 
-  it('hangs pictures at eye level on a wall of their own room, facing into it', () => {
+  it('hangs pictures at the height of their style, clear of panelling, on a wall of their own room', () => {
     for (const style of STYLE_NAMES) {
       const plan = planMuseum(23, style)
       for (const s of plan.slots) {
         const r = plan.rooms[s.room]
-        expect(s.center[1]).toBe(HANG_HEIGHT)
+        expect(s.center[1]).toBe(plan.spec.hang)
+        // Where there's panelling, the frame (mat and border: 0.115 m) clears its rail (top at 1.08 m).
+        if (style === 'classic') expect(s.center[1] - s.maxH / 2 - 0.115).toBeGreaterThan(1.08)
         const onSide = Math.abs(s.center[0] - r.x0) < 1e-9 || Math.abs(s.center[0] - r.x1) < 1e-9
         const onBack = Math.abs(s.center[2] - r.zBack) < 1e-9
         expect(onSide || onBack).toBe(true)

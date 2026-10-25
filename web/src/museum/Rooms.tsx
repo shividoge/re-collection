@@ -2,9 +2,10 @@ import { MeshReflectorMaterial, RoundedBox } from '@react-three/drei'
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js'
+import { ArchDoorways, Carpets, ClassicBench, Cornice, Lantern, Wainscot } from './Classic'
 import { WALL, type MuseumPlan, type Room } from './layout'
 import type { Look } from './looks'
-import { plaster, stoneFloor, titleTexture, woodFloor, type SurfaceMaps } from './textures'
+import { fabric, plaster, stoneFloor, titleTexture, woodFloor, type SurfaceMaps } from './textures'
 
 RectAreaLightUniformsLib.init()
 
@@ -23,10 +24,10 @@ function floorMaps(look: Look): SurfaceMaps {
   return maps
 }
 
-function plasterMaps(color: [number, number, number]): SurfaceMaps {
-  const key = color.join(',')
+function plasterMaps(color: [number, number, number], finish: 'plaster' | 'fabric' = 'plaster'): SurfaceMaps {
+  const key = `${finish}:${color.join(',')}`
   let maps = plasterCache.get(key)
-  if (!maps) plasterCache.set(key, (maps = plaster(color)))
+  if (!maps) plasterCache.set(key, (maps = finish === 'fabric' ? fabric(color) : plaster(color)))
   return maps
 }
 
@@ -117,8 +118,9 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
     return tiled(floorMaps(look), floorW / t, floorD / t, look.floor.kind === 'herringbone' ? Math.PI / 4 : 0)
   }, [look, floorW, floorD])
 
+  const classic = plan.style === 'classic'
   const wallMaterial = useMemo(() => {
-    const m = plasterMaps(look.wall)
+    const m = plasterMaps(look.wall, look.wallFinish)
     return new THREE.MeshStandardMaterial({ map: m.map, normalMap: m.normalMap, normalScale: new THREE.Vector2(0.35, 0.35), roughnessMap: m.roughnessMap, roughness: 1, envMapIntensity: 0.6 })
   }, [look])
   const wainscotMaterial = useMemo(() => {
@@ -152,12 +154,14 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
       const zb = d.z - WALL / 2
       const half = d.width / 2
       const h = rooms[d.room].height
-      // Above the doorway, on both sides.
-      list.push(wallQuad([-half, zf], [half, zf], d.height, h, [0, 1]))
-      list.push(wallQuad([-half, zb], [half, zb], d.height, h, [0, -1]))
-      // The sides of the opening, and its underside.
+      // The sides of the opening.
       list.push(wallQuad([-half, zf], [-half, zb], 0, d.height, [1, 0]))
       list.push(wallQuad([half, zf], [half, zb], 0, d.height, [-1, 0]))
+      // An arched doorway's top is its own piece (Classic.tsx); otherwise the wall above the
+      // doorway on both sides, and the opening's flat underside.
+      if (classic) continue
+      list.push(wallQuad([-half, zf], [half, zf], d.height, h, [0, 1]))
+      list.push(wallQuad([-half, zb], [half, zb], d.height, h, [0, -1]))
       list.push({
         p: [new THREE.Vector3(-half, d.height, zb), new THREE.Vector3(half, d.height, zb), new THREE.Vector3(half, d.height, zf), new THREE.Vector3(-half, d.height, zf)],
         uv: [
@@ -169,10 +173,13 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
       })
     }
     return quads(list)
-  }, [walls, doorways, rooms])
+  }, [walls, doorways, rooms, classic])
   useEffect(() => () => wallGeometry.dispose(), [wallGeometry])
 
-  const wainscotGeometry = useMemo(() => (look.wainscot ? quads(walls.map((w) => wallQuad(w.a, w.b, 0, 0.95, w.normal, 0.012))) : null), [walls, look])
+  const wainscotGeometry = useMemo(
+    () => (look.wainscot ? quads(walls.map((w) => wallQuad(w.a, w.b, 0, look.wainscotHeight, w.normal, 0.012))) : null),
+    [walls, look],
+  )
   useEffect(() => () => wainscotGeometry?.dispose(), [wainscotGeometry])
 
   const titleArt = useMemo(() => titleTexture(title, subtitle, look.titleInk, look.accent), [title, subtitle, look])
@@ -182,7 +189,7 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
   return (
     <group>
       {/* The calm room is lit brightly and evenly, so the sky light is much stronger there. */}
-      <hemisphereLight args={[look.light, '#3a2c22', plan.style === 'calm' ? 1.1 : 0.45]} />
+      <hemisphereLight args={[look.light, '#3a2c22', plan.style === 'calm' ? 1.1 : classic ? 0.85 : 0.45]} />
 
       {/* One floor under every room, so its reflections are rendered once. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, (first.zFront + last.zBack) / 2]} receiveShadow>
@@ -212,7 +219,16 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
       <mesh geometry={wallGeometry} material={wallMaterial} receiveShadow />
       {wainscotGeometry && wainscotMaterial && <mesh geometry={wainscotGeometry} material={wainscotMaterial} />}
 
-      {walls.map((w, i) => {
+      {classic && (
+        <>
+          <Wainscot plan={plan} look={look} />
+          <Cornice plan={plan} look={look} />
+          <ArchDoorways plan={plan} wallMaterial={wallMaterial} />
+          <Carpets plan={plan} />
+        </>
+      )}
+
+      {!classic && walls.map((w, i) => {
         const h = rooms[w.room].height
         return (
           <group key={i}>
@@ -225,7 +241,7 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
         )
       })}
 
-      {doorways.map((d) => (
+      {!classic && doorways.map((d) => (
         <DoorCasing key={d.room} z={d.z} width={d.width} height={d.height} material={trimMaterial} grand={plan.style === 'hall'} />
       ))}
 
@@ -276,6 +292,7 @@ function DoorCasing({ z, width, height, material, grand }: { z: number; width: n
 
 /** Each style's ceiling: a skylight, a salon's chandelier, or the hall's beams and high windows. */
 function Ceiling({ style, room, width, look }: { style: MuseumPlan['style']; room: Room; width: number; look: Look }) {
+  if (style === 'classic') return <Lantern room={room} width={width} look={look} />
   const cz = (room.zFront + room.zBack) / 2
   const depth = room.zFront - room.zBack
   const h = room.height
@@ -382,6 +399,7 @@ function Ceiling({ style, room, width, look }: { style: MuseumPlan['style']; roo
 
 /** Somewhere to sit and look, in the middle of each room. */
 function Bench({ style, room, look }: { style: MuseumPlan['style']; room: Room; look: Look }) {
+  if (style === 'classic') return <ClassicBench room={room} />
   const cz = (room.zFront + room.zBack) / 2
   if (style === 'calm') {
     // A soft upholstered seat, like a sofa at home, facing the front of the room.

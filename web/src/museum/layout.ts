@@ -7,7 +7,7 @@
 // side walls, alternating left and right from front to back, then on the far wall; Next and
 // Previous follow that order, so the visitor walks forward through the exhibition.
 
-export type RoomStyle = 'calm' | 'gallery' | 'salon' | 'hall'
+export type RoomStyle = 'classic' | 'calm' | 'gallery' | 'salon' | 'hall'
 
 export interface StyleSpec {
   /** Room size in meters. */
@@ -22,22 +22,25 @@ export interface StyleSpec {
   /** Doorway between rooms. */
   doorW: number
   doorH: number
+  /** Height of a picture's center (m): eye level, or above the panelling where there is some. */
+  hang: number
 }
 
 export const STYLES: Record<RoomStyle, StyleSpec> = {
+  // A classic picture gallery (rose-red fabric walls, dark wood panelling, a skylight), kept to
+  // a modest height and a single row of large pictures. The doorway is arched.
+  classic: { width: 7, depth: 9.5, height: 4.4, perSide: 2, maxW: 1.45, maxH: 1.05, doorW: 1.7, doorH: 2.45, hang: 1.85 },
   // The calm room, for the person with dementia (docs/museum.md "Why the calm room"): the
   // size of a living room, a home-height ceiling, few but large pictures per room.
-  calm: { width: 6.4, depth: 7.2, height: 3.1, perSide: 2, maxW: 1.45, maxH: 1.15, doorW: 1.6, doorH: 2.35 },
+  calm: { width: 6.4, depth: 7.2, height: 3.1, perSide: 2, maxW: 1.45, maxH: 1.15, doorW: 1.6, doorH: 2.35, hang: 1.55 },
   // A bright modern gallery: pale wood, white walls, a skylight.
-  gallery: { width: 9, depth: 12, height: 4.4, perSide: 3, maxW: 1.9, maxH: 1.35, doorW: 2.2, doorH: 3 },
+  gallery: { width: 9, depth: 12, height: 4.4, perSide: 3, maxW: 1.9, maxH: 1.35, doorW: 2.2, doorH: 3, hang: 1.55 },
   // A warm salon: deep walls, parquet, gilded frames under picture lights.
-  salon: { width: 7.6, depth: 9.6, height: 4.6, perSide: 3, maxW: 1.5, maxH: 1.2, doorW: 1.8, doorH: 2.8 },
+  salon: { width: 7.6, depth: 9.6, height: 4.6, perSide: 3, maxW: 1.5, maxH: 1.2, doorW: 1.8, doorH: 2.8, hang: 1.62 },
   // A grand hall: tall, long, stone floor, arches.
-  hall: { width: 9, depth: 17, height: 7, perSide: 4, maxW: 2.2, maxH: 1.6, doorW: 2.6, doorH: 4.2 },
+  hall: { width: 9, depth: 17, height: 7, perSide: 4, maxW: 2.2, maxH: 1.6, doorW: 2.6, doorH: 4.2, hang: 1.6 },
 }
 
-/** Height of a picture's center above the floor: the museum standard, at eye level. */
-export const HANG_HEIGHT = 1.55
 /** Wall thickness (m). */
 export const WALL = 0.24
 /** How close a visitor may come to a wall (m). */
@@ -166,25 +169,25 @@ export function planMuseum(count: number, style: RoomStyle): MuseumPlan {
     const sideW = Math.min(spec.maxW, sideSpacing * 0.7)
     for (let k = 0; k < spec.perSide && left > 0; k++) {
       const z = room.zFront - sideSpacing * (k + 0.5)
-      add(room, [room.x0, HANG_HEIGHT, z], [1, 0], sideW, spec.maxH)
+      add(room, [room.x0, spec.hang, z], [1, 0], sideW, spec.maxH)
       left--
       if (left <= 0) break
-      add(room, [room.x1, HANG_HEIGHT, z], [-1, 0], sideW, spec.maxH)
+      add(room, [room.x1, spec.hang, z], [-1, 0], sideW, spec.maxH)
       left--
     }
     if (left <= 0) break
     if (last) {
       // The far wall of the last room: one picture, a little larger, in the middle.
-      add(room, [0, HANG_HEIGHT, room.zBack], [0, 1], Math.min(spec.width * 0.4, spec.maxW * 1.2), spec.maxH * 1.15)
+      add(room, [0, spec.hang, room.zBack], [0, 1], Math.min(spec.width * 0.4, spec.maxW * 1.2), spec.maxH * 1.15)
       left--
     } else {
       // Either side of the doorway.
       const sideOfDoor = (half - spec.doorW / 2) / 2 + spec.doorW / 2
       const w = Math.min(spec.maxW, (half - spec.doorW / 2) * 0.7)
-      add(room, [-sideOfDoor, HANG_HEIGHT, room.zBack], [0, 1], w, spec.maxH)
+      add(room, [-sideOfDoor, spec.hang, room.zBack], [0, 1], w, spec.maxH)
       left--
       if (left <= 0) break
-      add(room, [sideOfDoor, HANG_HEIGHT, room.zBack], [0, 1], w, spec.maxH)
+      add(room, [sideOfDoor, spec.hang, room.zBack], [0, 1], w, spec.maxH)
       left--
     }
   }

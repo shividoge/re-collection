@@ -5,8 +5,8 @@ piece framed on a wall, lit, and labelled. Not XR yet; it runs in any browser (l
 
 ## Walking
 
-- **Calm room:** tap a picture (or → / ←, N / P) and the view glides slowly to it; drag gently
-  to look around. No free walking.
+- **Classic gallery and Calm room:** tap a picture (or → / ←, N / P) and the view glides slowly
+  to it; drag gently to look around. No free walking.
 - **Other rooms, laptop:** drag to look, W A S D or the arrow keys to walk (Shift to walk faster),
   N / P for the next and previous piece.
 - **Other rooms, tablet:** drag to look, tap the floor to walk there, tap a picture (or → / ←) to
@@ -15,11 +15,12 @@ piece framed on a wall, lit, and labelled. Not XR yet; it runs in any browser (l
 
 ## Rooms
 
-Four styles, chosen per exhibition with the buttons at the top (remembered on the device). The
-**Calm room** is the default.
+Five styles, chosen per exhibition with the buttons at the top (remembered on the device). The
+**Classic gallery** is the default.
 
 | Style | Room | Frames |
 |---|---|---|
+| **Classic gallery** (default) | a classic picture gallery at a modest scale: rose-red fabric walls, dark wood panelling, ivory cornice with gilded brackets, a skylight lantern, a plain carpet on dark boards, arched doorways | gilded frames, one row of large pictures above the panelling |
 | **Calm room** (default) | living-room size, home-height ceiling, plain matte boards, warm light walls, bright even light | dark wood frames, cream mats, 4–6 large pieces per room |
 | Sunlit gallery | pale oak floor, white walls, a skylight | thin black frames, white mats |
 | Warm salon | herringbone parquet, plum walls with a dark lower panel, chandelier | gilded frames |
@@ -28,9 +29,12 @@ Four styles, chosen per exhibition with the buttons at the top (remembered on th
 Rooms are added as an exhibition grows (5–10 pieces per room, joined by doorways). Every surface
 is generated in code (`web/src/museum/textures.ts`), so nothing is downloaded and it works offline.
 
-## Why the calm room
+## Why the calm room (and the classic gallery)
 
-It's the room for the person with dementia, built from what design research for dementia
+The classic gallery follows the same rules in a more traditional look: matte carpet instead of a
+shiny or patterned floor, even skylight, one row of pictures, guided movement only.
+
+The calm room is the plainest room for the person with dementia, built from what design research for dementia
 recommends. Most of this is expert consensus rather than trial evidence, and none of it was
 tested in a virtual museum, so treat it as the best available guess:
 
@@ -77,6 +81,6 @@ tested in a virtual museum, so treat it as the best available guess:
 }
 ```
 
-`style` is `calm` (the default), `gallery`, `salon` or `hall`. Items hang in the order listed. Put the files under
+`style` is `classic` (the default), `calm`, `gallery`, `salon` or `hall`. Items hang in the order listed. Put the files under
 `web/public/museum/` (they're served from `/museum/...`). Only real photos and videos the family
 shared: nothing in the museum is invented.

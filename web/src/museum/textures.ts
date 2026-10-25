@@ -271,6 +271,45 @@ export function plaster(color: RGB, seed = 3, size = 512): SurfaceMaps {
   return finish(size, b, 1.2, [1, 1])
 }
 
+/**
+ * Fabric wall covering, as old picture galleries hang: a fine woven texture with faint threads
+ * both ways and a soft sheen variation, no printed pattern.
+ */
+export function fabric(color: RGB, seed = 5, size = 512): SurfaceMaps {
+  const b = makeBuffers(size)
+  const broad = fbm(4, 3, seed)
+  const fuzz = fbm(128, 2, seed + 1)
+  const threads = 160
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const u = x / size
+      const v = y / size
+      const warp = 0.5 + 0.5 * Math.sin(u * threads * Math.PI * 2)
+      const weft = 0.5 + 0.5 * Math.sin(v * threads * Math.PI * 2)
+      const weave = (warp * 0.5 + weft * 0.5) * 0.05
+      const f = fuzz(u, v)
+      const tone = 0.95 + (broad(u, v) - 0.5) * 0.08 + weave + (f - 0.5) * 0.04
+      put(b, y * size + x, color.map((ch) => ch * tone) as RGB, weave * 6 + f * 0.3, 0.88 + (f - 0.5) * 0.08)
+    }
+  return finish(size, b, 0.9, [1, 1])
+}
+
+/** A plain wool carpet: one soft color, with the fuzz and faint tufts of real pile. */
+export function carpet(color: RGB, seed = 9, size = 512): SurfaceMaps {
+  const b = makeBuffers(size)
+  const broad = fbm(4, 3, seed)
+  const pile = fbm(96, 3, seed + 1)
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const u = x / size
+      const v = y / size
+      const p = pile(u, v)
+      const tone = 0.93 + (broad(u, v) - 0.5) * 0.06 + (p - 0.5) * 0.14
+      put(b, y * size + x, color.map((ch) => ch * tone) as RGB, p, 0.97)
+    }
+  return finish(size, b, 2.5, [1, 1])
+}
+
 /** Fonts the museum uses for wall text: a warm serif, as printed museum labels are. */
 export const SERIF = '"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif'
 export const SANS = '-apple-system, "Segoe UI", system-ui, sans-serif'
