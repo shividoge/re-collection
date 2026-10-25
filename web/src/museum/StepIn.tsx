@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { SceneViewer } from '../scene/SceneViewer'
-import { loadGuideCapture, type LoadedCapture } from '../scene/loadCapture'
+import { useCaptureAssets } from '../data'
+import { SceneViewer } from '../scene'
 import { VisitDock } from '../views/VisitDock'
 import type { Artwork } from './exhibitions'
 import { REPAINT_MS, UNPAINT_MS } from './paint'
@@ -75,9 +75,10 @@ export function StepIn({
   const cover = useRef<HTMLDivElement>(null)
   const video = useRef<HTMLVideoElement>(null)
   const hasRoom = Boolean(art.captureId)
-  const [capture, setCapture] = useState<LoadedCapture | null>(null)
+  const assetsState = useCaptureAssets(art.captureId ?? null)
+  const capture = assetsState.status === 'ready' ? assetsState.assets : null
   const [roomSince, setRoomSince] = useState(0)
-  const [roomError, setRoomError] = useState<string | null>(null)
+  const roomError = assetsState.status === 'error' ? assetsState.message : null
   const [roomLive, setRoomLive] = useState(false)
   const [settled, setSettled] = useState(false)
   // The museum's painted look stays on through the dive and the arrival, then lifts away.
@@ -90,19 +91,8 @@ export function StepIn({
 
   // Load the room as soon as the dive begins, so it's there on the far side.
   useEffect(() => {
-    if (!art.captureId) return
-    let cancelled = false
-    loadGuideCapture(art.captureId)
-      .then((c) => {
-        if (cancelled) return
-        setCapture(c)
-        setRoomSince(performance.now())
-      })
-      .catch((e: Error) => !cancelled && setRoomError(e.message))
-    return () => {
-      cancelled = true
-    }
-  }, [art.captureId])
+    if (capture) setRoomSince(performance.now())
+  }, [capture])
 
   // Arriving and leaving.
   useLayoutEffect(() => {
@@ -180,7 +170,7 @@ export function StepIn({
             {capture && stage !== 'diving' && (
               <div className={`stepin-3d${roomLive ? ' live' : ''}`}>
                 <SceneViewer
-                  capture={capture}
+                  assets={capture}
                   initialMode="follow"
                   startAt={art.t ?? 0}
                   showVideo={false}

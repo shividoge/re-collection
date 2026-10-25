@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
-import { SceneViewer } from '../scene/SceneViewer'
-import { loadGuideCapture, type LoadedCapture } from '../scene/loadCapture'
+import { useCaptureAssets } from '../data'
+import { SceneViewer } from '../scene'
 import { PublicSwitch } from './PublicSwitch'
 import { EstimatedBadge } from './EstimatedBadge'
 import { VisitDock } from './VisitDock'
@@ -10,23 +9,13 @@ import { VisitDock } from './VisitDock'
  * tour they can pause to look around, point at things and ask. `startAt` opens it at that second.
  */
 export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
-  const [capture, setCapture] = useState<LoadedCapture | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const state = useCaptureAssets(id)
+  if (state.status === 'error') return <div className="center-message error">{state.message}</div>
+  if (state.status === 'missing') return <div className="center-message error">This visit isn't here any more.</div>
+  if (state.status !== 'ready') return <div className="center-message">Loading the capture…</div>
 
-  useEffect(() => {
-    let cancelled = false
-    loadGuideCapture(id)
-      .then((c) => !cancelled && setCapture(c))
-      .catch((e: Error) => !cancelled && setError(e.message))
-    return () => {
-      cancelled = true
-    }
-  }, [id])
-
-  if (error) return <div className="center-message error">{error}</div>
-  if (!capture) return <div className="center-message">Loading the capture…</div>
-
-  const { manifest } = capture
+  const { assets } = state
+  const { manifest } = assets
   return (
     <div className="page">
       <header className="bar">
@@ -34,7 +23,7 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
           ← Captures
         </a>
         <div className="bar-title">
-          <strong>{capture.label}</strong> <EstimatedBadge manifest={manifest} />
+          <strong>{manifest.title || 'Untitled visit'}</strong> <EstimatedBadge manifest={manifest} />
           {manifest && (
             <span className="meta">
               {new Date(manifest.createdAt).toLocaleString()} · {Math.round(manifest.video.durationSec)} s
@@ -46,19 +35,12 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
           <a href={`#/window/${id}`}>Memory Window</a>
           <a href={`#/facts/${id}`}>Facts</a>
           <a href={`#/dashboard/${id}`}>Dashboard</a>
-          <PublicSwitch id={id} initial={capture.isPublic} />
+          <PublicSwitch id={id} initial={false} />
         </nav>
       </header>
-      {capture.errors.length > 0 && (
-        <div className="banner error">
-          {capture.errors.map((e) => (
-            <div key={e}>{e}</div>
-          ))}
-        </div>
-      )}
       <main className="main">
         <div className="viewer-wrap">
-          <SceneViewer capture={capture} startAt={startAt} overlay={(controls) => <VisitDock captureId={id} controls={controls} />} />
+          <SceneViewer assets={assets} startAt={startAt} overlay={(controls) => <VisitDock captureId={id} controls={controls} />} />
         </div>
       </main>
     </div>

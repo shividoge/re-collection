@@ -2,8 +2,8 @@ import { EstimatedBadge } from './EstimatedBadge'
 import { useEffect, useState } from 'react'
 import { publicGuide } from '../api'
 import type { Fact, Moment } from '../api'
-import { loadGuideCapture, type LoadedCapture } from '../scene/loadCapture'
-import { SceneViewer, type ViewerControls } from '../scene/SceneViewer'
+import { useCaptureAssets } from '../data'
+import { SceneViewer, type ViewerControls } from '../scene'
 import './public.css'
 
 const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
@@ -14,15 +14,11 @@ const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).p
  * buttons, no visit, nothing that can change. Public mode is switched on by App.
  */
 export function PublicView({ id }: { id: string }) {
-  const [capture, setCapture] = useState<LoadedCapture | null>(null)
+  const state = useCaptureAssets(id, { public: true })
   const [moment, setMoment] = useState<Moment | null>(null)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    loadGuideCapture(id)
-      .then((c) => !cancelled && setCapture(c))
-      .catch((e: Error) => !cancelled && setError(e.message))
     publicGuide
       .moment(id)
       .then((m) => !cancelled && setMoment(m))
@@ -32,10 +28,11 @@ export function PublicView({ id }: { id: string }) {
     }
   }, [id])
 
-  if (error) return <div className="center-message error">{error}</div>
-  if (!capture) return <div className="center-message">Loading the capture…</div>
+  if (state.status === 'error') return <div className="center-message error">{state.message}</div>
+  if (state.status !== 'ready') return <div className="center-message">Loading the capture…</div>
 
-  const { manifest } = capture
+  const { assets } = state
+  const { manifest } = assets
   return (
     <div className="page">
       <header className="bar">
@@ -43,7 +40,7 @@ export function PublicView({ id }: { id: string }) {
           ← Braindance
         </a>
         <div className="bar-title">
-          <strong>{moment?.moment.title || capture.label}</strong> <EstimatedBadge manifest={capture.manifest} />
+          <strong>{moment?.moment.title || manifest.title || 'Untitled visit'}</strong> <EstimatedBadge manifest={manifest} />
           {manifest && (
             <span className="meta">
               {new Date(manifest.createdAt).toLocaleString()} · {Math.round(manifest.video.durationSec)} s
@@ -53,7 +50,7 @@ export function PublicView({ id }: { id: string }) {
       </header>
       <main className="main">
         <div className="viewer-wrap">
-          <SceneViewer capture={capture} overlay={(controls) => <PublicFacts id={id} moment={moment} controls={controls} />} />
+          <SceneViewer assets={assets} overlay={(controls) => <PublicFacts id={id} moment={moment} controls={controls} />} />
         </div>
       </main>
     </div>

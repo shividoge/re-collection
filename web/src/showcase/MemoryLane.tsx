@@ -13,7 +13,7 @@ import { LOOK } from '../museum/looks'
 import { Rooms } from '../museum/Rooms'
 import { EYE } from '../museum/Walker'
 import { coverDistance } from '../museum/warp'
-import { HeroCloud } from './Scenes'
+import { HeroCloud, WithCaptureAssets } from './Scenes'
 
 const FOV = 58
 /** Of each stretch of scroll between two pictures: the walk, then a pause in front of the picture. */
@@ -315,7 +315,7 @@ export default function MemoryLane({ captures, diveId }: { captures: PublicCaptu
 
         {last && push > 0.4 && (
           <div className="lane-end" style={{ opacity: reveal, pointerEvents: reveal > 0.9 ? 'auto' : 'none' }}>
-            {reveal > 0 && <HeroCloud id={last.id} />}
+            {reveal > 0 && <WithCaptureAssets id={last.id}>{(assets) => <HeroCloud assets={assets} />}</WithCaptureAssets>}
             <div className="lane-end-copy" style={{ opacity: clamp01(reveal * 2 - 1 + after), transform: `translateY(${(1 - Math.min(1, reveal + after)) * 16}px)` }}>
               <p className="eyebrow">You just stepped inside</p>
               <h2>{last.title || 'A visit'}</h2>

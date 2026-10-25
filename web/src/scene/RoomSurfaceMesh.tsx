@@ -1,50 +1,52 @@
+import { useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
+import { useKeyframeTexture } from './keyframeTexture'
+import type { SurfaceData } from './packs'
 import { SELECTION_GLSL, applySelection, selectionUniforms, type SelectionTint } from './selectionTint'
-import type { RoomSurface } from './useRoomSurface'
 
 /**
- * The fused room surface. Triangles a keyframe sees well show that keyframe's pixels (sharp:
+ * The fused room surface from surface.pack (indexed; keyframe layers loaded straight to the GPU,
+ * keyframeTexture.ts). Triangles a keyframe sees well show that keyframe's pixels (sharp:
  * text and logos read); the rest show the scan points' colors with a touch of shading from the
  * normal so their shape reads. Both are sRGB bytes, written out unconverted. A selected object
  * is tinted per pixel (see selectionTint.ts). Pushed slightly back in depth so the live replay
  * of the same spot draws on top of it.
  */
-export function RoomSurfaceMesh({ surface, selection = null }: { surface: RoomSurface; selection?: SelectionTint | null }) {
-  const { mesh, keyframes } = surface
+export function RoomSurfaceMesh({
+  surface,
+  keyframeUrls,
+  selection = null,
+  dim = 1,
+  visible = true,
+}: {
+  surface: SurfaceData
+  /** URL of each keyframe layer (surface.keyframes[i].file), or null to use vertex colors only. */
+  keyframeUrls: string[] | null
+  selection?: SelectionTint | null
+  /** Brightness multiplier. */
+  dim?: number
+  visible?: boolean
+}) {
+  const invalidate = useThree((s) => s.invalidate)
   const geometry = useMemo(() => {
     const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3))
-    g.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3))
-    g.setAttribute('color', new THREE.BufferAttribute(mesh.colors, 3, true))
-    g.setAttribute('uv', new THREE.BufferAttribute(mesh.uvs, 2))
-    g.setAttribute('layer', new THREE.BufferAttribute(mesh.layers, 1))
+    g.setAttribute('position', new THREE.BufferAttribute(surface.positions, 3))
+    g.setAttribute('normal', new THREE.BufferAttribute(surface.normals, 3, true))
+    g.setAttribute('color', new THREE.BufferAttribute(surface.colors, 3, true))
+    g.setAttribute('uv', new THREE.BufferAttribute(surface.uvs, 2, true))
+    g.setAttribute('layer', new THREE.BufferAttribute(surface.layers, 1))
+    g.setIndex(new THREE.BufferAttribute(surface.indices, 1))
     g.computeBoundingSphere()
     return g
-  }, [mesh])
-
-  const keyTexture = useMemo(() => {
-    if (!keyframes) return null
-    const t = new THREE.DataArrayTexture(keyframes.data, keyframes.width, keyframes.height, keyframes.layers)
-    // RGBA: array textures get fixed-size storage, which plain RGB can't have.
-    t.format = THREE.RGBAFormat
-    t.type = THREE.UnsignedByteType
-    t.colorSpace = THREE.NoColorSpace
-    // No mipmaps: three doesn't build them for array textures, and without them the texture
-    // would be incomplete and sample black.
-    t.minFilter = THREE.LinearFilter
-    t.magFilter = THREE.LinearFilter
-    t.generateMipmaps = false
-    t.unpackAlignment = 1
-    t.needsUpdate = true
-    return t
-  }, [keyframes])
-  useEffect(() => () => keyTexture?.dispose(), [keyTexture])
+  }, [surface])
+  const keys = useKeyframeTexture(keyframeUrls)
+  const keyTexture = keys.status === 'ready' ? keys.texture : null
 
   const material = useMemo(
     () =>
       new THREE.ShaderMaterial({
-        uniforms: { uKeys: { value: EMPTY_ARRAY }, uHasKeys: { value: 0 }, ...selectionUniforms() },
+        uniforms: { uKeys: { value: EMPTY_ARRAY }, uHasKeys: { value: 0 }, uDim: { value: 1 }, ...selectionUniforms() },
         vertexShader: /* glsl */ `
           attribute vec3 color;
           attribute float layer;
@@ -66,6 +68,7 @@ export function RoomSurfaceMesh({ surface, selection = null }: { surface: RoomSu
           precision highp sampler2DArray;
           uniform sampler2DArray uKeys;
           uniform float uHasKeys;
+          uniform float uDim;
           varying vec3 vColor;
           varying vec3 vNormal;
           varying vec3 vWorld;
@@ -80,7 +83,7 @@ export function RoomSurfaceMesh({ surface, selection = null }: { surface: RoomSu
               float light = 0.82 + 0.18 * abs(dot(normalize(vNormal), normalize(vec3(0.3, 0.8, 0.5))));
               color = vColor * light;
             }
-            gl_FragColor = vec4(tintSelected(color, vWorld), 1.0);
+            gl_FragColor = vec4(tintSelected(color * uDim, vWorld), 1.0);
           }
         `,
         side: THREE.DoubleSide,
@@ -93,12 +96,20 @@ export function RoomSurfaceMesh({ surface, selection = null }: { surface: RoomSu
   useEffect(() => {
     material.uniforms.uKeys.value = keyTexture ?? EMPTY_ARRAY
     material.uniforms.uHasKeys.value = keyTexture ? 1 : 0
-  }, [material, keyTexture])
-  useEffect(() => applySelection(material, selection), [material, selection])
+    invalidate()
+  }, [material, keyTexture, invalidate])
+  useEffect(() => {
+    material.uniforms.uDim.value = dim
+    invalidate()
+  }, [material, dim, invalidate])
+  useEffect(() => {
+    applySelection(material, selection)
+    invalidate()
+  }, [material, selection, invalidate])
   useEffect(() => () => geometry.dispose(), [geometry])
   useEffect(() => () => material.dispose(), [material])
 
-  return <mesh geometry={geometry} material={material} frustumCulled={false} />
+  return <mesh geometry={geometry} material={material} visible={visible} />
 }
 
 const EMPTY_ARRAY = new THREE.DataArrayTexture(new Uint8Array(4), 1, 1, 1)

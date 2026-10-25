@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 
 import { guide, publicGuide, STATIC } from '../api';
 import type { CaptureDetail, Fact, Moment, Progress, PublicCapture, PublicSession } from '../api';
-import { HeroCloud, MiniViewer } from '../showcase/Scenes';
+import { HeroCloud, MiniViewer, WithCaptureAssets } from '../showcase/Scenes';
 import type { Layers } from '../showcase/Scenes';
 import '../showcase/showcase.css';
 
@@ -80,7 +80,7 @@ export function Showcase() {
       </nav>
 
       <header className="hero">
-        {lead && <HeroCloud id={lead.capture.id} />}
+        {lead && <WithCaptureAssets id={lead.capture.id}>{(assets) => <HeroCloud assets={assets} />}</WithCaptureAssets>}
         <div className="hero-fade" />
         <div className="hero-copy">
           <p className="eyebrow">For families of people living with Alzheimer's</p>
@@ -330,7 +330,7 @@ function Walkthrough({ entries, scene, setSceneId }: { entries: Entry[]; scene: 
         </div>
 
         <div className="walk-stage">
-          <MiniViewer id={scene.capture.id} layers={current.layers} label={current.label} />
+          <WithCaptureAssets id={scene.capture.id}>{(assets) => <MiniViewer assets={assets} layers={current.layers} label={current.label} />}</WithCaptureAssets>
           {entries.length > 1 && (
             <div className="scene-pills" role="group" aria-label="Choose a scan">
               {entries.map((e) => (

@@ -1,6 +1,8 @@
-import { useEffect, useMemo } from 'react'
+import { useThree } from '@react-three/fiber'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { selectionMask, type VoxelIndex } from './spatial'
+import { markVoxels } from './spatial'
+import type { SelectionGrid } from './useRoomIndex'
 
 /**
  * The selected object as a 3D texture over the room's voxel grid, so any shader can tint the
@@ -13,20 +15,46 @@ export interface SelectionTint {
   dims: [number, number, number]
 }
 
-export function useSelectionTint(index: VoxelIndex | null, voxels: Uint32Array | null): SelectionTint | null {
-  const tint = useMemo(() => {
-    if (!index || !voxels) return null
-    const [dx, dy, dz] = index.dims
-    const texture = new THREE.Data3DTexture(selectionMask(index, voxels), dx, dy, dz)
-    texture.format = THREE.RedFormat
-    texture.type = THREE.UnsignedByteType
-    texture.minFilter = THREE.NearestFilter
-    texture.magFilter = THREE.NearestFilter
-    texture.unpackAlignment = 1
-    texture.needsUpdate = true
-    return { texture, origin: index.origin, size: index.size, dims: index.dims } as SelectionTint
-  }, [index, voxels])
-  useEffect(() => () => tint?.texture.dispose(), [tint])
+/**
+ * One mask per room, kept and updated per click: the previous selection's voxels are cleared and
+ * the new ones set (spatial.ts markVoxels), instead of rebuilding a full-room mask each time.
+ * Allocated on the first selection.
+ */
+export function useSelectionTint(grid: SelectionGrid | null, coords: Int32Array | null): SelectionTint | null {
+  const invalidate = useThree((s) => s.invalidate)
+  const [tint, setTint] = useState<SelectionTint | null>(null)
+  const state = useRef<{ grid: SelectionGrid | null; tint: SelectionTint | null; shown: Int32Array | null }>({ grid: null, tint: null, shown: null })
+
+  useEffect(() => {
+    const st = state.current
+    if (st.grid !== grid) {
+      st.tint?.texture.dispose()
+      Object.assign(st, { grid, tint: null, shown: null })
+    }
+    if (!grid || (!coords && !st.tint)) {
+      setTint(null)
+      return
+    }
+    if (!st.tint) {
+      const [dx, dy, dz] = grid.dims
+      const texture = new THREE.Data3DTexture(new Uint8Array(dx * dy * dz), dx, dy, dz)
+      texture.format = THREE.RedFormat
+      texture.type = THREE.UnsignedByteType
+      texture.minFilter = THREE.NearestFilter
+      texture.magFilter = THREE.NearestFilter
+      texture.unpackAlignment = 1
+      st.tint = { texture, origin: grid.origin, size: grid.size, dims: grid.dims }
+    }
+    const mask = st.tint.texture.image.data as Uint8Array
+    if (st.shown) markVoxels(mask, grid.dims, st.shown, 0)
+    if (coords) markVoxels(mask, grid.dims, coords, 1)
+    st.shown = coords
+    st.tint.texture.needsUpdate = true
+    setTint(coords ? st.tint : null)
+    invalidate()
+  }, [grid, coords, invalidate])
+
+  useEffect(() => () => state.current.tint?.texture.dispose(), [])
   return tint
 }
 
