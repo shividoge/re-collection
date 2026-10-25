@@ -1,8 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { SceneViewer } from '../scene/SceneViewer'
 import { loadGuideCapture, type LoadedCapture } from '../scene/loadCapture'
 import { VisitDock } from '../views/VisitDock'
 import type { Artwork } from './exhibitions'
+import { REPAINT_MS, UNPAINT_MS } from './paint'
+import { Painted } from './Painted'
 import { ARRIVE_MS, LEAVE_MS } from './warp'
 
 /** Where the visitor is with a picture: diving toward it, inside it, or on the way back out. */
@@ -78,6 +80,12 @@ export function StepIn({
   const [roomError, setRoomError] = useState<string | null>(null)
   const [roomLive, setRoomLive] = useState(false)
   const [settled, setSettled] = useState(false)
+  // The museum's painted look stays on through the dive and the arrival, then lifts away.
+  const [paint, setPaint] = useState(true)
+  const [unpainted, setUnpainted] = useState(false)
+  const [source, setSource] = useState<HTMLImageElement | HTMLVideoElement | null>(null)
+  const stopFade = useRef<() => void>(() => {})
+  useEffect(() => () => stopFade.current(), [])
   const still = art.kind === 'photo' ? art.src : (art.poster ?? '')
 
   // Load the room as soon as the dive begins, so it's there on the far side.
@@ -103,38 +111,45 @@ export function StepIn({
     const v = video.current
     if (stage === 'here') {
       const a = el.animate(reducedMotion() ? [{ opacity: 0 }, { opacity: 1 }] : ARRIVE, { duration: reducedMotion() ? 300 : ARRIVE_MS, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'both' })
+      // Once through, the paint lifts away and, at the same time, the picture's own sound rises.
       a.onfinish = () => {
         setSettled(true)
         onCovered?.(true)
+        setPaint(false)
+        if (v && !hasRoom) stopFade.current = fadeVolume(v, 1, UNPAINT_MS)
       }
       if (v && !hasRoom) {
         v.volume = 0
         void v.play().catch(() => {})
-        return fadeVolume(v, 1, 2800)
       }
       return
     }
     setSettled(false)
     onCovered?.(false)
+    // On the way out it becomes a painting again, as it hangs in the museum.
+    setPaint(true)
+    setUnpainted(false)
+    stopFade.current()
     el.getAnimations().forEach((a) => a.cancel())
     el.animate(reducedMotion() ? [{ opacity: 1 }, { opacity: 0 }] : LEAVE, { duration: reducedMotion() ? 300 : LEAVE_MS, easing: 'cubic-bezier(0.64, 0, 0.78, 0)', fill: 'both' }).onfinish = onGone
     // The room hands back to its picture on the way out, so the far side of the crossing matches.
     if (cover.current && roomLive) cover.current.animate([{ opacity: 0 }, { opacity: 1 }], { duration: LEAVE_MS * 0.45, easing: 'ease-out', fill: 'both' })
-    if (v && !hasRoom) return fadeVolume(v, 0, 900, () => v.pause())
+    if (v && !hasRoom) stopFade.current = fadeVolume(v, 0, 900, () => v.pause())
     // Only when the stage changes.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [stage])
 
-  // On the far side, once the room has drawn for a moment, the picture gives way to it.
+  // On the far side, once the paint has lifted and the room has drawn for a moment, the picture
+  // gives way to it.
   useEffect(() => {
-    if (stage !== 'here' || !capture || roomLive) return
-    const wait = Math.max(ARRIVE_MS * 0.5, roomSince + ROOM_SETTLE_MS - performance.now())
+    if (stage !== 'here' || !capture || roomLive || !unpainted) return
+    const wait = Math.max(0, roomSince + ROOM_SETTLE_MS - performance.now())
     const t = setTimeout(() => {
       const a = cover.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 900, easing: 'ease-in-out', fill: 'both' })
       if (a) a.onfinish = () => setRoomLive(true)
     }, wait)
     return () => clearTimeout(t)
-  }, [stage, capture, roomSince, roomLive])
+  }, [stage, capture, roomSince, roomLive, unpainted])
 
   // Escape steps back out.
   useEffect(() => {
@@ -144,6 +159,16 @@ export function StepIn({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [stage, onBack])
+
+  const onPaintSettled = useCallback(() => setUnpainted(!paint), [paint])
+  // Nothing to paint (no picture, or it didn't load): there's nothing to wait for either.
+  useEffect(() => {
+    if (!paint && !source) setUnpainted(true)
+  }, [paint, source])
+  // Drawn from the arrival on, so the dive itself stays smooth.
+  const painted = stage !== 'diving' && (
+    <Painted source={source} fit={hasRoom ? 'cover' : 'contain'} painted={paint} ms={paint ? REPAINT_MS : UNPAINT_MS} onSettled={onPaintSettled} />
+  )
 
   const showUi = stage === 'here' && settled && (!hasRoom || roomLive || Boolean(roomError))
   return (
@@ -165,26 +190,31 @@ export function StepIn({
             )}
             {/* The picture itself, standing in for the room until the room is ready. */}
             <div ref={cover} className={`stepin-cover${roomLive ? ' gone' : ''}`}>
-              {still && <img src={still} alt="" draggable={false} />}
+              {still && <img src={still} alt="" draggable={false} onLoad={(e) => setSource(e.currentTarget)} />}
+              {painted}
             </div>
           </>
         ) : (
           <>
             <div className="stepin-backdrop" style={still ? { backgroundImage: `url("${still}")` } : undefined} />
-            {art.kind === 'photo' ? (
-              <img className="stepin-full drift" src={art.src} alt={art.title ?? ''} draggable={false} />
-            ) : (
-              <video
-                ref={video}
-                className="stepin-full"
-                src={art.src}
-                poster={art.poster}
-                playsInline
-                loop
-                preload="auto"
-                onClick={(e) => (e.currentTarget.paused ? void e.currentTarget.play() : e.currentTarget.pause())}
-              />
-            )}
+            <div className={`stepin-picture${art.kind === 'photo' ? ' drift' : ''}`}>
+              {art.kind === 'photo' ? (
+                <img className="stepin-full" src={art.src} alt={art.title ?? ''} draggable={false} onLoad={(e) => setSource(e.currentTarget)} />
+              ) : (
+                <video
+                  ref={video}
+                  className="stepin-full"
+                  src={art.src}
+                  poster={art.poster}
+                  playsInline
+                  loop
+                  preload="auto"
+                  onLoadedData={(e) => setSource(e.currentTarget)}
+                  onClick={(e) => (e.currentTarget.paused ? void e.currentTarget.play() : e.currentTarget.pause())}
+                />
+              )}
+              {painted}
+            </div>
           </>
         )}
       </div>

@@ -9,7 +9,7 @@ import { Furniture, Sconces, Window } from './Classic'
 import { DiveCamera } from './DiveCamera'
 import type { Exhibition } from './exhibitions'
 import { walkable, type MuseumPlan } from './layout'
-import { LOOKS } from './looks'
+import { LOOK } from './looks'
 import { Rooms } from './Rooms'
 import { EYE, Walker, type WalkerHandle } from './Walker'
 import type { Dive } from './warp'
@@ -46,13 +46,12 @@ export function MuseumScene({
   /** Diving into a picture (or back out): flies the camera and blurs the view. */
   dive: RefObject<Dive | null>
 }) {
-  const look = LOOKS[plan.style]
+  const look = LOOK
   const walk = (walker as { current: WalkerHandle | null }) ?? null
 
   // Tap the floor to walk there (stopping short of a wall).
   const onFloor = (e: ThreeEvent<MouseEvent>) => {
-    // The rooms for the person with dementia only move to a picture: no walking off across the floor.
-    if (look.guided || e.delta > 8 || !walk?.current) return
+    if (e.delta > 8 || !walk?.current) return
     const from = walk.current.position()
     let to: [number, number] = [e.point.x, e.point.z]
     for (let i = 0; i < 40 && !walkable(plan, to[0], to[1]); i++) to = [to[0] + (from[0] - to[0]) * 0.1, to[1] + (from[1] - to[1]) * 0.1]
@@ -89,13 +88,9 @@ export function MuseumScene({
       </Environment>
 
       <Rooms plan={plan} look={look} title={exhibition.title} subtitle={exhibition.subtitle ?? ''} reflections={handheld ? 512 : 1024} />
-      {plan.features.length > 0 && (
-        <>
-          <Furniture plan={plan} />
-          <Sconces plan={plan} count={exhibition.items.length} />
-          <Window plan={plan} />
-        </>
-      )}
+      <Furniture plan={plan} />
+      <Sconces plan={plan} count={exhibition.items.length} />
+      <Window plan={plan} />
       {/* An invisible floor to tap on (the visible one is a reflector). */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.001, (first.zFront + last.zBack) / 2]} onClick={onFloor}>
         <planeGeometry args={[plan.spec.width, first.zFront - last.zBack]} />
@@ -106,7 +101,7 @@ export function MuseumScene({
         plan.slots[i] ? <Artwork key={art.id} art={art} slot={plan.slots[i]} look={look} focused={i === focus} onSelect={onSelect} onMeasure={onMeasure} /> : null,
       )}
 
-      <Walker plan={plan} onArrive={onArrive} onLook={onLook} hung={exhibition.items.length} ref={walker} guided={look.guided} frozen={frozen} />
+      <Walker plan={plan} onArrive={onArrive} onLook={onLook} hung={exhibition.items.length} ref={walker} frozen={frozen} />
 
       <EffectComposer multisampling={0} enableNormalPass={false}>
         <N8AO aoRadius={0.55} distanceFalloff={0.6} intensity={look.occlusion * (handheld ? 0.75 : 1)} quality={handheld ? 'performance' : 'medium'} halfRes={handheld} color={new THREE.Color('#1a1210')} />

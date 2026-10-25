@@ -5,6 +5,7 @@ import { gilding, ornateFrameGeometry } from './Classic'
 import type { Artwork as Art } from './exhibitions'
 import { fitPicture, type Slot } from './layout'
 import type { Look } from './looks'
+import { paintMaterial, setPicture } from './paint'
 import { labelTexture, lightPoolTexture } from './textures'
 
 const pool = lightPoolTexture()
@@ -84,8 +85,8 @@ function usePicture(art: Art): { picture: Picture | null; video: HTMLVideoElemen
 }
 
 /**
- * One framed picture on a wall: frame, card mount, the picture in its own colors (it isn't lit
- * by the room, as a well-lit print looks), a glass front that catches faint reflections, a pool
+ * One framed picture on a wall: frame, card mount, the picture painted as an old oil (paint.ts;
+ * it isn't lit by the room, as a well-lit painting looks), a glass front that catches faint reflections, a pool
  * of light on the wall behind, and the label beside it.
  */
 export function Artwork({
@@ -139,6 +140,11 @@ export function Artwork({
   useEffect(() => () => frameMaterial.dispose(), [frameMaterial])
   const ornate = useMemo(() => (gilded ? ornateFrameGeometry(outerW, outerH, border) : null), [gilded, outerW, outerH, border])
   useEffect(() => () => ornate?.dispose(), [ornate])
+
+  // The picture itself, painted (paint.ts), so a snapshot looks at home in a gilded frame.
+  const painted = useMemo(() => paintMaterial(), [])
+  useEffect(() => () => painted.dispose(), [painted])
+  useEffect(() => setPicture(painted, picture?.texture ?? null, aspect), [painted, picture, aspect])
 
   // Videos play only while the visitor is near (or looking at this one), to spare the device.
   const group = useRef<THREE.Group>(null)
@@ -199,7 +205,7 @@ export function Artwork({
 
       <mesh position={[0, 0, depth * 0.47]} onClick={select} onPointerOver={() => (document.body.style.cursor = 'pointer')} onPointerOut={() => (document.body.style.cursor = '')}>
         <planeGeometry args={[w, h]} />
-        {picture ? <meshBasicMaterial map={picture.texture} toneMapped={false} /> : <meshStandardMaterial color="#2a2522" roughness={0.9} />}
+        {picture ? <primitive object={painted} attach="material" /> : <meshStandardMaterial color="#2a2522" roughness={0.9} />}
       </mesh>
 
       {/* Glass: almost invisible, but it picks up the room's light at an angle. */}
