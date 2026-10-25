@@ -20,7 +20,7 @@ Five styles, chosen per exhibition with the buttons at the top (remembered on th
 
 | Style | Room | Frames |
 |---|---|---|
-| **Classic gallery** (default) | a classic picture gallery at a modest scale: rose-red fabric walls, raised-panel wainscot, ivory cornice with gilded brackets, a skylight lantern, herringbone floor with a darker parquet border running through the doorways, a red Persian-style rug in every other room (bare floor in the others, to compare), arched doorways lined in wood; a round tufted settee with a red-and-gold porcelain jar in each room, candle torchères either side of the fireplace or doorway, candle sconces between pictures, a marble fireplace on the entrance wall, a large window behind a white sheer with red velvet drapes on the last room's far wall, red-and-gold covered vases on pedestals | ornate gilded frames (beads, cove, corner rosettes), three large pictures per side wall above the panelling |
+| **Classic gallery** (default) | a classic picture gallery at a modest scale: rose-red fabric walls, raised-panel wainscot, ivory cornice with gilded brackets, a skylight lantern, herringbone floor with a darker parquet border running through the doorways, a Persian medallion rug in every other room (bare floor in the others, to compare), arched doorways lined in wood; a round tufted settee with a red-and-gold porcelain jar in each room, candle torchères either side of the fireplace or doorway, candle sconces between pictures, a marble fireplace on the entrance wall, a large window behind a white sheer with red velvet drapes on the last room's far wall, red-and-gold covered vases on pedestals | ornate gilded frames (beads, cove, corner rosettes), three large pictures per side wall above the panelling |
 | **Calm room** (default) | living-room size, home-height ceiling, plain matte boards, warm light walls, bright even light | dark wood frames, cream mats, 4–6 large pieces per room |
 | Sunlit gallery | pale oak floor, white walls, a skylight | thin black frames, white mats |
 | Warm salon | herringbone parquet, plum walls with a dark lower panel, chandelier | gilded frames |
@@ -63,13 +63,16 @@ of the family's exhibition: a round tufted velvet settee in the middle of each r
 pedestal and a red-and-gold porcelain jar rising from it, bronze candle torchères either side of
 the fireplace or doorway, brass candle sconces between the pictures, a carved marble fireplace
 with a flickering fire and candelabra on the entrance wall, and in the last room a large window
-(frosted panes glowing with daylight behind a white sheer, red velvet drapes at the sides;
+(frosted panes glowing with daylight behind a white sheer that falls to the floor, red velvet
+drapes at the sides;
 nothing outside is shown) between a pair of covered vases on pedestals. The vases follow
 19th-century Sèvres-style covered vases with a deep red ground decorated in gold and mounted in
 chased gilt bronze, a mark of luxury in grand French interiors of the Napoleon III period.
 
-Rugs alternate: the first room shows the bare herringbone, the next a red Persian-style rug
-(medallion, corner pieces, rosette border), so the two looks can be compared. Visitors walk around all
+Rugs alternate: the first room shows the bare herringbone, the next a Persian medallion rug in
+the manner of Tabriz and Kashan carpets (a fine crimson herati field, navy corner pieces, a
+layered medallion with pendants, a palmette-and-rosette border on a gold vine, a cotton fringe),
+so the two looks can be compared. Visitors walk around all
 of it, and guided walks step round it.
 
 ## Putting things in an exhibition

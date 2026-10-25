@@ -413,8 +413,8 @@ export function ArchDoorways({ plan, wallMaterial }: { plan: MuseumPlan; wallMat
 }
 
 /**
- * Rugs: one room shows the bare herringbone, the next a red Persian-style rug, and so on, so
- * the family can compare the two looks room by room.
+ * Rugs: one room shows the bare herringbone, the next a Persian medallion rug, and so on, so the
+ * family can compare the two looks room by room.
  */
 export function Carpets({ plan }: { plan: MuseumPlan }) {
   const inset = 0.85
@@ -426,7 +426,8 @@ export function Carpets({ plan }: { plan: MuseumPlan }) {
     const normal = pile.normalMap.clone()
     normal.repeat.set(6, 9)
     normal.needsUpdate = true
-    return new THREE.MeshStandardMaterial({ map: persianRug(w / d), normalMap: normal, normalScale: new THREE.Vector2(0.4, 0.4), roughness: 1 })
+    // alphaTest: the fringe is threads with floor showing between them.
+    return new THREE.MeshStandardMaterial({ map: persianRug(w / d), normalMap: normal, normalScale: new THREE.Vector2(0.5, 0.5), roughness: 1, alphaTest: 0.5 })
   }, [pile, w, d])
   useEffect(() => () => (material.map?.dispose(), material.dispose()), [material])
   return (
@@ -1020,7 +1021,8 @@ export function Window({ plan }: { plan: MuseumPlan }) {
     () => new THREE.MeshPhysicalMaterial({ color: '#6a121c', roughness: 0.85, sheen: 1, sheenRoughness: 0.4, sheenColor: new THREE.Color('#c0404f'), side: THREE.DoubleSide }),
     [],
   )
-  const sheerPanel = useMemo(() => curtainGeometry(w + 0.2, y1 - y0 + 0.25, 0, -10, 16, 0.02), [])
+  // The sheer drops from the pole to the floor, as long as the drapes.
+  const sheerPanel = useMemo(() => curtainGeometry(w + 0.2, 3.4, 0, -10, 16, 0.02), [])
   const drapes = useMemo(() => [-1, 1].map((outer) => curtainGeometry(0.85, 3.4, outer, -10, 6, 0.045)), [])
   useEffect(() => () => [wood, gold, glass, sheer, velvet].forEach((m) => m.dispose()), [wood, gold, glass, sheer, velvet])
   useEffect(() => () => [sheerPanel, ...drapes].forEach((g) => g.dispose()), [sheerPanel, drapes])
@@ -1037,8 +1039,8 @@ export function Window({ plan }: { plan: MuseumPlan }) {
       ))}
       <rectAreaLight args={['#fff3e2', 3.2, w, y1 - y0]} position={[0, (y0 + y1) / 2, 0.12]} rotation={[0, Math.PI, 0]} />
 
-      {/* The sheer, covering the whole window, hung clear of the panelling's cap rail. */}
-      <mesh geometry={sheerPanel} material={sheer} position={[0, y0 - 0.15, 0.13]} />
+      {/* The sheer, covering the whole window down to the floor, hung clear of the panelling's cap rail. */}
+      <mesh geometry={sheerPanel} material={sheer} position={[0, 0.02, 0.13]} />
       {/* Red drapes at the sides, from the pole to the floor, in front of the sheer. */}
       {[-1, 1].map((outer, i) => (
         <mesh key={outer} geometry={drapes[i]} material={velvet} position={[outer * (w / 2 + 0.3), 0.02, 0.17]} />
