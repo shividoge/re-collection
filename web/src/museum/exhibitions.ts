@@ -23,8 +23,9 @@ export interface Artwork {
   /** Shown as written, e.g. "June 2019" or "Sunday, 3 March". */
   date?: string
   caption?: string
-  /** For a visit: open it in the 3D viewer from the museum. */
+  /** For a visit: stepping in opens its 3D room, at second `t` of the visit (this picture's moment). */
   captureId?: string
+  t?: number
   /** Added on this device (can be removed again here). */
   local?: boolean
 }
@@ -90,7 +91,7 @@ async function visits(): Promise<Exhibition | null> {
       const date = formatDate(c.createdAt)
       if (manifest.video?.file) {
         const poster = c.thumb ? captureFileUrl(c.id, 'thumb.jpg') : undefined
-        items.push({ id: `${c.id}-video`, kind: 'video', src: captureFileUrl(c.id, manifest.video.file), poster, title, date, captureId: c.id })
+        items.push({ id: `${c.id}-video`, kind: 'video', src: captureFileUrl(c.id, manifest.video.file), poster, title, date, captureId: c.id, t: 0 })
       }
       const kf = manifest.keyframes
       if (kf && kf.count > 0) {
@@ -102,10 +103,11 @@ async function visits(): Promise<Exhibition | null> {
             title,
             date,
             captureId: c.id,
+            t: s * kf.everySec,
           })
         }
       } else if (c.thumb) {
-        items.push({ id: `${c.id}-thumb`, kind: 'photo', src: captureFileUrl(c.id, 'thumb.jpg'), title, date, captureId: c.id })
+        items.push({ id: `${c.id}-thumb`, kind: 'photo', src: captureFileUrl(c.id, 'thumb.jpg'), title, date, captureId: c.id, t: 0 })
       }
     } catch {
       // A capture whose manifest can't be read is left out, not guessed at.

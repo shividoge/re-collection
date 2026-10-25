@@ -400,11 +400,25 @@
   font-size: 15px;
   line-height: 1.4;
 }
-.stepin-action {
-  margin-top: 6px;
-  color: #ffd29a;
-  font-size: 14px;
-  text-decoration: none;
+/* Stepping into a visit: its 3D room waits behind the picture, then takes the whole screen. */
+.stepin-3d {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.stepin-3d.live {
+  pointer-events: auto;
+}
+.stepin-media.gone {
+  pointer-events: none;
+}
+/* The viewer's own buttons sit top-left, so the way back goes top-right. */
+.stepin-room .stepin-back {
+  left: auto;
+  right: 18px;
+}
+.stepin-room .viewer-selection {
+  top: 74px;
 }
 .museum-stepin {
   padding: 6px 16px !important;

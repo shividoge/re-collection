@@ -25,6 +25,7 @@ export function MuseumScene({
   onMeasure,
   walker,
   frozen = false,
+  paused = false,
 }: {
   exhibition: Exhibition
   plan: MuseumPlan
@@ -37,6 +38,8 @@ export function MuseumScene({
   walker: Ref<WalkerHandle>
   /** While stepped into a picture: the museum holds still and ignores walking keys. */
   frozen?: boolean
+  /** While the visitor is inside a visit's 3D room, hidden behind it: the museum stops drawing. */
+  paused?: boolean
 }) {
   const look = LOOKS[plan.style]
   const walk = (walker as { current: WalkerHandle | null }) ?? null
@@ -63,6 +66,7 @@ export function MuseumScene({
 
   return (
     <Canvas
+      frameloop={paused ? 'never' : 'always'}
       dpr={handheld ? [1, 1.5] : [1, 2]}
       camera={{ fov: 62, near: 0.05, far: 120, position: [plan.start[0], EYE, plan.start[1]] }}
       gl={{ antialias: false, powerPreference: 'high-performance', stencil: false }}

@@ -17,9 +17,12 @@ piece framed on a wall, lit, and labelled. Not XR yet; it runs in any browser (l
 
 Tap the picture you're standing at, or press **Step in** on its label (Enter on a keyboard; from
 elsewhere it walks you there first). The museum recedes into a dimmed, rounded card while the
-picture lifts out of its frame and grows to fill the view over a soft blur of its own colours,
-Apple-style; a photo shows still, a video plays with its sound, and a visit offers "Walk around
-this visit in 3D". **‹ Museum** (or Escape) runs it all backwards, back into the frame.
+picture lifts out of its frame, Apple-style. A piece from a visit grows to fill the screen and
+dissolves into that visit's 3D room, seen from the phone's own view at that moment of the
+visit, where the person can look around, replay it and talk about it. Any other photo or video
+settles large over a soft blur of its own colours (a video plays with its sound).
+**‹ Museum** (or Escape) runs it all backwards: the picture comes back over the room and
+shrinks into its frame.
 
 Quiet music plays while walking: Erik Satie's *Gymnopédie No. 1*, a public domain recording by
 Robin Alciatore for Musopen (`web/public/museum/audio/`, credits there). It starts softly on the
@@ -95,8 +98,8 @@ of it, and guided walks step round it.
    iPad). They hang in the exhibition that's open and stay on that device (IndexedDB). "Take down"
    removes one again.
 2. **Our visits** fills itself from the guide: each finished capture hangs as its video, followed
-   by two of its keyframes, with the title and date the family gave it, and a link to step into
-   the visit in 3D.
+   by two of its keyframes, with the title and date the family gave it. Stepping into any of them
+   opens the visit's 3D room at that moment.
 3. **Curated exhibitions** come from `web/public/museum/exhibitions.json`:
 
 ```json

@@ -46,6 +46,8 @@ export function MuseumPage({ id }: { id?: string }) {
   const walker = useRef<WalkerHandle>(null)
   // Stepping into a picture: which one, the box it lifted out of, and whether it's on its way back.
   const [inside, setInside] = useState<{ index: number; from: Box; leaving: boolean } | null>(null)
+  // Inside a visit's 3D room, which covers the whole screen.
+  const [inRoom, setInRoom] = useState(false)
   const pendingStep = useRef(-1)
   const sizes = useRef(new Map<number, { w: number; h: number }>())
   const sound = useMemo(() => new MuseumSound(), [])
@@ -241,6 +243,7 @@ export function MuseumPage({ id }: { id?: string }) {
             onMeasure={onMeasure}
             walker={walker}
             frozen={Boolean(inside)}
+            paused={inRoom}
           />
         ) : null}
       </div>
@@ -252,6 +255,7 @@ export function MuseumPage({ id }: { id?: string }) {
           from={inside.from}
           leaving={inside.leaving}
           onBack={stepOut}
+          onRoom={setInRoom}
           onClosed={() => setInside(null)}
         />
       )}
@@ -334,7 +338,6 @@ export function MuseumPage({ id }: { id?: string }) {
                   <button className="museum-stepin" onClick={() => stepIn(focus)}>
                     Step in
                   </button>
-                  {current.captureId && <a href={`#/capture/${current.captureId}`}>Walk around in 3D</a>}
                   {current.local && <button onClick={() => void remove(current.id)}>Take down</button>}
                 </div>
               </div>
