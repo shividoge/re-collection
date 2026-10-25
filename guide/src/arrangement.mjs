@@ -10,7 +10,8 @@ import { readJsonBody, sendError, sendJson } from './http.mjs';
  * <dataDir>/museum.json. Without one, the museum hangs every visit automatically.
  *
  * An item points at a piece of a capture, never at a file path: `piece` is "video", "thumb"
- * or a keyframe "k0012", so nothing outside a capture's own files can be hung.
+ * or a keyframe "k0012", so nothing outside a capture's own files can be hung. Or it points at
+ * one of the caretaker's own uploads (uploads.mjs) by its id.
  */
 export const MAX_ITEMS = 60;
 export const TITLE_MAX = 80;
@@ -21,16 +22,21 @@ const UUID = /^[0-9a-f-]{36}$/i;
 const text = (value, max) => (typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 
 /**
- * Checks a body from the editor against the captures that exist. Returns { value } with the
- * cleaned arrangement, or { error } saying what's wrong.
+ * Checks a body from the editor against the captures and uploads that exist. Returns { value }
+ * with the cleaned arrangement, or { error } saying what's wrong.
  */
-export function validateArrangement(body, captureIds) {
+export function validateArrangement(body, captureIds, uploadIds = new Set()) {
   if (!body || typeof body !== 'object') return { error: 'Send { title, subtitle, items: [...] }.' };
   if (!Array.isArray(body.items)) return { error: '"items" must be a list.' };
   if (body.items.length > MAX_ITEMS) return { error: `At most ${MAX_ITEMS} pictures.` };
   const items = [];
   for (const [i, item] of body.items.entries()) {
     if (!item || typeof item !== 'object') return { error: `Item ${i + 1} isn't an object.` };
+    if (item.upload !== undefined) {
+      if (typeof item.upload !== 'string' || !uploadIds.has(item.upload)) return { error: `Item ${i + 1} points at an upload that doesn't exist.` };
+      items.push({ upload: item.upload, title: text(item.title, TITLE_MAX), caption: text(item.caption, CAPTION_MAX) });
+      continue;
+    }
     if (typeof item.capture !== 'string' || !UUID.test(item.capture) || !captureIds.has(item.capture)) {
       return { error: `Item ${i + 1} points at a capture that doesn't exist.` };
     }
@@ -40,14 +46,15 @@ export function validateArrangement(body, captureIds) {
   return { value: { title: text(body.title, TITLE_MAX) || 'Our visits', subtitle: text(body.subtitle, TITLE_MAX), items } };
 }
 
-/** What a visitor may see: only the pictures from captures the family made public. */
+/** What a visitor may see: only the pictures from captures the family made public (never uploads). */
 export function publicArrangement(arrangement, publicIds) {
   if (!arrangement) return null;
   const visible = new Set(publicIds);
   return { ...arrangement, items: arrangement.items.filter((item) => visible.has(item.capture)) };
 }
 
-export function createArrangement({ store, dataDir }) {
+/** `uploadIds()` resolves to the set of upload ids that exist. */
+export function createArrangement({ store, dataDir, uploadIds = async () => new Set() }) {
   const file = join(dataDir, 'museum.json');
 
   async function read() {
@@ -65,7 +72,7 @@ export function createArrangement({ store, dataDir }) {
 
   async function put(req, res) {
     const body = await readJsonBody(req);
-    const { value, error } = validateArrangement(body, new Set(await store.listIds()));
+    const { value, error } = validateArrangement(body, new Set(await store.listIds()), await uploadIds());
     if (error) return sendError(res, 400, error);
     const arrangement = { ...value, updatedAt: new Date().toISOString() };
     // Write then rename, so a reader never sees half a file.

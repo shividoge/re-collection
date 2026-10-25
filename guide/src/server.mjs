@@ -10,6 +10,7 @@ import { CORS_HEADERS, readJsonBody, sendError, sendFile, sendJson } from './htt
 import { ClaudeError, createClaude } from './claude.mjs';
 import { extractFacts } from './facts.mjs';
 import { createArrangement } from './arrangement.mjs';
+import { createUploads } from './uploads.mjs';
 import { createMuseumRooms } from './museum.mjs';
 import { createPublic } from './public.mjs';
 import { createSessions, SessionError } from './session.mjs';
@@ -42,7 +43,12 @@ export function createApp(config, { claude = createClaude(config), log = console
   /** The built web app (web/dist), served at / so judges need one URL. */
   const webDir = config.webDir ?? join(guideRoot, '..', 'web', 'dist');
 
-  const arrangement = createArrangement({ store, dataDir: config.dataDir });
+  // Uploads can't be deleted while the arrangement hangs them; the arrangement only hangs uploads that exist.
+  const uploads = createUploads({
+    dataDir: config.dataDir,
+    inUse: async () => new Set(((await arrangement.read())?.items ?? []).map((i) => i.upload).filter(Boolean)),
+  });
+  const arrangement = createArrangement({ store, dataDir: config.dataDir, uploadIds: () => uploads.ids() });
   const publicRoutes = createPublic({ store, sessions, arrangement });
   const museum = createMuseumRooms({ store, ...museumOptions });
 
@@ -66,6 +72,7 @@ export function createApp(config, { claude = createClaude(config), log = console
     ['PUT', /^\/api\/person$/, json((body) => sessions.setPerson(body))],
     ...museum.routes,
     ...arrangement.routes,
+    ...uploads.routes,
     ['GET', /^\/files\/([^/]+)\/(.+)$/, getFile],
     ['HEAD', /^\/files\/([^/]+)\/(.+)$/, getFile],
   ];
