@@ -1,5 +1,5 @@
-// What hangs in the museum. An exhibition is a title, a room style and a list of pictures and
-// videos, in visiting order. Exhibitions come from three places:
+// What hangs in the museum. An exhibition is a title and a list of pictures and videos, in
+// visiting order. Exhibitions come from three places:
 // - web/public/museum/exhibitions.json, curated by hand (format in docs/museum.md);
 // - "Our visits", made from the captures on the guide: each visit's video and a few of its
 //   keyframes, with the title and date the family gave it;
@@ -8,7 +8,6 @@
 // Nothing is invented: an exhibition only shows what was put into it.
 
 import { captureFileUrl, guide } from '../api'
-import type { RoomStyle } from './layout'
 
 export type ArtworkKind = 'photo' | 'video'
 
@@ -34,13 +33,10 @@ export interface Exhibition {
   id: string
   title: string
   subtitle?: string
-  style: RoomStyle
   items: Artwork[]
   /** Where it came from, for the picker. */
   source: 'curated' | 'visits' | 'local'
 }
-
-const STYLES = new Set<RoomStyle>(['classic', 'calm', 'gallery', 'salon', 'hall'])
 
 /** Exhibitions from web/public/museum/exhibitions.json; none if the file isn't there. */
 async function curated(): Promise<Exhibition[]> {
@@ -56,7 +52,6 @@ async function curated(): Promise<Exhibition[]> {
           id: e.id ?? `curated-${i}`,
           title: e.title,
           subtitle: e.subtitle,
-          style: e.style && STYLES.has(e.style) ? e.style : 'classic',
           items: items.map((a, k) => ({ ...a, id: a.id ?? `${e.id ?? i}-${k}` })),
           source: 'curated' as const,
         },
@@ -113,7 +108,7 @@ async function visits(): Promise<Exhibition | null> {
       // A capture whose manifest can't be read is left out, not guessed at.
     }
   }
-  return { id: 'visits', title: 'Our visits', subtitle: 'Every visit the family filmed, oldest first', style: 'classic', items, source: 'visits' }
+  return { id: 'visits', title: 'Our visits', subtitle: 'Every visit the family filmed, oldest first', items, source: 'visits' }
 }
 
 // Files dropped onto the museum, kept in IndexedDB.
@@ -218,7 +213,6 @@ export async function loadExhibitions(): Promise<Exhibition[]> {
       id: MY_EXHIBITION,
       title: 'My exhibition',
       subtitle: 'Drop photos and videos here to hang them',
-      style: 'classic',
       items: mine.map(asArtwork),
       source: 'local',
     })

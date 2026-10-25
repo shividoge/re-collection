@@ -70,10 +70,6 @@
   color: #2a1418;
   font-weight: 600;
 }
-.museum-styles {
-  display: flex;
-  gap: 6px;
-}
 .museum-select select {
   appearance: none;
   background: transparent;
@@ -258,10 +254,6 @@
 }
 
 @media (max-width: 760px) {
-  .museum-styles {
-    order: 3;
-    width: 100%;
-  }
   .museum-add {
     margin-left: 0;
   }

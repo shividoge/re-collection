@@ -115,66 +115,15 @@ function put(b: ReturnType<typeof makeBuffers>, k: number, c: RGB, height: numbe
 }
 
 /**
- * Wooden floor boards. `pattern` 'planks' are long boards in staggered rows (a modern gallery);
- * 'boards' are wide, plain, matte boards with barely visible seams (the calm room: a busy or
- * shiny floor can read as a step, a hole or a wet patch to someone with dementia);
- * 'herringbone' is short blocks at right angles (a classical salon; rotate the texture 45°).
+ * A herringbone parquet floor: short blocks laid at right angles, each with its own tone and
+ * grain (rotate the texture 45° to lay it as usual).
  */
-export function woodFloor(pattern: 'planks' | 'boards' | 'herringbone', light: RGB, dark: RGB, seed = 7, size = 1024): SurfaceMaps {
+export function woodFloor(light: RGB, dark: RGB, seed = 7, size = 1024): SurfaceMaps {
   const b = makeBuffers(size)
   const r = rng(seed)
   const grain = fbm(8, 4, seed + 1)
   const fine = fbm(64, 3, seed + 2)
   const blotch = fbm(4, 3, seed + 3)
-
-  if (pattern === 'planks' || pattern === 'boards') {
-    // Rows of boards across the tile, each row split into boards of random length.
-    const plain = pattern === 'boards'
-    const rows = plain ? 9 : 16
-    const rowStarts: number[][] = []
-    const tone: number[][] = []
-    for (let row = 0; row < rows; row++) {
-      const starts: number[] = []
-      let u = r() * 0.4
-      while (u < 1) {
-        starts.push(u)
-        u += 0.28 + r() * 0.4
-      }
-      rowStarts.push(starts)
-      tone.push(starts.map(() => r()))
-    }
-    for (let y = 0; y < size; y++) {
-      const v = y / size
-      const row = Math.floor(v * rows)
-      const inRow = v * rows - row
-      for (let x = 0; x < size; x++) {
-        const u = x / size
-        const starts = rowStarts[row]
-        // Which board of the row (boards wrap around the tile).
-        let i = starts.length - 1
-        for (let s = 0; s < starts.length; s++) if (u >= starts[s]) i = s
-        const start = starts[i]
-        const along = (u - start + 1) % 1
-        const t = tone[row][i]
-        // Grain runs along the board: stretched noise plus faint growth rings.
-        const g = grain(u * 0.25 + t, v * 4 + row * 0.37)
-        const rings = 0.5 + 0.5 * Math.sin((v * rows * 6 + g * 9 + t * 20) * Math.PI)
-        const f = fine(u, v)
-        // Plain boards: little difference between boards and only a whisper of grain.
-        const variety = plain ? 0.35 : 1
-        let c = mix(light, dark, 0.15 + 0.5 * t * 0.6 * variety + (g - 0.5) * 0.5 * variety + rings * 0.08 * variety + (blotch(u, v) - 0.5) * 0.25 * variety)
-        c = c.map((ch) => ch * (0.94 + f * 0.1)) as RGB
-        // Seams: the gap between rows and between board ends.
-        const endGap = Math.min(along, 1 - along) * size < 1.5 || Math.abs(u - start) * size < 1.5
-        const sideGap = Math.min(inRow, 1 - inRow) * (size / rows) < 1.2
-        const seam = endGap || sideGap
-        if (seam) c = c.map((ch) => ch * (plain ? 0.82 : 0.45)) as RGB
-        const roughness = plain ? 0.78 + f * 0.1 : seam ? 0.85 : 0.3 + (1 - rings) * 0.1 + f * 0.12
-        put(b, y * size + x, c, (seam ? (plain ? -0.3 : -1) : 0) + g * (plain ? 0.15 : 0.35) + f * 0.1, roughness)
-      }
-    }
-    return finish(size, b, plain ? 1.2 : 2.2, [1, 1])
-  }
 
   // Herringbone: blocks 1 × k plank widths. Cell (cx, cy) belongs to a horizontal block when
   // (cx − cy) mod 2k < k, else to a vertical one; each block gets its own tone.
@@ -242,56 +191,6 @@ export function woodGrain(light: RGB, dark: RGB, seed = 21, size = 512): Surface
       put(b, y * size + x, c, g * 0.4 + rings * 0.08, 0.45 + (1 - rings) * 0.08)
     }
   return finish(size, b, 0.8, [1, 1])
-}
-
-/** Polished stone: soft clouds of tone, a few darker veins, tiny speckles, high polish. */
-export function stoneFloor(base: RGB, vein: RGB, seed = 11, size = 1024): SurfaceMaps {
-  const b = makeBuffers(size)
-  const cloud = fbm(4, 5, seed)
-  const warp = fbm(3, 3, seed + 5)
-  const fine = fbm(96, 2, seed + 9)
-  const r = rng(seed + 13)
-  // Large square slabs, 4 across the tile.
-  const slabs = 4
-  const slabTone = Array.from({ length: slabs * slabs }, () => r())
-  for (let y = 0; y < size; y++)
-    for (let x = 0; x < size; x++) {
-      const u = x / size
-      const v = y / size
-      const sx = Math.floor(u * slabs)
-      const sy = Math.floor(v * slabs)
-      const t = slabTone[sy * slabs + sx]
-      const w = warp(u, v)
-      // Fine veins that come and go (masked by broad noise), as in limestone, not drawn lines.
-      const veinLine = Math.abs(Math.sin((u * 2 + v * 1.3 + w * 1.8 + t) * Math.PI * 2))
-      const mask = Math.max(0, cloud(v + 0.3, u + t) - 0.55) * 4
-      const veinAmount = Math.max(0, 1 - veinLine * 22) * 0.22 * Math.min(1, mask)
-      let c = mix(base, vein, (cloud(u + t, v) - 0.5) * 0.6 + 0.15 + veinAmount + (t - 0.5) * 0.15)
-      const f = fine(u, v)
-      c = c.map((ch) => ch * (0.97 + f * 0.06)) as RGB
-      const fu = u * slabs - sx
-      const fv = v * slabs - sy
-      const seam = Math.min(fu, 1 - fu, fv, 1 - fv) * (size / slabs) < 1.2
-      if (seam) c = c.map((ch) => ch * 0.6) as RGB
-      put(b, y * size + x, c, (seam ? -0.6 : 0) + f * 0.05, seam ? 0.7 : 0.1 + f * 0.1 + veinAmount * 0.1)
-    }
-  return finish(size, b, 1.6, [1, 1])
-}
-
-/** Painted plaster: a flat color with the faint relief and tone drift of a real wall. */
-export function plaster(color: RGB, seed = 3, size = 512): SurfaceMaps {
-  const b = makeBuffers(size)
-  const broad = fbm(4, 3, seed)
-  const relief = fbm(32, 4, seed + 1)
-  for (let y = 0; y < size; y++)
-    for (let x = 0; x < size; x++) {
-      const u = x / size
-      const v = y / size
-      const f = relief(u, v)
-      const tone = 0.975 + (broad(u, v) - 0.5) * 0.05 + (f - 0.5) * 0.03
-      put(b, y * size + x, color.map((ch) => ch * tone) as RGB, f, 0.85 + (f - 0.5) * 0.1)
-    }
-  return finish(size, b, 1.2, [1, 1])
 }
 
 /**

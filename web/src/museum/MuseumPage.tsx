@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { addFiles, kindOf, loadExhibitions, MY_EXHIBITION, removeLocal, type Exhibition } from './exhibitions'
-import { planMuseum, STYLES, type RoomStyle } from './layout'
-import { LOOKS } from './looks'
+import { planMuseum } from './layout'
 import { MuseumScene } from './MuseumScene'
 import { MuseumSound } from './sound'
 import { StepIn, type Stage } from './StepIn'
@@ -9,27 +8,6 @@ import { Streaks } from './Streaks'
 import type { WalkerHandle } from './Walker'
 import { IN_MS, LEAVE_MS, OUT_MS, type Dive } from './warp'
 import './museum.css'
-
-// v3: the classic gallery became everyone's default; earlier choices made while trying styles are dropped.
-const STYLE_KEY = 'relive.museum.style.v3'
-
-/** The room style chosen for an exhibition on this device, else the exhibition's own. */
-function savedStyle(ex: Exhibition): RoomStyle {
-  try {
-    const all = JSON.parse(localStorage.getItem(STYLE_KEY) ?? '{}') as Record<string, RoomStyle>
-    return all[ex.id] && all[ex.id] in STYLES ? all[ex.id] : ex.style
-  } catch {
-    return ex.style
-  }
-}
-function saveStyle(ex: Exhibition, style: RoomStyle) {
-  try {
-    const all = JSON.parse(localStorage.getItem(STYLE_KEY) ?? '{}') as Record<string, RoomStyle>
-    localStorage.setItem(STYLE_KEY, JSON.stringify({ ...all, [ex.id]: style }))
-  } catch {
-    // Private mode: the choice lasts for this visit only.
-  }
-}
 
 /**
  * The museum: walk through an exhibition of photos and videos hung in real-looking rooms.
@@ -39,7 +17,6 @@ function saveStyle(ex: Exhibition, style: RoomStyle) {
 export function MuseumPage({ id }: { id?: string }) {
   const [exhibitions, setExhibitions] = useState<Exhibition[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [style, setStyle] = useState<RoomStyle>('classic')
   const [focus, setFocus] = useState(-1)
   const [arrived, setArrived] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -72,7 +49,6 @@ export function MuseumPage({ id }: { id?: string }) {
 
   const exhibition = exhibitions?.find((e) => e.id === id) ?? exhibitions?.[0] ?? null
   useEffect(() => {
-    if (exhibition) setStyle(savedStyle(exhibition))
     setFocus(-1)
     // Only when another exhibition opens, not when its items change.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
@@ -80,7 +56,7 @@ export function MuseumPage({ id }: { id?: string }) {
 
   // Rooms are planned for the number of pictures; adding one may add a room.
   const count = Math.max(1, exhibition?.items.length ?? 1)
-  const plan = useMemo(() => planMuseum(count, style), [count, style])
+  const plan = useMemo(() => planMuseum(count), [count])
 
   useEffect(() => {
     const t = setTimeout(() => setHint(false), 9000)
@@ -245,7 +221,7 @@ export function MuseumPage({ id }: { id?: string }) {
 
   return (
     <div
-      className={`museum museum-${style}${inside ? ' inside' : ''}`}
+      className={`museum${inside ? ' inside' : ''}`}
       // Sound can only start after a click or tap.
       onPointerDown={() => sound.wake()}
       onDragOver={(e) => {
@@ -307,21 +283,6 @@ export function MuseumPage({ id }: { id?: string }) {
             ))}
           </select>
         </label>
-        <div className="museum-styles" role="group" aria-label="Room">
-          {(Object.keys(LOOKS) as RoomStyle[]).map((s) => (
-            <button
-              key={s}
-              className={`museum-chip${s === style ? ' on' : ''}`}
-              onClick={() => {
-                setStyle(s)
-                saveStyle(exhibition, s)
-                setFocus(-1)
-              }}
-            >
-              {LOOKS[s].label}
-            </button>
-          ))}
-        </div>
         <button
           className={`museum-chip${musicOn ? ' on' : ''}`}
           onClick={() => {
@@ -342,9 +303,7 @@ export function MuseumPage({ id }: { id?: string }) {
 
       {hint && total > 0 && (
         <p className="museum-hint">
-          {LOOKS[style].guided
-            ? 'Tap a picture, or the arrow, to go to it · drag gently to look around'
-            : 'Drag to look around · W A S D or arrows to walk · tap a picture or the floor to go there'}
+          Drag to look around · W A S D or arrows to walk · tap a picture or the floor to go there
         </p>
       )}
 
