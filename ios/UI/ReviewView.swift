@@ -135,7 +135,8 @@ struct ReviewView: View {
 
     /// This capture's upload. Another capture's upload counts as not started here.
     private var myUpload: UploadCenter.State {
-        uploads.captureId == capture.id ? uploads.state : .idle
+        if uploads.captureId == capture.id { return uploads.state }
+        return uploads.sent.contains(capture.id) ? .done : .idle
     }
 
     private var isUploading: Bool {

@@ -25,6 +25,10 @@ final class UploadCenter: ObservableObject {
         didSet { UserDefaults.standard.set(convexURL, forKey: "convexURL") }
     }
 
+    /// Manifest ids of captures that finished uploading, so their review
+    /// screen says "Sent" even after another upload started.
+    @Published private(set) var sent: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "sentCaptures") ?? [])
+
     private var running: Task<Void, Never>?
     /// The folder of the capture `state` is about.
     private var folder: URL?
@@ -51,6 +55,8 @@ final class UploadCenter: ObservableObject {
                     self.state = .uploading(progress)
                 }
                 state = .done
+                sent.insert(manifestId)
+                UserDefaults.standard.set(Array(sent), forKey: "sentCaptures")
                 running = nil
                 resumePending()   // the next one waiting, if any
             } catch {

@@ -206,6 +206,8 @@ final class CaptureRecorder {
         guard writer.canAdd(video), writer.canAdd(audio) else { return "The video writer rejected its inputs." }
         writer.add(video)
         writer.add(audio)
+        // Make the image context now, not on the first keyframe, so frame 0 isn't late.
+        _ = ciContext
         guard writer.startWriting() else {
             return "Video recording couldn't start: \(writer.error?.localizedDescription ?? "unknown error")"
         }
@@ -308,7 +310,9 @@ final class CaptureRecorder {
 
         writer.finishWriting { [self] in
             if writer.status != .completed {
-                completion(.failure(RecorderError.videoFailed(writer.error?.localizedDescription ?? "unknown error")))
+                transcriber?.cancel()
+                let message = writer.error?.localizedDescription ?? "unknown error"
+                closeFiles(cancelWriter: true) { completion(.failure(RecorderError.videoFailed(message))) }
                 return
             }
             closeFiles(cancelWriter: false) { [self] in

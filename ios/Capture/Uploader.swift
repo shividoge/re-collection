@@ -251,7 +251,17 @@ final class BackgroundTransfers: NSObject, URLSessionDataDelegate, @unchecked Se
 
     /// Set by the app delegate when iOS wakes the app for this session's
     /// events; called once they've all been delivered. Main thread only.
-    var systemCompletion: (() -> Void)?
+    var systemCompletion: (() -> Void)? {
+        didSet {
+            // The events may already have been delivered before iOS handed over the handler.
+            if eventsDelivered, let completion = systemCompletion {
+                eventsDelivered = false
+                systemCompletion = nil
+                completion()
+            }
+        }
+    }
+    private var eventsDelivered = false
     /// Called on the main actor after iOS delivered a batch of background events.
     var onEventsDelivered: (@MainActor @Sendable () -> Void)?
 
@@ -274,6 +284,11 @@ final class BackgroundTransfers: NSObject, URLSessionDataDelegate, @unchecked Se
     func put(_ request: URLRequest, fromFile file: URL, label: String) -> Int {
         let task = session.uploadTask(with: request, fromFile: file)
         task.taskDescription = label
+        // A relaunched session may reuse ids; drop anything an old task left under this one.
+        lock.lock()
+        results[task.taskIdentifier] = nil
+        sent[task.taskIdentifier] = nil
+        lock.unlock()
         task.resume()
         return task.taskIdentifier
     }
@@ -306,6 +321,8 @@ final class BackgroundTransfers: NSObject, URLSessionDataDelegate, @unchecked Se
             session.getAllTasks { continuation.resume(returning: $0) }
         }
         let leftovers = tasks.filter { $0.state == .running || $0.state == .suspended }
+        // Results of old tasks nobody waits for (they landed while the app wasn't running).
+        defer { dropUnclaimedResults() }
         guard !leftovers.isEmpty else { return }
         for task in leftovers {
             if task.state == .suspended { task.resume() }
@@ -314,6 +331,12 @@ final class BackgroundTransfers: NSObject, URLSessionDataDelegate, @unchecked Se
         for task in leftovers {
             _ = try? await wait(task.taskIdentifier)
         }
+    }
+
+    private func dropUnclaimedResults() {
+        lock.lock()
+        results.removeAll()
+        lock.unlock()
     }
 
     private func resolve(_ taskId: Int, _ result: Result<String?, Error>) {
@@ -352,9 +375,12 @@ final class BackgroundTransfers: NSObject, URLSessionDataDelegate, @unchecked Se
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         Task { @MainActor [self] in
             onEventsDelivered?()
-            let completion = systemCompletion
-            systemCompletion = nil
-            completion?()
+            if let completion = systemCompletion {
+                systemCompletion = nil
+                completion()
+            } else {
+                eventsDelivered = true
+            }
         }
     }
 }

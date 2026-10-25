@@ -167,7 +167,13 @@ final class AppModel: ObservableObject {
     /// Saves the title and attendees from the review screen into manifest.json.
     func saveDetails(title: String, attendees: [String]) {
         guard case .review(var capture) = phase else { return }
-        capture.manifest.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Rewriting an unchanged manifest would make an upload send it again;
+        // and once uploading, manifest.json is one of the files going up.
+        guard title != capture.manifest.title || attendees != capture.manifest.attendees,
+              !UploadCenter.shared.isUploading
+        else { return }
+        capture.manifest.title = title
         capture.manifest.attendees = attendees
         do {
             try CaptureStore.writeManifest(capture.manifest, in: capture.folder)
