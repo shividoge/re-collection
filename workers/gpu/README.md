@@ -22,14 +22,25 @@ local mode (`run.py`) and a memory calibration (`calibrate.py`).
 - A convert job's `needs.frames` is the number of Depth Anything 3 frames it wants in one pass:
   `min(240, max(16, floor(durationSec × 10) + 1))` (`convert.frames_needed`; 10 frames per second
   of video, at least 16, at most 240). The backend sets it from `videos.create`'s `durationSec`.
-- A worker advertises `maxFrames` = frames one pass fits, measured at startup after the models
-  are loaded: `(free GPU memory − 1.85 GiB − 0.5 GiB margin) / 0.074 GiB` (measured with `calibrate.py`), capped at 240 (`estimate.frames_that_fit`).
-  Override with `WORKER_MAX_FRAMES`. Measured values are in the table below.
-- So the 5060 Ti takes videos up to its `maxFrames / 10` seconds; longer ones wait for the GX10.
-  Videos longer than 24 s run on the GX10 in overlapping windows of 240 frames, chained with a
-  Sim(3) fit on the shared frames, still at 10 frames per second (`align.py`, `estimate.merge`).
+- A worker advertises `maxFrames` = 16:9 frames one pass fits, measured at startup after the
+  models are loaded: `(free GPU memory − 1.85 GiB − 0.5 GiB margin) / 0.074 GiB`, capped at 240
+  (`estimate.frames_that_fit`; per-frame cost measured with `calibrate.py`: 0.070 GiB on the
+  5060 Ti, 0.074 GiB on the GX10). Measured: **82 on the 5060 Ti, 240 on the GX10**. Override
+  with `WORKER_MAX_FRAMES`. A frame's cost scales with DA3's patches, so each job's window is
+  recomputed for its shape (a 4:3 phone video costs 35% more per frame: 60 frames on the 5060 Ti).
+- So the 5060 Ti takes videos up to ~8 s; longer ones wait for the GX10, which runs up to 24 s
+  in one pass and longer videos in overlapping windows of 240 frames, still at 10 frames per
+  second (`align.py`, `estimate.merge`). Windows from the metric model are chained with a rigid
+  fit on the frames they share (dense per-pixel correspondences, Huber-reweighted); scale is
+  only fitted for models without metric depth.
+- Why long videos go to the GX10 and not to small windows on the 5060 Ti: against the LiDAR and
+  ARKit poses of a 28 s phone capture (`compare_lidar.py`), one 240-frame pass had 0.46 cm path
+  error and 2.5% depth error; two 240-frame windows 0.75 cm and 2.5%; six 67-frame windows
+  drifted to 2.5 cm and 5.7% scale (5.8 cm and 9.6% when the joins also fitted scale). Small
+  windows are only a fallback (less free memory than at startup, or an out-of-memory retry).
 - `splat` jobs need no particular memory (training uses at most 240 views) and go to whichever
-  GPU worker claims first. On a 16 GB card DA3's weights move to the CPU while a splat trains.
+  GPU worker claims first; with batched training both machines train equally fast. On a 16 GB
+  card DA3's weights move to the CPU while a splat trains.
 
 ## Failures
 
