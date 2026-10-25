@@ -225,6 +225,36 @@ describe('capture removal', () => {
   })
 })
 
+describe('capture removal (tombstone)', () => {
+  test('the id is refused until the purge has run, so it can never erase a recreated capture', async () => {
+    const t = setup()
+    const capture = tinyCapture()
+    await uploadCapture(t, capture)
+    await t.mutation(api.captures.remove, { captureId: CAPTURE_ID })
+    await expect(t.mutation(api.captures.begin, { manifestJson: capture.manifestJson })).rejects.toThrow(/still being removed/)
+    expect(await t.query(api.captures.list, {})).toEqual([])
+    await runScheduled(t)
+    // Purged and the tombstone dropped: the same capture uploads again and keeps its files.
+    await uploadCapture(t, capture)
+    await runScheduled(t)
+    expect((await t.query(api.captures.get, { captureId: CAPTURE_ID }))?.files.length).toBe(Object.keys(capture.files).length)
+    expect([...bucket.keys()].filter((k) => k.startsWith(`captures/${CAPTURE_ID}/raw/`)).length).toBe(Object.keys(capture.files).length)
+  })
+
+  test('a failed purge keeps the tombstone and tries again', async () => {
+    const t = setup()
+    const capture = tinyCapture()
+    await uploadCapture(t, capture)
+    await t.mutation(api.captures.remove, { captureId: CAPTURE_ID })
+    const realFetch = globalThis.fetch
+    let failures = 1
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => (failures-- > 0 ? Promise.reject(new TypeError('network down')) : realFetch(input, init)))
+    await runScheduled(t)
+    expect(bucket.size).toBe(0)
+    expect(await t.run(async (ctx) => ctx.db.query('captures').collect())).toEqual([])
+  })
+})
+
 test('without R2 settings, URL functions say so instead of returning fake URLs', async () => {
   const t = setup()
   await uploadCapture(t, tinyCapture({ keyframes: 0, transcript: false }))

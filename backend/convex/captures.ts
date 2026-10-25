@@ -3,7 +3,7 @@ import { parseManifest } from '../../shared/manifest'
 import { internal } from './_generated/api'
 import type { Doc } from './_generated/dataModel'
 import { action, internalAction, internalMutation, mutation, query } from './_generated/server'
-import { getCapture, getFile, getMomentDoc, initialStatus, invalid, listFiles, manifestOf, requireCapture } from './lib/data'
+import { conflict, getCapture, getFile, getMomentDoc, initialStatus, invalid, listFiles, manifestOf, requireCapture } from './lib/data'
 import { abortMultipart, deletePrefix, r2Config, r2ConfigOrNull, stableGetUrl, type R2Config } from './lib/r2'
 import { completeUpload } from './lib/stages'
 import { captureStatus, derived, fileUrl } from './validators'
@@ -63,7 +63,7 @@ export const begin = mutation({
       durationSec: manifest.video.durationSec ?? 0,
     }
     const existing = await ctx.db.query('captures').withIndex('by_captureId', (q) => q.eq('captureId', manifest.id)).unique()
-    if (existing?.deleting) throw invalid('This capture is being deleted.')
+    if (existing?.deleting) throw conflict('This capture was just deleted and its files are still being removed. Try again in a minute.')
     if (existing) {
       // Keep a splat the splat job added, if this manifest doesn't bring one.
       const splat = manifestOf(existing)?.room?.splat
@@ -158,7 +158,10 @@ export const setPublic = mutation({
   },
 })
 
-/** Deletes the capture's rows now; a scheduled action deletes its R2 objects. */
+/**
+ * Deletes the capture's rows now and leaves a tombstone (`deleting`), so the id can't be used
+ * again until a scheduled action has deleted its R2 objects; that action then drops the tombstone.
+ */
 export const remove = mutation({
   args: { captureId: v.string() },
   returns: v.object({ ok: v.literal(true) }),
@@ -179,25 +182,43 @@ export const remove = mutation({
     if (arrangement?.items.some((i) => i.capture === id)) {
       await ctx.db.patch(arrangement._id, { items: arrangement.items.filter((i) => i.capture !== id), updatedAt: new Date().toISOString() })
     }
-    await ctx.db.delete(capture._id)
+    await ctx.db.patch(capture._id, { deleting: true })
     await ctx.scheduler.runAfter(0, internal.captures.purge, { captureId: id, openUploads })
     return { ok: true as const }
   },
 })
 
-/** Deletes a removed capture's objects from R2. */
+/** Deletes a removed capture's objects from R2, then its tombstone. Retried until it works. */
 export const purge = internalAction({
-  args: { captureId: v.string(), openUploads: v.array(v.object({ key: v.string(), uploadId: v.string() })) },
+  args: { captureId: v.string(), openUploads: v.array(v.object({ key: v.string(), uploadId: v.string() })), retry: v.optional(v.number()) },
   returns: v.null(),
-  handler: async (_ctx, { captureId, openUploads }) => {
+  handler: async (ctx, { captureId, openUploads, retry = 0 }) => {
     const cfg = r2ConfigOrNull()
     if (!cfg) {
       console.error(`R2 isn't configured, so the files of deleted capture ${captureId} were left in the bucket.`)
-      return null
+    } else {
+      try {
+        for (const u of openUploads) await abortMultipart(cfg, u.key, u.uploadId)
+        const deleted = (await deletePrefix(cfg, `captures/${captureId}/`)) + (await deletePrefix(cfg, `videos/${captureId}/`))
+        console.log(`Deleted ${deleted} objects of capture ${captureId}.`)
+      } catch (error) {
+        const waitMs = Math.min(60_000 * 2 ** retry, 3_600_000)
+        console.error(`Deleting the files of capture ${captureId} failed (trying again in ${waitMs / 1000} s): ${error instanceof Error ? error.message : String(error)}`)
+        await ctx.scheduler.runAfter(waitMs, internal.captures.purge, { captureId, openUploads, retry: retry + 1 })
+        return null
+      }
     }
-    for (const u of openUploads) await abortMultipart(cfg, u.key, u.uploadId)
-    const deleted = (await deletePrefix(cfg, `captures/${captureId}/`)) + (await deletePrefix(cfg, `videos/${captureId}/`))
-    console.log(`Deleted ${deleted} objects of capture ${captureId}.`)
+    await ctx.runMutation(internal.captures.dropTombstone, { captureId })
+    return null
+  },
+})
+
+export const dropTombstone = internalMutation({
+  args: { captureId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { captureId }) => {
+    const row = await ctx.db.query('captures').withIndex('by_captureId', (q) => q.eq('captureId', captureId)).unique()
+    if (row?.deleting) await ctx.db.delete(row._id)
     return null
   },
 })
