@@ -38,6 +38,8 @@ export function MuseumPage({ id }: { id?: string }) {
   const pendingStep = useRef(-1)
   const sizes = useRef(new Map<number, { w: number; h: number }>())
   const sound = useMemo(() => new MuseumSound(), [])
+  // Leaving the museum stops its music and lets its audio engine go.
+  useEffect(() => () => sound.dispose(), [sound])
   const [musicOn, setMusicOn] = useState(sound.musicOn)
 
   const refresh = useCallback(() => {

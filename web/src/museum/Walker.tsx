@@ -26,6 +26,8 @@ export interface WalkerHandle {
   position: () => [number, number]
 }
 
+const euler = new THREE.Euler()
+
 /** Shortest signed angle from a to b. */
 const turnBy = (a: number, b: number) => Math.atan2(Math.sin(b - a), Math.cos(b - a))
 const smoothstep = (t: number) => {
@@ -57,7 +59,7 @@ export function Walker({
   hung?: number
   ref?: Ref<WalkerHandle>
 }) {
-  const { camera, gl } = useThree()
+  const { camera, gl, invalidate } = useThree()
   const pos = useRef<[number, number]>([plan.start[0], plan.start[1]])
   const yaw = useRef(0)
   const pitch = useRef(-0.02)
@@ -93,6 +95,7 @@ export function Walker({
   useImperativeHandle(ref, () => ({
     walkTo(to, target) {
       path.current = route(plan, pos.current, to)
+      invalidate()
       if (target) {
         const dx = target[0] - to[0]
         const dz = target[2] - to[1]
@@ -101,6 +104,8 @@ export function Walker({
     },
     position: () => [pos.current[0], pos.current[1]],
   }))
+  // The museum draws on demand: a new route needs a first frame to start walking.
+  useEffect(() => invalidate(), [plan, invalidate])
 
   // Drag to look.
   useEffect(() => {
@@ -120,6 +125,7 @@ export function Walker({
       pitch.current = Math.max(-0.7, Math.min(0.6, pitch.current + dy * k))
       // Looking around by hand takes over from a guided turn.
       if (Math.abs(dx) + Math.abs(dy) > 2) lookGoal.current = null
+      invalidate()
     }
     const up = () => {
       last = null
@@ -134,7 +140,7 @@ export function Walker({
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
     }
-  }, [gl])
+  }, [gl, invalidate])
 
   useEffect(() => {
     const typing = (e: KeyboardEvent) => {
@@ -145,6 +151,7 @@ export function Walker({
       if (typing(e) || frozenRef.current) return
       keys.current.add(e.code)
       if (e.code.startsWith('Arrow')) e.preventDefault()
+      invalidate()
     }
     const up = (e: KeyboardEvent) => keys.current.delete(e.code)
     const blur = () => keys.current.clear()
@@ -156,7 +163,7 @@ export function Walker({
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', blur)
     }
-  }, [])
+  }, [invalidate])
 
   useFrame((_, dt) => {
     // Stepped into a picture: the dive has the camera.
@@ -247,7 +254,9 @@ export function Walker({
     // Stay out of the walls even if something went wrong.
     if (!walkable(plan, pos.current[0], pos.current[1])) pos.current = [plan.start[0], plan.start[1]]
     camera.position.set(pos.current[0], EYE, pos.current[1])
-    camera.quaternion.setFromEuler(new THREE.Euler(pitch.current, yaw.current, 0, 'YXZ'))
+    camera.quaternion.setFromEuler(euler.set(pitch.current, yaw.current, 0, 'YXZ'))
+    // Keep drawing while walking or turning; otherwise the museum rests until something changes.
+    if (k.size > 0 || path.current.length > 0 || lookGoal.current) invalidate()
   })
 
   return null
