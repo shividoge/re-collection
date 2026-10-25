@@ -11,12 +11,11 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { ContentBlock, JsonSchema } from './prompts'
 
 export class ClaudeError extends Error {
-  constructor(
-    message: string,
-    /** Worth trying again later (rate limit, overload, network). */
-    readonly retryable = false,
-  ) {
+  /** Worth trying again later (rate limit, overload, network). */
+  readonly retryable: boolean
+  constructor(message: string, retryable = false) {
     super(message)
+    this.retryable = retryable
   }
 }
 
