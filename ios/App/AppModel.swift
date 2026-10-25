@@ -3,7 +3,7 @@ import Foundation
 import Metal
 
 /// Phases from IOS_CAPTURE_PLAN.md Section 3. `roomSaved` is the plan's
-/// readyToRecord; `savingMoment` covers finishing, keyframes and transcription.
+/// readyToRecord; `savingMoment` covers finishing the files and the transcript.
 enum CapturePhase: Equatable {
     case idle
     case scanningRoom
@@ -251,14 +251,6 @@ final class AppModel: ObservableObject {
         let videoURL = folder.appending(path: moment.videoFile)
         var warnings: [String] = []
 
-        phase = .savingMoment(step: "Making keyframes…")
-        var keyframeCount = 0
-        do {
-            keyframeCount = try await PostProcessor.makeKeyframes(video: videoURL, folder: folder, durationSec: moment.durationSec)
-        } catch {
-            warnings.append("Keyframes failed: \(error.localizedDescription)")
-        }
-
         phase = .savingMoment(step: "Transcribing on the phone…")
         var transcript: TranscriptFile?
         do {
@@ -270,7 +262,7 @@ final class AppModel: ObservableObject {
         guard token == activeToken else { return }
         let manifest = CaptureStore.manifest(
             id: token, createdAt: captureStartedAt, moment: moment, room: room,
-            keyframeCount: keyframeCount, transcript: transcript, extraWarnings: warnings)
+            keyframeCount: moment.keyframeCount, transcript: transcript, extraWarnings: warnings)
         do {
             try CaptureStore.writeManifest(manifest, in: folder)
         } catch {

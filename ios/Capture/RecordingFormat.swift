@@ -230,11 +230,23 @@ struct CaptureManifest: Codable, Equatable {
 // MARK: Keyframes
 
 extension RecordingFormat {
-    /// Keyframes are taken once per whole second of the moment that has video.
-    static func keyframeSeconds(durationSec: Double) -> [Int] {
-        guard durationSec > 0 else { return [] }
-        let last = Int((durationSec - 0.001).rounded(.down))
-        return Array(0...max(0, last))
+    /// Keyframes are long side 1024 px.
+    static let keyframeMaxSide = 1024
+
+    /// The whole seconds of moment time a video frame at `t` should be the
+    /// keyframe for: the first frame at or after each whole second. Usually one
+    /// second; several if frames went missing for longer than a second, so
+    /// keyframes never have gaps. Nil when no keyframe is due.
+    static func keyframeSecondsDue(at t: Double, next: Int) -> ClosedRange<Int>? {
+        guard t.isFinite, t >= Double(next) else { return nil }
+        return next...Int(t.rounded(.down))
+    }
+
+    /// Scale that brings the long side down to `keyframeMaxSide` (never up).
+    static func keyframeScale(width: Int, height: Int) -> CGFloat {
+        let longSide = max(width, height)
+        guard longSide > keyframeMaxSide else { return 1 }
+        return CGFloat(keyframeMaxSide) / CGFloat(longSide)
     }
 
     /// "keyframes/k0012.jpg" for second 12.

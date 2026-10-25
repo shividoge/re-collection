@@ -153,12 +153,41 @@ final class ManifestTests: XCTestCase {
 }
 
 final class KeyframeAndTranscriptTests: XCTestCase {
-    func testOneKeyframePerWholeSecondWithVideo() {
-        XCTAssertEqual(RecordingFormat.keyframeSeconds(durationSec: 28.434), Array(0...28))
-        XCTAssertEqual(RecordingFormat.keyframeSeconds(durationSec: 3.0), [0, 1, 2])
-        XCTAssertEqual(RecordingFormat.keyframeSeconds(durationSec: 0.4), [0])
-        XCTAssertEqual(RecordingFormat.keyframeSeconds(durationSec: 0), [])
+    /// Replays frame times through the live keyframe picker.
+    private func keyframes(frameTimes: [Double]) -> [Int: Double] {
+        var next = 0
+        var picked: [Int: Double] = [:]
+        for t in frameTimes {
+            guard let seconds = RecordingFormat.keyframeSecondsDue(at: t, next: next) else { continue }
+            for s in seconds { picked[s] = t }
+            next = seconds.upperBound + 1
+        }
+        return picked
+    }
+
+    func testOneKeyframePerWholeSecondFromTheFirstFrameAtOrAfterIt() {
+        // 28.434 s at 30 fps, frames at k/30 with a little jitter.
+        let times = (0..<853).map { max(0, Double($0) / 30 + ($0.isMultiple(of: 2) ? 0.0004 : -0.0004)) }
+        let picked = keyframes(frameTimes: times)
+        XCTAssertEqual(picked.keys.sorted(), Array(0...28))
+        for (second, t) in picked {
+            XCTAssertGreaterThanOrEqual(t, Double(second))
+            XCTAssertLessThan(t, Double(second) + 1.0 / 30 + 0.001)   // within one frame of the whole second
+        }
         XCTAssertEqual(RecordingFormat.keyframeName(second: 12), "keyframes/k0012.jpg")
+    }
+
+    func testAGapLongerThanASecondLeavesNoMissingKeyframes() {
+        let picked = keyframes(frameTimes: [0, 0.5, 0.97, 1.01, 1.5, 3.2, 3.9, 4.0])
+        XCTAssertEqual(picked, [0: 0, 1: 1.01, 2: 3.2, 3: 3.2, 4: 4.0])
+        XCTAssertNil(RecordingFormat.keyframeSecondsDue(at: 0.99, next: 1))
+        XCTAssertNil(RecordingFormat.keyframeSecondsDue(at: .nan, next: 0))
+    }
+
+    func testKeyframesAreAtMost1024OnTheLongSide() {
+        XCTAssertEqual(RecordingFormat.keyframeScale(width: 1920, height: 1440) * 1440, 768, accuracy: 0.001)
+        XCTAssertEqual(RecordingFormat.keyframeScale(width: 1920, height: 1440) * 1920, 1024, accuracy: 0.001)
+        XCTAssertEqual(RecordingFormat.keyframeScale(width: 640, height: 480), 1)
     }
 
     func testTranscriptSplitsOnPausesAndSentenceEnds() {

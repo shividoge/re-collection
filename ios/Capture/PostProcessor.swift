@@ -1,48 +1,10 @@
 import AVFoundation
-import ImageIO
 import Speech
-import UniformTypeIdentifiers
 
-/// Runs once the moment is recorded: one keyframe per second for Claude and
-/// the family review screen, and an on-device transcript with word times.
-/// Neither step is fatal; a failure becomes a manifest warning instead.
+/// Runs once the moment is recorded: an on-device transcript with word times.
+/// (Keyframes are taken live by the recorder.) Not fatal; a failure becomes a
+/// manifest warning instead.
 enum PostProcessor {
-    static let keyframeMaxSide: CGFloat = 1024
-
-    // MARK: Keyframes
-
-    /// Writes keyframes/kNNNN.jpg for every whole second of the video and
-    /// returns how many it wrote.
-    static func makeKeyframes(video: URL, folder: URL, durationSec: Double) async throws -> Int {
-        let directory = folder.appending(path: "keyframes", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-
-        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: video))
-        generator.maximumSize = CGSize(width: keyframeMaxSide, height: keyframeMaxSide)
-        // Within one frame of the whole second is close enough and much faster than exact.
-        let tolerance = CMTime(value: 1, timescale: 30)
-        generator.requestedTimeToleranceBefore = tolerance
-        generator.requestedTimeToleranceAfter = tolerance
-
-        var written = 0
-        for second in RecordingFormat.keyframeSeconds(durationSec: durationSec) {
-            let (image, _) = try await generator.image(at: CMTime(seconds: Double(second), preferredTimescale: 600))
-            try writeJPEG(image, to: folder.appending(path: RecordingFormat.keyframeName(second: second)))
-            written += 1
-        }
-        return written
-    }
-
-    private static func writeJPEG(_ image: CGImage, to url: URL) throws {
-        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else {
-            throw PostProcessError.keyframe("couldn't create \(url.lastPathComponent)")
-        }
-        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
-        guard CGImageDestinationFinalize(destination) else {
-            throw PostProcessError.keyframe("couldn't write \(url.lastPathComponent)")
-        }
-    }
-
     // MARK: Transcript
 
     /// Asks for speech recognition permission. Call it early (at scan start)
@@ -112,12 +74,10 @@ enum PostProcessor {
 }
 
 enum PostProcessError: LocalizedError {
-    case keyframe(String)
     case transcript(String)
 
     var errorDescription: String? {
         switch self {
-        case .keyframe(let detail): return "Keyframes failed: \(detail)."
         case .transcript(let detail): return "No transcript: \(detail)."
         }
     }

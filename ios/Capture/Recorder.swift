@@ -1,12 +1,14 @@
 import ARKit
 import AVFoundation
 import CoreImage
+import ImageIO
+import UniformTypeIdentifiers
 
 /// Writes the capture package: depth v2 (depth.bin + depth.index.json) at
 /// 10 Hz plus a frames.jsonl pose line per frame during both the scan and the
-/// moment, and
-/// video.mp4 (H.264 + AAC, so every browser plays it) during the moment only
-/// (IOS_CAPTURE_PLAN.md 6, docs/capture-format.md).
+/// moment, and video.mp4 (H.264 + AAC, so every browser plays it) and one
+/// keyframe per whole second during the moment only (IOS_CAPTURE_PLAN.md 6,
+/// docs/capture-format.md).
 ///
 /// Every method runs on the capture queue. Conversions happen right there
 /// (a 256x192 depth map takes microseconds) and the resulting `Data` goes to
@@ -22,12 +24,14 @@ final class CaptureRecorder {
         let durationSec: Double
         let frameCount: Int
         let depthCount: Int
+        /// keyframes/k0000.jpg up to k(count-1), with no gaps.
+        var keyframeCount = 0
         let videoFile: String
         let videoSize: CGSize
         let fps: Int
         let audioSampleRate: Int
         let scanSpan: CaptureManifest.Span?
-        let warnings: [String]
+        var warnings: [String]
     }
 
     static let maxMomentSeconds: Double = 180
@@ -69,6 +73,12 @@ final class CaptureRecorder {
     private var droppedVideoFrames = 0
     private var droppedAudioBuffers = 0
     private var thumbnailTaken = false
+    /// The next whole second of moment time that needs a keyframe.
+    private var nextKeyframeSecond = 0
+    private var keyframesStopped = false
+    /// File queue only: keyframes written so far (always 0..<count) and why they stopped.
+    private var keyframeCount = 0
+    private var keyframeFailure: String?
     private lazy var ciContext = CIContext()
 
     init(folder: URL, fps: Int) throws {
@@ -144,6 +154,12 @@ final class CaptureRecorder {
         let size = frame.camera.imageResolution
         let videoURL = folder.appending(path: Self.videoFileName)
         try? FileManager.default.removeItem(at: videoURL)
+        do {
+            try FileManager.default.createDirectory(
+                at: folder.appending(path: "keyframes", directoryHint: .isDirectory), withIntermediateDirectories: true)
+        } catch {
+            return "The keyframes folder couldn't be created: \(error.localizedDescription)"
+        }
 
         let writer: AVAssetWriter
         do {
@@ -241,6 +257,10 @@ final class CaptureRecorder {
             thumbnailTaken = true
             saveThumbnail(frame.capturedImage)
         }
+        if !keyframesStopped, let seconds = RecordingFormat.keyframeSecondsDue(at: t, next: nextKeyframeSecond) {
+            nextKeyframeSecond = seconds.upperBound + 1
+            saveKeyframe(frame.capturedImage, seconds: seconds)
+        }
         return .ok
     }
 
@@ -284,11 +304,15 @@ final class CaptureRecorder {
                 return
             }
             closeFiles(cancelWriter: false) { [self] in
+                // On the file queue, after every keyframe is on disk.
                 if let writeError {
                     completion(.failure(RecorderError.writeFailed(writeError.localizedDescription)))
-                } else {
-                    completion(.success(result))
+                    return
                 }
+                var result = result
+                result.keyframeCount = keyframeCount
+                if let keyframeFailure { result.warnings.append(keyframeFailure) }
+                completion(.success(result))
             }
         }
     }
@@ -359,6 +383,53 @@ final class CaptureRecorder {
             guard writeError == nil else { return }
             do { try handle.write(contentsOf: data) } catch { writeError = error }
         }
+    }
+
+    /// Renders a copy at most 1024 px on the long side right away, so the
+    /// camera's buffer goes straight back to ARKit, then writes it as the
+    /// keyframe for each second in `seconds` (more than one only if frames
+    /// went missing for over a second). Stored in the sensor's landscape
+    /// orientation, like the video.
+    private func saveKeyframe(_ pixelBuffer: CVPixelBuffer, seconds: ClosedRange<Int>) {
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        let scale = RecordingFormat.keyframeScale(width: width, height: height)
+        let image = CIImage(cvPixelBuffer: pixelBuffer).transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let rect = CGRect(x: 0, y: 0, width: (CGFloat(width) * scale).rounded(), height: (CGFloat(height) * scale).rounded())
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let cgImage = ciContext.createCGImage(image, from: rect, format: .RGBA8, colorSpace: colorSpace)
+        else {
+            stopKeyframes(at: seconds.lowerBound, "the camera image couldn't be converted")
+            return
+        }
+        let folder = folder
+        fileQueue.async { [self] in
+            guard keyframeFailure == nil else { return }
+            for second in seconds {
+                let url = folder.appending(path: RecordingFormat.keyframeName(second: second))
+                guard Self.writeJPEG(cgImage, to: url) else {
+                    keyframeFailure = "Keyframes stopped at \(second) s: \(url.lastPathComponent) couldn't be written."
+                    return
+                }
+                keyframeCount = second + 1
+            }
+        }
+    }
+
+    /// Keyframes must have no gaps, so the first failure ends them.
+    private func stopKeyframes(at second: Int, _ reason: String) {
+        keyframesStopped = true
+        fileQueue.async { [self] in
+            keyframeFailure = keyframeFailure ?? "Keyframes stopped at \(second) s: \(reason)."
+        }
+    }
+
+    private static func writeJPEG(_ image: CGImage, to url: URL) -> Bool {
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else {
+            return false
+        }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+        return CGImageDestinationFinalize(destination)
     }
 
     private func saveThumbnail(_ pixelBuffer: CVPixelBuffer) {
