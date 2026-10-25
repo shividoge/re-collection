@@ -54,19 +54,15 @@ Not built yet.
 
 ## Checkpoint 6 (13:30): review, manifest and upload
 
+The upload and transcript steps changed in v3; their checks are in "v3" at the bottom.
+
 - [ ] Starting a scan asks for speech recognition permission (along with camera and microphone)
-- [ ] After "Stop recording" you see "Making keyframes…", then "Transcribing on the phone…", then the review screen
 - [ ] The review screen plays the clip; tapping a transcript line jumps the video there
 - [ ] The transcript is roughly right, with times that match when things were said
 - [ ] Typing a title and names, then leaving the field, saves them (they appear in manifest.json)
-- [ ] Settings: paste the guide's tunnel URL, tap "Test connection", and see "Connected to the guide."
-- [ ] Wrong key in Settings shows "Connected, but the key is wrong."
-- [ ] "Upload to the guide" shows progress per file and ends with "Uploaded. The guide checked every file."
-- [ ] On the laptop, `curl <guide>/api/captures` lists the capture with its title and `"upload": "done"`
-- [ ] Turning on Airplane mode mid-upload ends in a clear error; "Try again" finishes the upload
 - [ ] "AirDrop the capture (zip)" sends a zip that includes manifest.json with the title, transcript.json and keyframes/
 - [ ] The video plays in Chrome on a laptop (it's H.264 video.mp4 now)
-- [ ] Locking the phone during "Transcribing…" doesn't lose the capture; it finishes when you come back
+- [ ] Locking the phone during "Finishing the transcript…" doesn't lose the capture; it finishes when you come back
 
 ## Medium-confidence option (Settings > Room scan)
 
@@ -88,6 +84,57 @@ Not built yet.
 - [ ] After saving, the coach says to let people in, and "Record the visit" is a big red button
 - [ ] Recording shows a breathing red dot, a large timer, a 3:00 progress bar and "Stop recording"
 - [ ] The wait screen says "Putting your visit together" and keeps the app open
-- [ ] Review shows "Step 3 of 3", three stat tiles, a "Send to your family's guide" button, and a buzz when the upload succeeds
-- [ ] A normal capture still works end to end and the zip still imports into the guide
+- [ ] Review shows "Step 3 of 3", three stat tiles, a "Send to your family's Braindance" button, and a buzz when the upload succeeds
+- [ ] A normal capture still works end to end
+
+## v3: smaller captures, live keyframes and transcript, background uploads
+
+Unit tests first: Cmd+U on an iPhone simulator. New ones cover depth v2 (`DepthV2Tests`, including inflating raw DEFLATE made by another library), live keyframe timing, the upload plan, Convex answers and saved upload progress (`UploadTests`). The pure upload and depth code was also compiled and tested on Linux (Swift 6.2), including a full upload against a fake Convex + R2 server, but nothing here has run on an iPhone yet.
+
+Everything below needs the phone. Use a 30 s visit unless a step says otherwise.
+
+**Before uploading, the Convex backend must have `uploads:*` and `captures:*` working with R2 credentials.** Until it does, "Test connection" fails with the backend's "not implemented" message, and uploads fail at `captures:begin` with a plain error.
+
+Recording
+- [ ] A capture builds and installs (XcodeGen picked up the new files: DepthV2, LiveTranscriber, ConvexClient, UploadPlan, UploadJob, UploadCenter)
+- [ ] The HUD still holds about 30 fps while recording, and manifest `warnings` has no "Dropped … video frames" (live keyframes and live transcription add work during recording)
+- [ ] Clap test still passes: the clap's sound lines up with the hands meeting within one frame
+- [ ] A 30 s capture's `video.mp4` is about 30 MB (it was about 71 MB). In Files > Get Info, or `ls -l` on the unzipped AirDrop zip
+- [ ] `ffprobe video.mp4` (on the Mac) shows h264 High, 1920x1440, about 8,000 kb/s, 30 fps, and AAC audio
+- [ ] The video still looks sharp enough when you pause on a face in the review player
+
+Depth v2
+- [ ] The folder has `depth.bin` and `depth.index.json` and no `confidence.bin`
+- [ ] manifest.json `depth` has `"encoding": "v2"`, `"index": "depth.index.json"`, no `confidenceFile`, and `count` equals `count` in depth.index.json
+- [ ] `depth.bin` is much smaller than before (v1 was 43 MB of depth plus 22 MB of confidence for 30 s); note the size in the PR
+- [ ] On the Mac: `bun -e` with `shared/depth.ts` (`parseDepthIndex`, `decodeChunk` with `zlib.inflateRawSync`) decodes every chunk, and a pixel's millimeters look plausible (a wall 2 m away reads about 2000)
+- [ ] The web viewer (once it reads v2) replays people from this capture's depth
+
+Keyframes
+- [ ] There's no "Making keyframes…" step after Stop any more
+- [ ] `keyframes/` has k0000.jpg up to the last whole second, with no gaps, and manifest `keyframes.count` matches
+- [ ] Each keyframe is 1024x768 and matches the video at that second (open k0010.jpg and pause the video at 0:10; same picture within a frame)
+- [ ] Keyframes are stored landscape like the video (a portrait recording gives sideways keyframes, as the contract says; the backend rotates them)
+
+Transcript
+- [ ] Right after Stop, "Finishing the transcript…" takes only a few seconds, even for a 2 to 3 minute visit
+- [ ] The transcript's words and times match the video (tap a line in review: the video jumps to when it was said)
+- [ ] A visit where nobody speaks gives "No speech detected", not an error
+- [ ] Turn off speech recognition in Settings > Braindance, record: the review says why there's no transcript (manifest warning), and nothing is made up
+- [ ] A 3-minute visit gets a complete transcript (live on-device recognition has no one-minute limit; if it stops early, the app falls back to the saved audio, which takes longer)
+
+Upload
+- [ ] Settings shows the Convex URL (default `https://adamant-schnauzer-171.convex.cloud`); "Test connection" says "Connected to Braindance."
+- [ ] A wrong URL gives a plain error, not a spinner forever
+- [ ] "Send to your family's Braindance" shows a progress bar with "N of M files", and ends with "Sent. Braindance checked every file."
+- [ ] In the Convex dashboard, the capture exists with `upload: done`, and its R2 objects are under `captures/<id>/raw/` with the same sizes as on the phone; there is no `room.ply`
+- [ ] Facts start as soon as the manifest, keyframes and transcript are in (before the video finishes uploading)
+- [ ] Lock the phone right after tapping send, wait a few minutes, unlock: the upload kept going (or finished) while locked
+- [ ] Send, then go to the home screen and open another app for a few minutes: the upload continues and finishes
+- [ ] Send, then force-quit the app (swipe it away) halfway through. Reopen it: Home shows the upload resuming, and it finishes without starting over (the progress jumps back to about where it was; the Convex logs show `uploads:resume`, not new `uploads:start` calls for files that were done)
+- [ ] Turn on Airplane mode mid-upload: progress stops; turn it off: it carries on. If it ends in an error instead, "Try again" finishes it
+- [ ] "Finish" on the review screen during an upload goes home, and Home shows "Uploading “title”… N%"
+- [ ] An upload that failed for good (e.g. the backend rejected the package) shows the reason on Home with "Try again" and "Stop trying"
+- [ ] A 3-minute visit (about 180 MB of video) uploads completely on venue Wi-Fi
+- [ ] AirDrop of the zip still works
 
