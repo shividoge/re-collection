@@ -6,6 +6,12 @@
 
 **What the finished demo shows:** a phone scan of a real family visit → Claude's grounded facts, approved by the family → a Revisit session on the iPad → the recall dashboard; and an **old video turned into 3D**, explored on the **iPad** (swipe, tilt, head tracking) and in the **Memory Museum**, where a family member **joins from their phone** and walks the patient to a picture frame and into the moment.
 
+**Merged Sat 19:20 (#44): everything is on `main`.** Pull main. There are **two museums** for now:
+- **`#/museum`**: Firdavs's walkable gallery (classic rooms, walk, tap a picture, step into the visit in 3D).
+- **`#/memories`**: the picture-frame hall with **Visit together** (`#/memories?join=CODE` on the helper's phone) and "Step into this moment" → the iPad Memory Window.
+
+**Next (Firdavs + IBS27 together): make them one.** Put Visit together and "Step into this moment" (opening `#/window/<id>?from=museum`, the iPad view with swipe/tilt/head tracking) into the walkable museum at `#/museum`, then retire `#/memories`. Until then, demo whichever is ready.
+
 ### Must do (the demo depends on these)
 
 | # | What | Who | Where / how | Done when |

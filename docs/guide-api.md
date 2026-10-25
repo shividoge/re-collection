@@ -184,7 +184,7 @@ type Progress = {
 
 ### Visit together (museum rooms)
 
-A family member joins the patient's Memory Museum from their phone and leads the walk. The iPad opens a room and shows its code; the helper opens `…/#/museum?join=CODE`. Both screens follow one shared state.
+A family member joins the patient's Memory Museum from their phone and leads the walk. The iPad opens a room and shows its code; the helper opens `…/#/memories?join=CODE`. Both screens follow one shared state.
 
 | Method | Path | Body | Returns |
 |---|---|---|---|

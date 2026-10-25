@@ -40,7 +40,7 @@ DATA_DIR=$HOME/braindance-team/data npm --prefix guide start
 for c in ~/braindance-team/video-captures/capture-*; do npm --prefix guide run import -- "$c"; done
 ```
 
-Open http://127.0.0.1:8787/#/museum. You should see seven frames: four phone scans and three old clips. Only want one thing quickly? `gh release download team-data-1 -p video-captures.zip` is 28 MB.
+Open http://127.0.0.1:8787/#/memories. You should see seven frames: four phone scans and three old clips. Only want one thing quickly? `gh release download team-data-1 -p video-captures.zip` is 28 MB.
 
 A Claude key in `guide/.env` is only needed for fact extraction and Revisit narration, not for the museum, the viewer or the Memory Window. Without one, imported clips show "facts failed: no key", which is fine for this work.
 
@@ -57,7 +57,7 @@ Open the printed `https://….trycloudflare.com/#/museum` in Safari on the iPad,
 
 ## Spec: joining the museum together (IBS27)
 
-**The experience.** On the patient's iPad, the museum shows a small "Visit together" button. It shows a short code (4 consonants, e.g. `KTRB`) and a QR code of the join link. The helper opens `…/#/museum?join=KTRB` on their phone. From then on:
+**The experience.** On the patient's iPad, the museum shows a small "Visit together" button. It shows a short code (4 consonants, e.g. `KTRB`) and a QR code of the join link. The helper opens `…/#/memories?join=KTRB` on their phone. From then on:
 
 - Both screens show the same frame. Either person can tap a frame or Next/Previous; the other screen follows (the walk animation plays on both).
 - "Step into this moment" on either screen opens the Memory Window on **the patient's iPad**. The helper's screen shows the same moment, with a "Back to the museum" button that brings both back.
