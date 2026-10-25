@@ -45,6 +45,7 @@ export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: S
     )
 
   const { moment, status } = data.data
+  if (!moment && !status) return <section className="facts-panel"><p className="muted">This visit isn't here any more.</p></section>
   const facts = status?.facts ?? (moment ? 'done' : 'not_started')
   const working = facts === 'queued' || facts === 'running'
 

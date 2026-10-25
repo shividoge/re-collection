@@ -1,7 +1,7 @@
 // The family's tools and the Revisit session (live mode only: these need Convex). Hooks are
 // reactive; the plain functions are one-off calls. Every failure surfaces as a plain message.
 import { useQueries } from 'convex/react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api, convex, convexUrl } from './convex'
 import { useLive, type Loadable } from './useLive'
 import type { CaptureDetail, CaptureStatus, CaptureSummary, EndReason, Fact, FactChange, Focus, Health, Moment, Person, Progress, Reply, SessionEnd, UploadTarget } from './types'
@@ -21,7 +21,9 @@ export function useCaptureStatus(captureId: string | null): Loadable<CaptureStat
 
 /** Progress for several captures at once: undefined while loading, null when it failed. */
 export function useProgressMany(ids: string[]): Record<string, Progress | null | undefined> {
-  const requests = Object.fromEntries(ids.map((id) => [id, { query: api.progress.get, args: { captureId: id } }]))
+  // useQueries needs the same object while the ids stay the same (a new one each render loops).
+  const key = ids.join(',')
+  const requests = useMemo(() => Object.fromEntries((key ? key.split(',') : []).map((id) => [id, { query: api.progress.get, args: { captureId: id } }])), [key])
   const results: Record<string, unknown> = useQueries(requests)
   return Object.fromEntries(ids.map((id) => [id, results[id] instanceof Error ? null : (results[id] as Progress | undefined)]))
 }

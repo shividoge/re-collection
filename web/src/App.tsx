@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { Component, lazy, Suspense, useEffect, useState } from 'react'
 import { dataMode, useHealth } from './data'
 import './views/views.css'
 
@@ -58,6 +58,23 @@ function view(hash: string): React.ReactNode {
   return page
 }
 
+/** A screen that crashes says so (and the rest of the app keeps working) instead of going blank. */
+class ScreenBoundary extends Component<{ hash: string; children: React.ReactNode }, { error: Error | null; at: string | null }> {
+  state: { error: Error | null; at: string | null } = { error: null, at: null }
+  static getDerivedStateFromError(error: Error) {
+    return { error, at: location.hash }
+  }
+  render() {
+    // Going somewhere else tries again.
+    if (!this.state.error || this.state.at !== this.props.hash) return this.props.children
+    return (
+      <div className="center-message error">
+        This screen ran into a problem: {this.state.error.message} <a href="#/">Go to the front page</a>
+      </div>
+    )
+  }
+}
+
 /** Red and impossible to miss when Claude's answers are canned (MOCK_CLAUDE=1 on the server). */
 function MockBanner() {
   const health = useHealth()
@@ -82,7 +99,9 @@ export default function App() {
     <div className="app">
       {dataMode === 'live' && <MockBanner />}
       <div className="app-body">
-        <Suspense fallback={<div className="center-message">Loading…</div>}>{view(hash)}</Suspense>
+        <ScreenBoundary hash={hash}>
+          <Suspense fallback={<div className="center-message">Loading…</div>}>{view(hash)}</Suspense>
+        </ScreenBoundary>
       </div>
     </div>
   )
