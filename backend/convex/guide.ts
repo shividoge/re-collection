@@ -5,7 +5,7 @@ import { v } from 'convex/values'
 import { internal } from './_generated/api'
 import { internalMutation, internalQuery, query, type MutationCtx, type QueryCtx } from './_generated/server'
 import { getMomentDoc, getPerson, momentOf } from './lib/data'
-import { fingerprint, memoryKey, type MemoryContext } from './lib/guide'
+import { fingerprint, keytermsOf, memoryKey, type MemoryContext } from './lib/guide'
 import { allowedFacts } from './lib/grounding'
 
 const narrationRow = v.object({
@@ -42,6 +42,23 @@ export const memoryContext = internalQuery({
     const context = await contextOf(ctx, key)
     const row = await ctx.db.query('guideNarration').withIndex('by_key', (q) => q.eq('key', key)).unique()
     return context ? { context, fingerprint: fingerprint(context), mossDocs: row?.mossDocs ?? [] } : null
+  },
+})
+
+/** Names and places in the palace, so Cartesia hears them right (see lib/guide.ts keytermsOf). */
+export const keyterms = internalQuery({
+  args: {},
+  returns: v.array(v.string()),
+  handler: async (ctx) => {
+    const arrangement = await ctx.db.query('museumArrangement').first()
+    const texts: string[] = []
+    for (const item of arrangement?.items ?? []) {
+      texts.push(item.title, item.caption, item.notes ?? '')
+      const moment = momentOf(await getMomentDoc(ctx, item.capture))
+      if (moment) for (const f of allowedFacts(moment).values()) texts.push(f.text)
+    }
+    const person = await getPerson(ctx)
+    return keytermsOf(texts, [person.displayName, person.preferredAddress].filter(Boolean))
   },
 })
 

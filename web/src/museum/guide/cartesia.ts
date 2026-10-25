@@ -1,17 +1,22 @@
 // The AI guide's voice and ears, straight to Cartesia from the browser with a short-lived token
 // (the API key stays in Convex: backend guideNode.voiceToken).
 // - Sonic speaks: text in over a WebSocket, raw audio chunks back, played as they arrive.
-// - Ink-2 listens: the microphone streamed as 16 kHz PCM; its turn events say when the person
-//   starts talking (the guide stops) and what they said once they've finished.
+// - Ink-2 listens (Realtime STT "Auto", /stt/turns/websocket): the microphone streamed as 16 kHz
+//   PCM. Its turn detection says when the person starts talking (the guide stops), when they're
+//   probably done (the answer starts being worked out) and when they're surely done (it's said).
+//   It runs with Cartesia's "Patient" turn settings, for people who pause to think, and the
+//   palace's names as key terms, so "Priya" is heard as Priya.
 
-export type VoiceToken = { token: string; expiresAt: number; voice: string; version: string }
+export type VoiceToken = { token: string; expiresAt: number; voice: string; version: string; keyterms: string[] }
 
 /** Sonic's model and how the guide sounds: a little slower than conversation, for clarity. */
-const TTS_MODEL = 'sonic-3.5'
+const TTS_MODEL = 'sonic-3.6'
 const TTS_RATE = 24000
 const SPEED = 0.9
 const STT_MODEL = 'ink-2'
 const STT_RATE = 16000
+/** Cartesia's "Patient" profile: wait longer before deciding someone has finished. */
+const PATIENT_TURNS = { turn_start_threshold: '0.8', turn_eager_end_threshold: '0.3', turn_end_threshold: '0.1', turn_end_timeout_ms: '8000' }
 /** While the guide speaks, only clearly louder sound counts as the person talking (its own voice comes back through the mic). */
 const BARGE_IN_LEVEL = 0.06
 
@@ -38,7 +43,11 @@ function resample(input: Float32Array, from: number, to: number): Float32Array {
 export type Listener = {
   /** The person started talking (the guide should stop). */
   onStart: () => void
-  /** What they said, once their turn ended. */
+  /** They're probably done: what they said so far (start working out an answer). */
+  onEager?: (text: string) => void
+  /** They went on after all (drop that early answer). */
+  onResume?: () => void
+  /** What they said, once their turn surely ended. */
   onEnd: (text: string) => void
   /** Something went wrong with listening (shown gently). */
   onError: (message: string) => void
@@ -72,9 +81,10 @@ export class CartesiaVoice {
     return this.token
   }
 
-  private url(path: string, params: Record<string, string>, t: VoiceToken) {
+  private url(path: string, params: Record<string, string>, t: VoiceToken, keyterms: string[] = []) {
     const u = new URL(`wss://api.cartesia.ai${path}`)
     for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v)
+    for (const term of keyterms) u.searchParams.append('keyterm', term)
     u.searchParams.set('cartesia_version', t.version)
     u.searchParams.set('access_token', t.token)
     return u.toString()
@@ -163,7 +173,7 @@ export class CartesiaVoice {
       JSON.stringify({
         model_id: TTS_MODEL,
         transcript: text,
-        voice: { mode: 'id', id: t.voice },
+        voice: t.voice,
         output_format: { container: 'raw', encoding: 'pcm_f32le', sample_rate: TTS_RATE },
         language: 'en',
         context_id: context,
@@ -207,35 +217,26 @@ export class CartesiaVoice {
       listener.onError((e as Error).message)
       return
     }
-    const ws = new WebSocket(this.url('/stt/websocket', { model: STT_MODEL, encoding: 'pcm_s16le', sample_rate: String(STT_RATE), language: 'en' }, t))
+    const ws = new WebSocket(this.url('/stt/turns/websocket', { model: STT_MODEL, encoding: 'pcm_s16le', sample_rate: String(STT_RATE), ...PATIENT_TURNS }, t, t.keyterms))
     ws.binaryType = 'arraybuffer'
     this.stt = ws
-    let heard = ''
     ws.onmessage = (e) => {
       if (typeof e.data !== 'string') return
-      let msg: { type?: string; transcript?: string; text?: string; is_final?: boolean; message?: string }
+      let msg: { type?: string; transcript?: string; message?: string }
       try {
         msg = JSON.parse(e.data)
       } catch {
         return
       }
-      const text = (msg.transcript ?? msg.text ?? '').trim()
+      const text = (msg.transcript ?? '').trim()
       if (msg.type === 'turn.start') listener.onStart()
+      else if (msg.type === 'turn.eager_end') {
+        if (text) listener.onEager?.(text)
+      } else if (msg.type === 'turn.resume') listener.onResume?.()
       else if (msg.type === 'turn.end') {
         if (text) listener.onEnd(text)
-      } else if (msg.type === 'transcript') {
-        // Without turn events: collect final pieces and end the turn after a short pause.
-        if (msg.is_final && text) {
-          heard = `${heard} ${text}`.trim()
-          clearTimeout(pause)
-          pause = setTimeout(() => {
-            if (heard) listener.onEnd(heard)
-            heard = ''
-          }, 900)
-        }
       } else if (msg.type === 'error') listener.onError(msg.message ?? 'Listening stopped.')
     }
-    let pause: ReturnType<typeof setTimeout> | undefined
     ws.onerror = () => listener.onError("Couldn't reach Cartesia to listen.")
 
     const source = this.ctx.createMediaStreamSource(this.mic)

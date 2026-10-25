@@ -78,18 +78,34 @@ export function useGuide({
       sound.musicTo(speaking ? base * DUCK : base, speaking ? DUCK_DOWN_S : DUCK_UP_S)
     }
     const stopWords = guide.watch((all) => (words.current = new Map(all.map((w) => [w.key, w]))))
+    // Answers start being worked out when Cartesia thinks they're probably done (turn.eager_end),
+    // and are said only once it's sure (turn.end); if they go on, that early answer is dropped.
+    let early: { text: string; answer: Promise<string> } | null = null
+    const memoryNow = () => {
+      const { inside: ins, arrived: at, focus: f } = now.current
+      return ins ? keyOf(ins.index) : at ? keyOf(f) : undefined
+    }
+    const answer = (key: string, text: string) =>
+      guide
+        .ask(key, text)
+        .then((a) => a.say)
+        .catch(() => "I'm sorry, I didn't catch that.")
     void v.listen({
       onStart: () => v.stop(),
+      onEager: (text) => {
+        const key = memoryNow()
+        early = key ? { text, answer: answer(key, text) } : null
+      },
+      onResume: () => {
+        early = null
+      },
       onEnd: (text) => {
-        const { inside: ins, arrived: at, focus: f } = now.current
-        const key = ins ? keyOf(ins.index) : at ? keyOf(f) : undefined
+        const key = memoryNow()
         if (!key) return say(NO_PICTURE)
+        const ready = early && early.text === text ? early.answer : answer(key, text)
+        early = null
         setState((s) => ({ ...s, thinking: true }))
-        guide
-          .ask(key, text)
-          .then((answer) => say(answer.say))
-          .catch(() => say("I'm sorry, I didn't catch that."))
-          .finally(() => setState((s) => ({ ...s, thinking: false })))
+        ready.then(say).finally(() => setState((s) => ({ ...s, thinking: false })))
       },
       onError: (message) => setState((s) => ({ ...s, problem: message, listening: false })),
     }).then(() => setState((s) => ({ ...s, listening: s.problem === null })))

@@ -16,22 +16,25 @@ import {
   ASK_TOP_K,
   MOSS_INDEX,
   NARRATION_SCHEMA,
+  SAID_PREFIX,
   answerPrompt,
   groundGuide,
   mossDocs,
   narrationPrompt,
+  saidDoc,
   sourceIdOf,
   sourcesOf,
   spoken,
+  worthRemembering,
   type MemoryContext,
   type Source,
 } from './lib/guide'
 import { soundsDistressed } from './lib/grounding'
 
-/** Cartesia's API version for the token and the browser's WebSockets. */
-const CARTESIA_VERSION = '2026-03-01'
-/** A calm, warm default voice; CARTESIA_VOICE_ID picks another. */
-const DEFAULT_VOICE = '6ccbfb76-1fc6-48f7-b71d-91ac6298247b'
+/** Cartesia's API version for the token and the browser's WebSockets (the Cal Hacks guide's default). */
+const CARTESIA_VERSION = '2026-08-14'
+/** The voice from Cartesia's Cal Hacks guide; CARTESIA_VOICE_ID picks another (play.cartesia.ai/voices). */
+const DEFAULT_VOICE = 'a0e99841-438c-4a64-b679-ae501e7d6091'
 
 // ---- Moss -------------------------------------------------------------------------------------
 
@@ -58,14 +61,18 @@ async function indexDocs(client: MossClient, docs: { id: string; text: string; m
   loaded = false
 }
 
-/** The sources Moss finds for a question, within this memory only. */
-async function search(client: MossClient, key: string, question: string): Promise<{ ids: string[]; ms: number }> {
+/**
+ * The sources Moss finds for a question, within this memory only: the caretaker's notes and facts,
+ * and what the person said earlier in the visit. The index is held in this process and refreshes
+ * itself every few seconds, so what was just remembered can be found.
+ */
+async function search(client: MossClient, key: string, question: string): Promise<{ hits: { id: string; text: string }[]; ms: number }> {
   if (!loaded) {
-    await client.loadIndex(MOSS_INDEX)
+    await client.loadIndex(MOSS_INDEX, { autoRefresh: true, pollingIntervalInSeconds: 5 })
     loaded = true
   }
   const result = await client.query(MOSS_INDEX, question, { topK: ASK_TOP_K, filter: { field: 'memory', condition: { $eq: key } } })
-  return { ids: result.docs.map(sourceIdOf), ms: result.timeTakenInMs ?? 0 }
+  return { hits: result.docs.map((d) => ({ id: sourceIdOf(d), text: d.text })), ms: result.timeTakenInMs ?? 0 }
 }
 
 // ---- Claude -----------------------------------------------------------------------------------
@@ -130,6 +137,17 @@ export const prepare = internalAction({
   },
 })
 
+/** Adds something the person said to Moss, under the memory they were in. */
+export const remember = internalAction({
+  args: { key: v.string(), said: v.string(), at: v.number() },
+  returns: v.null(),
+  handler: async (_ctx, { key, said, at }) => {
+    const client = mossClient()
+    if (client) await client.addDocs(MOSS_INDEX, [saidDoc(key, said, at)], { upsert: true }).catch(() => {})
+    return null
+  },
+})
+
 /** Removes a memory's documents from Moss once it's taken off the walls. */
 export const forget = internalAction({
   args: { docIds: v.array(v.string()) },
@@ -162,17 +180,22 @@ export const ask = action({
     const client = mossClient()
     if (client && found.mossDocs.length > 0) {
       try {
-        const hit = await search(client, key, said)
-        const picked = all.filter((s) => hit.ids.includes(s.id))
-        if (picked.length > 0) {
+        const found = await search(client, key, said)
+        const ids = found.hits.map((h) => h.id)
+        const picked = all.filter((s) => ids.includes(s.id))
+        // What they told the guide earlier in the visit comes back as a source of its own.
+        const remembered: Source[] = found.hits.filter((h) => h.id.startsWith(SAID_PREFIX)).map((h) => ({ id: h.id, text: h.text, kind: 'note' }))
+        if (picked.length + remembered.length > 0) {
           // Always keep the label, so the guide knows which memory this is.
-          given = [...all.filter((s) => s.id === 'label' && !hit.ids.includes('label')), ...picked]
+          given = [...all.filter((s) => s.id === 'label' && !ids.includes('label')), ...picked, ...remembered]
           retrieval = 'moss'
-          mossMs = hit.ms
+          mossMs = found.ms
         }
       } catch {
         loaded = false
       }
+      // Remember what they said, for the rest of the visit (and the next one).
+      if (worthRemembering(said)) await ctx.scheduler.runAfter(0, internal.guideNode.remember, { key, said, at: Date.now() })
     }
     const { system, text } = answerPrompt(found.context, given, said)
     const { data } = await claudeFromEnv().json({
@@ -196,8 +219,8 @@ export const ask = action({
  */
 export const voiceToken = action({
   args: {},
-  returns: v.object({ token: v.string(), expiresAt: v.number(), voice: v.string(), version: v.string() }),
-  handler: async () => {
+  returns: v.object({ token: v.string(), expiresAt: v.number(), voice: v.string(), version: v.string(), keyterms: v.array(v.string()) }),
+  handler: async (ctx): Promise<{ token: string; expiresAt: number; voice: string; version: string; keyterms: string[] }> => {
     const key = process.env.CARTESIA_API_KEY
     if (!key) throw new Error("CARTESIA_API_KEY isn't set in the Convex deployment, so the guide can't speak.")
     const response = await fetch('https://api.cartesia.ai/access-token', {
@@ -208,6 +231,7 @@ export const voiceToken = action({
     if (!response.ok) throw new Error(`Cartesia refused the token request (${response.status}).`)
     const body = (await response.json()) as { token?: string; expires_in?: number }
     if (!body.token) throw new Error('Cartesia sent no token.')
-    return { token: body.token, expiresAt: Date.now() + (body.expires_in ?? 600) * 1000, voice: process.env.CARTESIA_VOICE_ID || DEFAULT_VOICE, version: CARTESIA_VERSION }
+    const keyterms: string[] = await ctx.runQuery(internal.guide.keyterms, {})
+    return { token: body.token, expiresAt: Date.now() + (body.expires_in ?? 600) * 1000, voice: process.env.CARTESIA_VOICE_ID || DEFAULT_VOICE, version: CARTESIA_VERSION, keyterms }
   },
 })

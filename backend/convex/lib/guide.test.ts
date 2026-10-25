@@ -85,3 +85,19 @@ describe('the guide\'s notes in the arrangement', () => {
     expect(publicArrangement(a, [CAP])!.items[0]).toEqual({ capture: CAP, piece: 'video', title: '', caption: '' })
   })
 })
+
+describe('listening and remembering', () => {
+  it('turns names in the notes into Cartesia key terms, the person first, no duplicates', async () => {
+    const { keytermsOf } = await import('./guide')
+    expect(keytermsOf(['Priya baked the cake. Then Priya and Sam sang.', 'At Lake Tahoe with Sam’s dog'], ['Grandma'])).toEqual(['Grandma', 'Priya', 'Sam', 'Lake', 'Tahoe'])
+    expect(keytermsOf([Array.from({ length: 200 }, (_, i) => `x Name${i}`).join(' ')]).length).toBeLessThanOrEqual(100)
+  })
+  it('keeps what they said as a source tied to the memory', async () => {
+    const { saidDoc, worthRemembering, sourceIdOf } = await import('./guide')
+    const d = saidDoc('cap/video', '  this kitchen looks like my mother\'s ', 42)
+    expect(d).toEqual({ id: 'cap/video#said-42', text: 'They said: "this kitchen looks like my mother\'s"', metadata: { memory: 'cap/video', source: 'said-42' } })
+    expect(sourceIdOf(d)).toBe('said-42')
+    expect(worthRemembering('yes')).toBe(false)
+    expect(worthRemembering('that was my sister Ana')).toBe(true)
+  })
+})

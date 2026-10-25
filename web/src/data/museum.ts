@@ -132,5 +132,5 @@ export const guide = {
     return watch.onUpdate(read)
   },
   ask: (key: string, question: string): Promise<GuideAnswer> => convex().action(api.guideNode.ask, { key, question }),
-  voiceToken: (): Promise<{ token: string; expiresAt: number; voice: string; version: string }> => convex().action(api.guideNode.voiceToken, {}),
+  voiceToken: (): Promise<{ token: string; expiresAt: number; voice: string; version: string; keyterms: string[] }> => convex().action(api.guideNode.voiceToken, {}),
 }

@@ -180,5 +180,48 @@ const sentenceList = { type: 'array', items: { type: 'object', additionalPropert
 export const NARRATION_SCHEMA = { type: 'object', additionalProperties: false, required: ['intro', 'story'], properties: { intro: sentenceList, story: sentenceList } }
 export const ANSWER_SCHEMA = { type: 'object', additionalProperties: false, required: ['sentences'], properties: { sentences: sentenceList } }
 
+// ---- listening and remembering -------------------------------------------------------------
+
+/** Cartesia Ink-2 takes up to 100 key terms, 1200 characters in all. */
+export const KEYTERMS_MAX = 100
+export const KEYTERMS_CHARS = 1200
+
+/**
+ * Names and places in the palace (from the caretaker's notes, titles and the approved facts, plus
+ * the person's own name and form of address) as Cartesia key terms, so "Priya" is heard as Priya.
+ */
+export function keytermsOf(texts: readonly string[], extra: readonly string[] = []): string[] {
+  const seen = new Map<string, string>()
+  const add = (term: string) => {
+    const t = tidy(term)
+    if (t.length < 2 || seen.has(t.toLowerCase())) return
+    seen.set(t.toLowerCase(), t)
+  }
+  extra.forEach(add)
+  for (const text of texts) {
+    for (const sentence of text.split(/(?<=[.!?\n])\s*/)) {
+      const tokens = sentence.match(/[A-Za-zÀ-ÿ'’-]+/g) ?? []
+      tokens.forEach((t, i) => i > 0 && /^[A-ZÀ-Þ]/.test(t) && add(t.replace(/['’]s$/, '')))
+    }
+  }
+  const out: string[] = []
+  let chars = 0
+  for (const t of seen.values()) {
+    if (out.length >= KEYTERMS_MAX || chars + t.length > KEYTERMS_CHARS) break
+    out.push(t)
+    chars += t.length
+  }
+  return out
+}
+
+/** What the person said, kept as a source for later in the visit (Moss remembers it). */
+export const SAID_PREFIX = 'said-'
+export function saidDoc(key: string, said: string, at: number) {
+  const id = `${SAID_PREFIX}${at}`
+  return { id: `${key}#${id}`, text: `They said: "${tidy(said).slice(0, 400)}"`, metadata: { memory: key, source: id } }
+}
+/** Worth remembering: more than a word or two. */
+export const worthRemembering = (said: string) => tidy(said).split(' ').length >= 4
+
 /** Joins kept sentences into what the voice says. */
 export const spoken = (s: Spoken) => s.sentences.map((x) => x.sentence).join(' ')
