@@ -334,186 +334,288 @@ export function carpet(color: RGB, seed = 9, size = 512): SurfaceMaps {
 }
 
 /**
- * A painted porcelain surface for a vase turned on a lathe: u runs round the vase, v from foot
- * (0) to top (1), so decoration is drawn in horizontal bands.
- * - 'blue-and-white': Chinese export porcelain: cobalt lotus panels, flower scrolls, a key
- *   pattern on the shoulder, a dotted lid.
- * - 'sevres': royal blue ground with gilt lines, and a white reserve on front and back painted
- *   with roses.
+ * Red-ground porcelain with gold decoration, as 19th-century Sèvres-style covered vases were
+ * made for grand rooms: a deep red glaze, gold bands, a gold acanthus neck, swags and a laurel
+ * band on the body, and white reserves framed in gold with painted flowers, front and back.
+ * Returns the color map and a surface map (green: roughness, blue: metalness), so the gold is
+ * metal and the red is glossy glaze. u runs round the vase, v from foot (0) to top (1).
  */
-export function porcelainTexture(kind: 'blue-and-white' | 'sevres'): THREE.CanvasTexture {
+export function imperialPorcelain(): { map: THREE.CanvasTexture; surface: THREE.CanvasTexture } {
   const W = 1024
   const H = 1024
+  const make = () => {
+    const c = document.createElement('canvas')
+    c.width = W
+    c.height = H
+    return { canvas: c, ctx: c.getContext('2d')! }
+  }
+  const color = make()
+  const surface = make()
+  const Y = (v: number) => (1 - v) * H
+  const r = rng(53)
+  const GOLD = '#d6aa4c'
+  const GOLD_SURFACE = 'rgb(0, 70, 255)'
+  // Paint a shape in gold on the color map and as metal on the surface map.
+  const gold = (draw: (ctx: CanvasRenderingContext2D) => void) => {
+    color.ctx.fillStyle = GOLD
+    color.ctx.strokeStyle = GOLD
+    surface.ctx.fillStyle = GOLD_SURFACE
+    surface.ctx.strokeStyle = GOLD_SURFACE
+    draw(color.ctx)
+    draw(surface.ctx)
+  }
+  // The red ground, with the depth of a real glaze.
+  const g = color.ctx.createLinearGradient(0, 0, 0, H)
+  g.addColorStop(0, '#6e0c18')
+  g.addColorStop(0.5, '#8d1322')
+  g.addColorStop(1, '#5c0a14')
+  color.ctx.fillStyle = g
+  color.ctx.fillRect(0, 0, W, H)
+  for (let i = 0; i < 300; i++) {
+    color.ctx.fillStyle = `rgba(${150 + r() * 40},20,35,${0.04 + r() * 0.05})`
+    color.ctx.beginPath()
+    color.ctx.arc(r() * W, r() * H, 10 + r() * 40, 0, Math.PI * 2)
+    color.ctx.fill()
+  }
+  surface.ctx.fillStyle = 'rgb(0, 26, 0)'
+  surface.ctx.fillRect(0, 0, W, H)
+
+  gold((ctx) => {
+    for (const [v0, v1] of [
+      [0, 0.1],
+      [0.15, 0.175],
+      [0.69, 0.72],
+      [0.93, 1],
+    ])
+      ctx.fillRect(0, Y(v1), W, Y(v0) - Y(v1))
+    // Acanthus leaves up the neck.
+    const leaves = 18
+    for (let i = 0; i < leaves; i++) {
+      const x = ((i + 0.5) / leaves) * W
+      ctx.beginPath()
+      ctx.moveTo(x - W / leaves / 2 + 4, Y(0.72))
+      ctx.quadraticCurveTo(x - 10, Y(0.83), x, Y(0.92))
+      ctx.quadraticCurveTo(x + 10, Y(0.83), x + W / leaves / 2 - 4, Y(0.72))
+      ctx.fill()
+    }
+    // Laurel band low on the body: pairs of leaves along a line.
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.moveTo(0, Y(0.24))
+    ctx.lineTo(W, Y(0.24))
+    ctx.stroke()
+    for (let x = 0; x < W; x += 22) {
+      for (const side of [-1, 1]) {
+        ctx.beginPath()
+        ctx.ellipse(x, Y(0.24) + side * 9, 11, 5, side * 0.5, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+    // Swags hanging from the shoulder, with drops between them.
+    ctx.lineWidth = 8
+    const swags = 8
+    for (let i = 0; i < swags; i++) {
+      const x0 = (i / swags) * W
+      const x1 = ((i + 1) / swags) * W
+      ctx.beginPath()
+      ctx.moveTo(x0, Y(0.66))
+      ctx.quadraticCurveTo((x0 + x1) / 2, Y(0.56), x1, Y(0.66))
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.ellipse(x0, Y(0.6), 6, 22, 0, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  })
+  // Reserves on front (u = 0) and back (u = 0.5): white, framed in gold, with painted flowers.
+  for (const u of [0, 0.5, 1]) {
+    const cx = u * W
+    const cy = Y(0.43)
+    const rx = W * 0.1
+    const ry = (Y(0.29) - Y(0.55)) / 2
+    gold((ctx) => {
+      ctx.beginPath()
+      ctx.ellipse(cx, cy, rx + 12, ry + 12, 0, 0, Math.PI * 2)
+      ctx.fill()
+    })
+    for (const ctx of [color.ctx, surface.ctx]) {
+      ctx.fillStyle = ctx === color.ctx ? '#fbf6ec' : 'rgb(0, 20, 0)'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    for (const [dx, dy, c] of [
+      [0, -14, '#b0283c'],
+      [-30, 18, '#d96a7a'],
+      [28, 22, '#e8b04a'],
+      [-2, 42, '#f2c3c8'],
+    ] as [number, number, string][]) {
+      color.ctx.fillStyle = '#4c7638'
+      for (const [lx, ly, a] of [
+        [-20, 8, -0.7],
+        [20, 10, 0.7],
+      ]) {
+        color.ctx.beginPath()
+        color.ctx.ellipse(cx + dx + lx, cy + dy + ly, 14, 6, a, 0, Math.PI * 2)
+        color.ctx.fill()
+      }
+      color.ctx.fillStyle = c
+      color.ctx.beginPath()
+      color.ctx.arc(cx + dx, cy + dy, 15, 0, Math.PI * 2)
+      color.ctx.fill()
+    }
+  }
+  const map = new THREE.CanvasTexture(color.canvas)
+  map.colorSpace = THREE.SRGBColorSpace
+  map.anisotropy = 8
+  map.wrapS = THREE.RepeatWrapping
+  const surf = new THREE.CanvasTexture(surface.canvas)
+  surf.wrapS = THREE.RepeatWrapping
+  return { map, surface: surf }
+}
+
+/**
+ * A red Persian-style rug: an outer guard stripe, a main border of rosettes on a vine, an inner
+ * guard, and a deep red field with small flowers, corner pieces and a central medallion.
+ * `aspect` is the rug's width / length.
+ */
+export function persianRug(aspect: number): THREE.CanvasTexture {
+  const W = 1024
+  const H = Math.round(W / aspect)
   const canvas = document.createElement('canvas')
   canvas.width = W
   canvas.height = H
   const ctx = canvas.getContext('2d')!
-  // Canvas y grows downward; v grows upward: v → y = (1 − v)·H.
-  const Y = (v: number) => (1 - v) * H
-  const r = rng(kind === 'sevres' ? 31 : 29)
-  if (kind === 'blue-and-white') {
-    const white = '#f3f5f6'
-    const cobalt = '#1f3f8f'
-    const pale = '#4f6fb8'
-    ctx.fillStyle = white
-    ctx.fillRect(0, 0, W, H)
-    ctx.strokeStyle = cobalt
-    ctx.fillStyle = cobalt
-    // Foot and neck bands.
-    ctx.fillRect(0, Y(0.05), W, Y(0) - Y(0.05))
-    ctx.lineWidth = 4
-    for (const v of [0.06, 0.3, 0.72, 0.82, 0.86, 0.89]) {
+  const red = '#8a1a22'
+  const navy = '#1d2346'
+  const ivory = '#efe2c4'
+  const gold = '#c9973e'
+  const r = rng(61)
+  const rect = (inset: number, c: string) => {
+    ctx.fillStyle = c
+    ctx.fillRect(inset, inset, W - inset * 2, H - inset * 2)
+  }
+  // Borders from the outside in.
+  rect(0, navy)
+  rect(14, gold)
+  rect(22, navy)
+  rect(40, ivory)
+  rect(118, gold)
+  rect(126, navy)
+  rect(140, red)
+  // Rosettes on a vine in the main (ivory) border.
+  const rosette = (x: number, y: number, s: number, outer: string, inner: string) => {
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2
+      ctx.fillStyle = outer
       ctx.beginPath()
-      ctx.moveTo(0, Y(v))
-      ctx.lineTo(W, Y(v))
-      ctx.stroke()
-    }
-    // Lotus petal panels round the lower body.
-    const petals = 12
-    for (let i = 0; i < petals; i++) {
-      const x0 = (i / petals) * W
-      const w = W / petals
-      ctx.beginPath()
-      ctx.moveTo(x0 + 6, Y(0.07))
-      ctx.lineTo(x0 + 6, Y(0.2))
-      ctx.quadraticCurveTo(x0 + w / 2, Y(0.33), x0 + w - 6, Y(0.2))
-      ctx.lineTo(x0 + w - 6, Y(0.07))
-      ctx.stroke()
-      ctx.fillStyle = pale
-      ctx.beginPath()
-      ctx.ellipse(x0 + w / 2, Y(0.14), w * 0.16, (Y(0.07) - Y(0.21)) * 0.3, 0, 0, Math.PI * 2)
+      ctx.ellipse(x + Math.cos(a) * s * 0.55, y + Math.sin(a) * s * 0.55, s * 0.42, s * 0.22, a, 0, Math.PI * 2)
       ctx.fill()
     }
-    // Flower scrolls: blooms on a winding stem with leaves.
-    ctx.strokeStyle = cobalt
-    ctx.lineWidth = 5
+    ctx.fillStyle = inner
     ctx.beginPath()
-    for (let x = 0; x <= W; x += 8) {
-      const v = 0.51 + Math.sin((x / W) * Math.PI * 8) * 0.08
-      if (x === 0) ctx.moveTo(x, Y(v))
-      else ctx.lineTo(x, Y(v))
+    ctx.arc(x, y, s * 0.3, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.strokeStyle = '#6a2a2a'
+  ctx.lineWidth = 3
+  const band = 79
+  for (const [x0, y0, x1, y1] of [
+    [band, band, W - band, band],
+    [band, H - band, W - band, H - band],
+    [band, band, band, H - band],
+    [W - band, band, W - band, H - band],
+  ]) {
+    const len = Math.hypot(x1 - x0, y1 - y0)
+    const n = Math.round(len / 70)
+    ctx.beginPath()
+    for (let i = 0; i <= 60; i++) {
+      const t = i / 60
+      const wave = Math.sin(t * n * Math.PI) * 14
+      const x = x0 + (x1 - x0) * t + (y1 !== y0 ? wave : 0)
+      const y = y0 + (y1 - y0) * t + (x1 !== x0 ? wave : 0)
+      if (i === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
     }
     ctx.stroke()
-    for (let i = 0; i < 8; i++) {
-      const x = ((i + 0.25) / 8) * W
-      const v = 0.51 + Math.sin(((i + 0.25) / 8) * Math.PI * 8) * 0.08
-      const cx = x
-      const cy = Y(v + (i % 2 ? -0.06 : 0.06))
-      // A peony: rings of petals round a dark heart.
-      for (let k = 0; k < 8; k++) {
-        const a = (k / 8) * Math.PI * 2
-        ctx.fillStyle = k % 2 ? cobalt : pale
-        ctx.beginPath()
-        ctx.ellipse(cx + Math.cos(a) * 26, cy + Math.sin(a) * 26, 24, 14, a, 0, Math.PI * 2)
-        ctx.fill()
-      }
-      ctx.fillStyle = cobalt
+    for (let i = 0; i <= n; i++) rosette(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, 30, i % 2 ? red : navy, gold)
+  }
+  // Small flowers scattered on the field in a loose lattice.
+  for (let y = 180; y < H - 160; y += 70)
+    for (let x = 180 + ((y / 70) % 2) * 35; x < W - 160; x += 70) {
+      ctx.fillStyle = r() < 0.5 ? '#a8323a' : '#6d1219'
       ctx.beginPath()
-      ctx.arc(cx, cy, 14, 0, Math.PI * 2)
+      ctx.arc(x, y, 8, 0, Math.PI * 2)
       ctx.fill()
-      for (const side of [-1, 1]) {
-        ctx.fillStyle = pale
-        ctx.beginPath()
-        ctx.ellipse(cx + side * 62, cy + 30 * side, 26, 9, side * 0.6 + r(), 0, Math.PI * 2)
-        ctx.fill()
-      }
-    }
-    // Key (meander) pattern on the shoulder.
-    const keyY0 = Y(0.81)
-    const keyH = Y(0.73) - Y(0.81)
-    ctx.lineWidth = 5
-    for (let x = 0; x < W; x += keyH * 1.2) {
+      ctx.fillStyle = gold
       ctx.beginPath()
-      ctx.moveTo(x, keyY0 + keyH)
-      ctx.lineTo(x, keyY0)
-      ctx.lineTo(x + keyH, keyY0)
-      ctx.lineTo(x + keyH, keyY0 + keyH * 0.7)
-      ctx.lineTo(x + keyH * 0.35, keyY0 + keyH * 0.7)
-      ctx.lineTo(x + keyH * 0.35, keyY0 + keyH * 0.35)
-      ctx.stroke()
-    }
-    // The lid: cobalt with white dots.
-    ctx.fillStyle = cobalt
-    ctx.fillRect(0, 0, W, Y(0.9))
-    ctx.fillStyle = white
-    for (let i = 0; i < 60; i++) {
-      ctx.beginPath()
-      ctx.arc(r() * W, r() * Y(0.9), 5, 0, Math.PI * 2)
+      ctx.arc(x, y, 3, 0, Math.PI * 2)
       ctx.fill()
     }
-  } else {
-    const blue = '#1c2f78'
-    const gilt = '#d9b25e'
-    ctx.fillStyle = blue
-    ctx.fillRect(0, 0, W, H)
-    // A faint glaze pooling: lighter blue in places.
-    for (let i = 0; i < 400; i++) {
-      ctx.fillStyle = `rgba(80,110,200,${0.03 + r() * 0.04})`
+  // Corner pieces: quarter medallions in navy and ivory.
+  for (const [cx, cy] of [
+    [140, 140],
+    [W - 140, 140],
+    [140, H - 140],
+    [W - 140, H - 140],
+  ]) {
+    for (const [rad, c] of [
+      [190, navy],
+      [150, ivory],
+      [112, red],
+      [70, gold],
+    ] as [number, string][]) {
+      // Clip to the field, then start a fresh path for the circle (the clip rectangle must not be filled).
+      ctx.save()
       ctx.beginPath()
-      ctx.arc(r() * W, r() * H, 10 + r() * 40, 0, Math.PI * 2)
+      ctx.rect(140, 140, W - 280, H - 280)
+      ctx.clip()
+      ctx.fillStyle = c
+      ctx.beginPath()
+      ctx.arc(cx, cy, rad, 0, Math.PI * 2)
       ctx.fill()
+      ctx.restore()
     }
-    ctx.fillStyle = gilt
-    for (const [v0, v1] of [
-      [0, 0.1],
-      [0.155, 0.17],
-      [0.7, 0.72],
-      [0.94, 1],
-    ])
-      ctx.fillRect(0, Y(v1), W, Y(v0) - Y(v1))
-    // Gilt garland dots under the shoulder.
-    for (let x = 0; x < W; x += 24) {
-      ctx.beginPath()
-      ctx.arc(x, Y(0.68), 4, 0, Math.PI * 2)
-      ctx.fill()
-    }
-    // The reserves: white ovals framed in gilt, front (u = 0) and back (u = 0.5), with roses.
-    for (const u of [0, 0.5, 1]) {
-      const cx = u * W
-      const cy = Y(0.43)
-      const rx = W * 0.11
-      const ry = (Y(0.24) - Y(0.62)) / 2
-      ctx.fillStyle = gilt
-      ctx.beginPath()
-      ctx.ellipse(cx, cy, rx + 10, ry + 10, 0, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.fillStyle = '#fbf7ef'
-      ctx.beginPath()
-      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
-      ctx.fill()
-      // A small bouquet: roses and leaves.
-      for (const [dx, dy, c] of [
-        [0, -10, '#c8425a'],
-        [-34, 22, '#e07a8a'],
-        [32, 26, '#b8304a'],
-        [-6, 46, '#f0a3ad'],
-      ] as [number, number, string][]) {
-        for (const [lx, ly, a] of [
-          [-22, 8, -0.7],
-          [22, 10, 0.7],
-        ])
-          {
-            ctx.fillStyle = '#4f7a3a'
-            ctx.beginPath()
-            ctx.ellipse(cx + dx + lx, cy + dy + ly, 16, 7, a, 0, Math.PI * 2)
-            ctx.fill()
-          }
-        ctx.fillStyle = c
-        ctx.beginPath()
-        ctx.arc(cx + dx, cy + dy, 17, 0, Math.PI * 2)
-        ctx.fill()
-        ctx.strokeStyle = 'rgba(90,10,30,0.5)'
-        ctx.lineWidth = 3
-        ctx.beginPath()
-        ctx.arc(cx + dx, cy + dy, 9, 0.5, 5)
-        ctx.stroke()
-      }
-    }
+  }
+  // The central medallion: layered lozenge and star, with pendants above and below.
+  const mx = W / 2
+  const my = H / 2
+  const lozenge = (w: number, h: number, c: string) => {
+    ctx.fillStyle = c
+    ctx.beginPath()
+    ctx.moveTo(mx, my - h)
+    ctx.lineTo(mx + w, my)
+    ctx.lineTo(mx, my + h)
+    ctx.lineTo(mx - w, my)
+    ctx.closePath()
+    ctx.fill()
+  }
+  for (const s of [1, -1]) {
+    ctx.fillStyle = navy
+    ctx.beginPath()
+    ctx.ellipse(mx, my + s * H * 0.24, 60, 44, 0, 0, Math.PI * 2)
+    ctx.fill()
+    rosette(mx, my + s * H * 0.24, 46, gold, red)
+  }
+  lozenge(W * 0.3, H * 0.2, navy)
+  lozenge(W * 0.26, H * 0.17, gold)
+  lozenge(W * 0.23, H * 0.15, ivory)
+  lozenge(W * 0.19, H * 0.12, red)
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2
+    ctx.fillStyle = k % 2 ? navy : gold
+    ctx.beginPath()
+    ctx.ellipse(mx + Math.cos(a) * 70, my + Math.sin(a) * 70, 34, 12, a, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  rosette(mx, my, 60, ivory, navy)
+  // Wear and pile: a faint mottling over everything.
+  for (let i = 0; i < 2500; i++) {
+    ctx.fillStyle = `rgba(${r() < 0.5 ? '0,0,0' : '255,240,220'},${r() * 0.05})`
+    ctx.fillRect(r() * W, r() * H, 3, 3)
   }
   const t = new THREE.CanvasTexture(canvas)
   t.colorSpace = THREE.SRGBColorSpace
   t.anisotropy = 8
-  t.wrapS = THREE.RepeatWrapping
   return t
 }
 

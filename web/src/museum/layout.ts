@@ -213,6 +213,17 @@ export function planMuseum(count: number, style: RoomStyle): MuseumPlan {
     }
   }
 
+  // Pictures on a side wall spread evenly along it, so a wall that isn't full (the last room's,
+  // usually) has its pictures centered rather than bunched at the front.
+  for (const room of roomList)
+    for (const side of [1, -1]) {
+      const onWall = slots.filter((s) => s.room === room.index && s.normal[0] === side).sort((a, b) => b.center[2] - a.center[2])
+      onWall.forEach((s, j) => {
+        s.center = [s.center[0], s.center[1], room.zFront - (spec.depth * (j + 0.5)) / onWall.length]
+        s.view = [s.view[0], s.center[2]]
+      })
+    }
+
   // The classic gallery is furnished: a round settee in the middle of each room, candle
   // torchères halfway along the front wall (either side of the fireplace or the doorway, clear
   // of the pictures), a fireplace on the entrance wall, and pedestals with vases flanking the
@@ -224,7 +235,7 @@ export function planMuseum(count: number, style: RoomStyle): MuseumPlan {
       features.push({ kind: 'settee', room: room.index, x: 0, z: cz, hw: 0.78, hd: 0.78 })
       for (const side of [-1, 1]) {
         features.push({ kind: 'torch', room: room.index, x: side * 2.15, z: room.zFront - 0.45, hw: 0.22, hd: 0.22 })
-        if (room.index === rooms - 1) features.push({ kind: 'pedestal', room: room.index, x: side * (half - 0.6), z: room.zBack + 0.65, hw: 0.28, hd: 0.28 })
+        if (room.index === rooms - 1) features.push({ kind: 'pedestal', room: room.index, x: side * 2.35, z: room.zBack + 0.6, hw: 0.28, hd: 0.28 })
       }
     }
     features.push({ kind: 'fireplace', room: 0, x: 0, z: roomList[0].zFront - 0.22, hw: 1.05, hd: 0.22 })

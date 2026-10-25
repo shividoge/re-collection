@@ -37,6 +37,18 @@ describe('museum layout', () => {
     }
   })
 
+  it('spreads the pictures on a wall evenly along it, centered', () => {
+    // 12 pieces in the classic gallery: the second room has two on each side wall.
+    const plan = planMuseum(12, 'classic')
+    const room = plan.rooms[1]
+    for (const side of [1, -1]) {
+      const zs = plan.slots.filter((s) => s.room === 1 && s.normal[0] === side).map((s) => s.center[2])
+      expect(zs.length).toBe(2)
+      const mid = (room.zFront + room.zBack) / 2
+      expect((zs[0] + zs[1]) / 2).toBeCloseTo(mid)
+    }
+  })
+
   it('puts every viewing spot where a visitor can stand', () => {
     for (const style of STYLE_NAMES) {
       const plan = planMuseum(30, style)
