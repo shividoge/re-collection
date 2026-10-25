@@ -69,7 +69,7 @@ That is what Alzheimer's does to families. The visit happened, it mattered, and 
 
 **Backend** (Convex + Cloudflare R2 + pull-based workers). Convex holds captures, facts, reviews, sessions, the palace and every Claude call, so no API key ever reaches a browser. A job queue with leases and heartbeats hands work to workers:
 - A **bake worker** precomputes each room once, in 3 to 9 seconds. That took the browser's time to a ready room from 6.3 s to 0.7 s, and the front page's first download from 713 KB to 99 KB.
-- A **GPU worker** (an RTX 5060 Ti and an ASUS GX10 with 128 GB) converts videos and trains Gaussian splats.
+- A **GPU worker** (an RTX 5060 Ti and an ASUS GX10 with 128 GB) converts videos and trains a Gaussian splat of every room, phone scans included.
 
 **Putting people back in the room.** For a depth pixel \\((u, v)\\) with depth \\(d\\), scaled intrinsics \\((f_x, f_y, c_x, c_y)\\) and that frame's camera-to-world pose \\(T\\), the world point is
 
@@ -143,7 +143,7 @@ or if it's a short piece of small talk with no name, date, place or relationship
 
 - **A pilot** at one memory care facility: the same visit reviewed with Re:Collection versus a written diary, recall measured at 2 weeks and 3 months (the SenseCam protocol). We'll track details recalled per memory, on their own versus after a hint.
 - Accounts, consent records and encryption at rest, replacing today's private links.
-- Gaussian splat rooms for every phone capture (in progress), and more languages for the guide.
+- More languages for the guide, and filling in partly seen objects without ever inventing unseen space.
 
 ---
 
