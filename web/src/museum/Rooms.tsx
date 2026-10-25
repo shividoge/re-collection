@@ -292,13 +292,14 @@ function DoorCasing({ z, width, height, material, grand }: { z: number; width: n
 
 /** Each style's ceiling: a skylight, a salon's chandelier, or the hall's beams and high windows. */
 function Ceiling({ style, room, width, look }: { style: MuseumPlan['style']; room: Room; width: number; look: Look }) {
-  if (style === 'classic') return <Lantern room={room} width={width} look={look} />
   const cz = (room.zFront + room.zBack) / 2
   const depth = room.zFront - room.zBack
   const h = room.height
   const glow = useMemo(() => new THREE.MeshStandardMaterial({ color: '#000000', emissive: look.light, emissiveIntensity: 1.4, toneMapped: true }), [look])
   const dark = useMemo(() => new THREE.MeshStandardMaterial({ color: '#2a2622', roughness: 0.6 }), [])
   useEffect(() => () => [glow, dark].forEach((m) => m.dispose()), [glow, dark])
+
+  if (style === 'classic') return <Lantern room={room} width={width} look={look} />
 
   if (style === 'gallery') {
     // A long skylight down the middle, with its light falling into the room.
