@@ -61,6 +61,17 @@ export async function activeJob(ctx: MutationCtx, captureId: string, kind: JobKi
   return jobs.find((j) => j.status === 'queued' || j.status === 'leased') ?? null
 }
 
+/**
+ * Fails the stage's queued or running job because its inputs are being replaced (the worker's
+ * next heartbeat says cancelled, so nothing it made is published). Returns whether there was one.
+ */
+export async function supersede(ctx: MutationCtx, captureId: string, kind: JobKind, reason: string): Promise<boolean> {
+  const job = await activeJob(ctx, captureId, kind)
+  if (!job) return false
+  await ctx.db.patch(job._id, { status: 'failed', error: reason, leaseUntil: null, updatedAt: Date.now() })
+  return true
+}
+
 /** Queues a stage (or returns the one already queued or running) and shows it in the status. */
 export async function enqueue(ctx: MutationCtx, capture: Doc<'captures'>, kind: JobKind, needs: Needs): Promise<Id<'jobs'>> {
   const existing = await activeJob(ctx, capture.captureId, kind)

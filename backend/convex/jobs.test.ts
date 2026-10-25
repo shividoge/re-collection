@@ -368,6 +368,49 @@ describe('old video → capture', () => {
     await runScheduled(t)
   })
 
+  test('reconvert: an imported video capture is converted again; facts stay, the old splat is dropped and retrained', async () => {
+    const t = setup()
+    // As the import made it: a converted package uploaded like a phone's (convert skipped), facts reviewed.
+    const pkg = tinyCapture()
+    const manifest = { ...pkg.manifest, source: 'video' }
+    pkg.files['manifest.json'] = new TextEncoder().encode(JSON.stringify(manifest))
+    await uploadCapture(t, { ...pkg, manifestJson: JSON.stringify(manifest) })
+    await t.action(api.captures.complete, { captureId: CAPTURE_ID })
+    await runScheduled(t) // facts extracted
+    const facts = () => t.run(async (ctx) => (await ctx.db.query('moments').collect()).map((m) => m.facts))
+    const before = await facts()
+    expect(before).toHaveLength(1)
+    expect(await statusOf(t)).toMatchObject({ source: 'video', convert: 'skipped', splat: 'skipped', facts: 'done' })
+    await t.mutation(internal.splats.backfill, { dryRun: false })
+    expect(await t.mutation(api.worker.claim, cpu)).toMatchObject({ kind: 'bake' })
+    const oldSplat = await t.mutation(api.worker.claim, fedoraGpu) // training on the old conversion
+    expect(oldSplat).toMatchObject({ kind: 'splat' })
+
+    await expect(t.mutation(api.admin.reconvertVideo, { token: 'nope', captureId: CAPTURE_ID })).rejects.toThrow(/token/)
+    await t.mutation(api.admin.reconvertVideo, { token: TOKEN, captureId: CAPTURE_ID })
+    expect(await t.mutation(api.worker.heartbeat, { ...as(oldSplat) })).toEqual({ ok: false, cancelled: true })
+    expect(await statusOf(t)).toMatchObject({ convert: 'not_started', splat: 'not_started' })
+
+    const target = await t.action(api.uploads.start, { captureId: CAPTURE_ID, name: 'source.mov', bytes: 18, contentType: 'video/quicktime' })
+    expect(target.key).toBe(`videos/${CAPTURE_ID}/source.mov`)
+    await fetch(target.single!.url, { method: 'PUT', headers: target.single!.headers, body: new Uint8Array(18) })
+    await t.action(api.uploads.finish, { uploadId: target.uploadId })
+    expect((await statusOf(t))?.convert).toBe('queued')
+    await expect(t.mutation(api.admin.reconvertVideo, { token: TOKEN, captureId: CAPTURE_ID })).rejects.toThrow(/already being converted/)
+
+    const job = await t.mutation(api.worker.claim, fedoraGpu)
+    expect(job).toMatchObject({ kind: 'convert', captureId: CAPTURE_ID })
+    const inputs = await t.action(api.worker.inputs, as(job))
+    expect(JSON.parse(inputs.manifestJson ?? '{}')).toMatchObject({ title: 'Test visit', attendees: ['Priya'] })
+    await writeOutputs(t, job!, Object.entries(pkg.files).map(([name, bytes]) => ({ name, area: 'raw' as const, bytes, contentType: 'application/octet-stream' })))
+    await t.mutation(api.worker.complete, { ...as(job), result: { kind: 'convert', manifestJson: JSON.stringify(manifest) } })
+    expect(await statusOf(t)).toMatchObject({ convert: 'done', upload: 'done', facts: 'done', bake: 'queued', splat: 'queued' })
+    expect(await facts()).toEqual(before) // the review is untouched
+    expect(await t.mutation(api.admin.reconvertVideo, { token: TOKEN, captureId: CAPTURE_ID })).toEqual({ ok: true })
+    await expect(t.mutation(api.admin.reconvertVideo, { token: TOKEN, captureId: 'nope' })).rejects.toThrow()
+    await runScheduled(t)
+  })
+
   test('a converted package that is incomplete fails the conversion with the reasons', async () => {
     const t = setup()
     const { captureId } = await t.mutation(api.videos.create, { title: 'Clip', attendees: [], fileName: 'clip.mp4', bytes: 4 })

@@ -6,7 +6,7 @@ import { parseManifest } from '../../shared/manifest'
 import { internal } from './_generated/api'
 import { action, internalQuery, mutation } from './_generated/server'
 import { getCapture, invalid, listFiles, patchStatus, workerKey } from './lib/data'
-import { canRun, cancelled, enqueue, heartbeat as extendLease, holdsLease, lease, markDone, markFailed, requireLease, requireToken, seeWorker } from './lib/jobs'
+import { canRun, cancelled, enqueue, heartbeat as extendLease, holdsLease, lease, markDone, markFailed, requireLease, requireToken, seeWorker, supersede } from './lib/jobs'
 import { r2Config, stableGetUrl } from './lib/r2'
 import { SPLAT_NEEDS, completeUpload, publishOutputs } from './lib/stages'
 import { isFileName } from './lib/validate'
@@ -177,6 +177,8 @@ export const complete = mutation({
       }
       await markDone(ctx, job)
       const fresh = (await ctx.db.get(capture._id)) ?? capture
+      // A splat still training on the previous conversion would not line up with this one.
+      await supersede(ctx, capture.captureId, 'splat', 'The video was converted again.')
       if (manifest.room?.splat) await patchStatus(ctx, fresh, { splat: 'done' })
       else await enqueue(ctx, fresh, 'splat', SPLAT_NEEDS)
     } else {
