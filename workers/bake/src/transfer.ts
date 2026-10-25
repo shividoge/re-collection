@@ -1,5 +1,5 @@
 // Downloads from and uploads to presigned R2 URLs, with retries. `fetch` is injectable for tests.
-import { mkdir } from 'node:fs/promises'
+import { open, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { UploadTarget } from '../../../backend/convex/validators'
 
@@ -58,22 +58,25 @@ async function ok(res: Response, what: string): Promise<Response> {
   throw new Error(`${what}: HTTP ${res.status}${body ? ` ${body}` : ''}`)
 }
 
-/** Streams `url` to `path` and checks the size. */
+/**
+ * Streams `url` to `path` and checks the size. Reads the body chunk by chunk itself: Bun.write(path,
+ * response) (Bun 1.4) can hang forever on a large R2 response and ignores the abort signal.
+ */
 export async function download(url: string, path: string, bytes: number, o: RetryOptions = {}): Promise<void> {
+  await mkdir(dirname(path), { recursive: true })
   await withRetry(`Downloading ${path.split('/').at(-1)}`, o, bytes, async (f) => {
     const res = await ok(await f(url), 'GET')
-    if (!res.body) throw new Error('the response has no body')
-    // Stream chunk by chunk: Bun 1.4's Bun.write(path, response) stalls forever on large R2 bodies.
-    await mkdir(dirname(path), { recursive: true })
-    const sink = Bun.file(path).writer()
+    if (!res.body) throw new Error('no response body')
+    const file = await open(path, 'w')
     let written = 0
     try {
       for await (const chunk of res.body) {
-        sink.write(chunk)
         written += chunk.byteLength
+        if (written > bytes) throw new Error(`got more than the ${bytes} bytes expected`)
+        await file.write(chunk)
       }
     } finally {
-      await sink.end()
+      await file.close()
     }
     if (written !== bytes) throw new Error(`got ${written} bytes, expected ${bytes}`)
   })
@@ -102,25 +105,43 @@ export async function upload(target: UploadTarget, body: Uint8Array<ArrayBuffer>
   if (!(size > 0) || parts.length !== Math.ceil(body.byteLength / size))
     throw new TransferError(`The upload target for ${target.key} has ${parts.length} parts of ${size} bytes, which doesn't fit ${body.byteLength} bytes.`)
   const done: FinishedPart[] = []
-  await inParallel(parts, o.parallel ?? 4, async ({ partNumber, url }) => {
+  await inParallel(parts, o.parallel ?? 4, async ({ partNumber, url }, signal) => {
     const slice = body.subarray((partNumber - 1) * size, partNumber * size)
-    const etag = await withRetry(`Uploading part ${partNumber} of ${target.key}`, o, slice.byteLength, async (f) => {
+    const etag = await withRetry(`Uploading part ${partNumber} of ${target.key}`, { ...o, signal }, slice.byteLength, async (f) => {
       const res = await ok(await f(url, { method: 'PUT', body: slice }), 'PUT')
       const tag = res.headers.get('etag')
       if (!tag) throw new Error('no ETag in the response')
       return tag
     })
     done.push({ partNumber, etag })
-  })
+  }, o.signal)
   return done.sort((a, b) => a.partNumber - b.partNumber)
 }
 
-/** Runs `run` over `items`, at most `n` at a time. */
-export async function inParallel<T>(items: T[], n: number, run: (item: T) => Promise<void>): Promise<void> {
+/**
+ * Runs `run` over `items`, at most `n` at a time. The first failure (or `parent` aborting) stops
+ * scheduling and aborts the `signal` every running item got; it returns only once every running
+ * item has settled, then throws that first failure. So nothing is still writing when it throws.
+ */
+export async function inParallel<T>(items: T[], n: number, run: (item: T, signal: AbortSignal) => Promise<void>, parent?: AbortSignal): Promise<void> {
+  const group = new AbortController()
+  const signal = parent ? AbortSignal.any([parent, group.signal]) : group.signal
   let next = 0
-  await Promise.all(
+  let failure: { error: unknown } | null = null
+  await Promise.allSettled(
     Array.from({ length: Math.min(n, items.length) }, async () => {
-      while (next < items.length) await run(items[next++])
+      while (!failure && !signal.aborted && next < items.length) {
+        try {
+          await run(items[next++], signal)
+        } catch (error) {
+          if (!failure) {
+            failure = { error }
+            group.abort(error)
+          }
+        }
+      }
     }),
   )
+  if (failure) throw (failure as { error: unknown }).error
+  parent?.throwIfAborted()
 }

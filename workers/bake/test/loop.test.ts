@@ -102,6 +102,9 @@ describe('a job', () => {
     expect(fns).not.toContain('fail')
     expect(fns.indexOf('inputs')).toBeLessThan(fns.indexOf('outputUrls'))
     expect(fns.filter((f) => f === 'claim').length).toBeGreaterThan(1) // it went back to polling
+    // Every call about the job carries the attempt claim returned.
+    expect(b.calls.filter((c) => c.fn !== 'claim').every((c) => c.args.attempt === 1)).toBe(true)
+    expect(b.calls.find((c) => c.fn === 'claim')!.args.protocol).toBe(2)
     // The derived files arrived: gzip ones decompress, depth.bin is raw v2.
     const complete = b.calls.find((c) => c.fn === 'complete')!.args as { jobId: string; result: { kind: string; derived: { stats: unknown } } }
     expect(complete.jobId).toBe('job1')
@@ -164,6 +167,65 @@ describe('a job', () => {
     expect(fns).not.toContain('complete')
     expect(fns).not.toContain('fail')
     expect(fns).not.toContain('outputUrls')
+    await rm(dir, { recursive: true, force: true })
+  })
+})
+
+describe('failures and deadlines', () => {
+  const never = <T>() => new Promise<T>(() => {})
+
+  test('a failed download aborts the other running downloads, and the job reports only after they stopped', async () => {
+    const dir = await makeCapture()
+    const b = await fakeBackend(dir)
+    const events: string[] = []
+    const fetchImpl: Fetch = (url, init) => {
+      if (url.endsWith('/frames.jsonl')) return Promise.resolve(new Response('gone', { status: 404 }))
+      if (url.startsWith('mem://raw/')) {
+        // Every other download stalls until it's aborted.
+        return new Promise((_, reject) => init?.signal?.addEventListener('abort', () => (events.push('aborted'), reject(init.signal!.reason)), { once: true }))
+      }
+      return b.fetchImpl(url, init)
+    }
+    const api: WorkerApi = { ...b.api, fail: async (a) => (events.push('fail'), b.api.fail(a)) }
+    await runJob(claim, options(b, { api, fetch: fetchImpl }), quiet)
+    expect(events.at(-1)).toBe('fail')
+    expect(events.filter((e) => e === 'aborted').length).toBeGreaterThan(0)
+    expect(String(b.calls.find((c) => c.fn === 'fail')!.args.error)).toContain('HTTP 404')
+    expect(await readdir(tmpRoot)).toEqual([])
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  test('a Convex call that never answers is abandoned at its deadline, and the failure report is short too', async () => {
+    const dir = await makeCapture()
+    const b = await fakeBackend(dir)
+    const api: WorkerApi = { ...b.api, inputs: () => never(), fail: (a) => (b.calls.push({ fn: 'fail', args: a }), never()) }
+    const started = performance.now()
+    await runJob(claim, options(b, { api, callTimeoutMs: 40, reportTimeoutMs: 40 }), quiet)
+    expect(performance.now() - started).toBeLessThan(1000)
+    expect(String(b.calls.find((c) => c.fn === 'fail')!.args.error)).toContain("worker.inputs didn't answer")
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  test('kill stops waiting for a pending Convex call at once', async () => {
+    const dir = await makeCapture()
+    const b = await fakeBackend(dir)
+    const kill = new AbortController()
+    const api: WorkerApi = { ...b.api, inputs: () => (kill.abort(), never()) }
+    const started = performance.now()
+    await runJob(claim, options(b, { api, kill: kill.signal }), quiet)
+    expect(performance.now() - started).toBeLessThan(1000)
+    expect(b.calls.find((c) => c.fn === 'fail')!.args).toMatchObject({ error: 'The worker was stopped before the bake finished.', retryable: true })
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  test('a call refused because the attempt lost its lease stops the job without reporting', async () => {
+    const dir = await makeCapture()
+    const b = await fakeBackend(dir)
+    const lost = Object.assign(new Error("This job attempt doesn't hold the lease any more"), { data: { code: 'cancelled', message: 'lost' } })
+    const api: WorkerApi = { ...b.api, outputUrls: () => Promise.reject(lost) }
+    await runJob(claim, options(b, { api }), quiet)
+    expect(b.calls.map((c) => c.fn)).not.toContain('fail')
+    expect(await readdir(tmpRoot)).toEqual([])
     await rm(dir, { recursive: true, force: true })
   })
 })

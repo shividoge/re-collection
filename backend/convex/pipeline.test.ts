@@ -3,7 +3,8 @@
 import { ConvexError } from 'convex/values'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { goodReply } from './lib/facts.fixture'
-import { CAPTURE_ID, api, bucket, claude, internal, runScheduled, setup, statusOf, tinyCapture, upload, uploadCapture } from './test.helpers'
+import { moment } from './lib/grounding.fixture'
+import { CAPTURE_ID, api, bucket, claude, internal, putMoment, runScheduled, setup, statusOf, tinyCapture, upload, uploadCapture } from './test.helpers'
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -43,6 +44,20 @@ describe('uploads and stage triggers', () => {
     await fetch(target.single!.url, { method: 'PUT', body: new Uint8Array(10) })
     await expect(t.action(api.uploads.finish, { uploadId: target.uploadId })).rejects.toThrow(/arrived with 10 bytes, but 34/)
     await expect(t.action(api.uploads.start, { captureId: CAPTURE_ID, name: '../x', bytes: 1, contentType: 'x' })).rejects.toThrow(/allowed file name/)
+  })
+
+  test('a retried or concurrent finish returns the recorded success and registers the file once', async () => {
+    const t = setup()
+    const capture = tinyCapture()
+    await t.mutation(api.captures.begin, { manifestJson: capture.manifestJson })
+    const target = await t.action(api.uploads.start, { captureId: CAPTURE_ID, name: 'thumb.jpg', bytes: 4, contentType: 'image/jpeg' })
+    await fetch(target.single!.url, { method: 'PUT', headers: target.single!.headers, body: capture.files['thumb.jpg'] })
+    const results = await Promise.all([t.action(api.uploads.finish, { uploadId: target.uploadId }), t.action(api.uploads.finish, { uploadId: target.uploadId })])
+    expect(results).toEqual([{ ok: true, bytes: 4 }, { ok: true, bytes: 4 }])
+    // The answer was lost; the phone asks again.
+    expect(await t.action(api.uploads.finish, { uploadId: target.uploadId })).toEqual({ ok: true, bytes: 4 })
+    const detail = await t.query(api.captures.get, { captureId: CAPTURE_ID })
+    expect(detail?.files.map((f) => [f.name, f.rev])).toEqual([['thumb.jpg', 1]])
   })
 
   test('a big file gets a multipart upload with 16 MiB parts', async () => {
@@ -208,6 +223,98 @@ describe('capture removal', () => {
     await runScheduled(t)
     expect(bucket.size).toBe(0)
     expect(await t.run(async (ctx) => (await ctx.db.query('files').collect()).length)).toBe(0)
+  })
+})
+
+describe('capture removal (tombstone)', () => {
+  test('the id is refused until the purge has run, so it can never erase a recreated capture', async () => {
+    const t = setup()
+    const capture = tinyCapture()
+    await uploadCapture(t, capture)
+    await t.mutation(api.captures.remove, { captureId: CAPTURE_ID })
+    await expect(t.mutation(api.captures.begin, { manifestJson: capture.manifestJson })).rejects.toThrow(/still being removed/)
+    expect(await t.query(api.captures.list, {})).toEqual([])
+    await runScheduled(t)
+    // Purged and the tombstone dropped: the same capture uploads again and keeps its files.
+    await uploadCapture(t, capture)
+    await runScheduled(t)
+    expect((await t.query(api.captures.get, { captureId: CAPTURE_ID }))?.files.length).toBe(Object.keys(capture.files).length)
+    expect([...bucket.keys()].filter((k) => k.startsWith(`captures/${CAPTURE_ID}/raw/`)).length).toBe(Object.keys(capture.files).length)
+  })
+
+  test('a failed purge keeps the tombstone and tries again', async () => {
+    const t = setup()
+    const capture = tinyCapture()
+    await uploadCapture(t, capture)
+    await t.mutation(api.captures.remove, { captureId: CAPTURE_ID })
+    const realFetch = globalThis.fetch
+    let failures = 1
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => (failures-- > 0 ? Promise.reject(new TypeError('network down')) : realFetch(input, init)))
+    await runScheduled(t)
+    expect(bucket.size).toBe(0)
+    expect(await t.run(async (ctx) => ctx.db.query('captures').collect())).toEqual([])
+  })
+})
+
+test("captures.get lists a video capture's uploaded source", async () => {
+  const t = setup()
+  const { captureId } = await t.mutation(api.videos.create, { title: 'Clip', attendees: [], fileName: 'clip.mov', bytes: 6 })
+  expect((await t.query(api.captures.get, { captureId }))?.sourceVideo).toBeNull()
+  const target = await t.action(api.uploads.start, { captureId, name: 'source.mov', bytes: 6, contentType: 'video/quicktime' })
+  await fetch(target.single!.url, { method: 'PUT', headers: target.single!.headers, body: new Uint8Array(6) })
+  await t.action(api.uploads.finish, { uploadId: target.uploadId })
+  const detail = await t.query(api.captures.get, { captureId })
+  expect(detail?.sourceVideo).toMatchObject({ name: 'source.mov', bytes: 6, rev: 1 })
+  expect(detail?.sourceVideo?.url).toContain(`/videos/${captureId}/source.mov`)
+  expect(detail?.files).toEqual([])
+})
+
+describe('abandoned uploads', () => {
+  const DAY = 24 * 3600_000
+  test('a week without activity removes an unfinished upload (rows, then its objects); everything else stays', async () => {
+    const t = setup()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const ids = (n: number) => `11111111-2222-4333-8444-${String(n).padStart(12, '0')}`
+      // 1: abandoned phone upload. 2: completed. 3: abandoned but someone reviewed a fact. 4: video whose source arrived.
+      // 5: abandoned video (source never finished). 6: abandoned, then touched again recently.
+      await uploadCapture(t, tinyCapture({ id: ids(1) }), { skip: ['video.mov'] })
+      await uploadCapture(t, tinyCapture({ id: ids(2) }))
+      await t.action(api.captures.complete, { captureId: ids(2) })
+      await uploadCapture(t, tinyCapture({ id: ids(3) }), { skip: ['video.mov'] })
+      await putMoment(t, { ...moment, captureId: ids(3) })
+      const video = await t.mutation(api.videos.create, { title: 'Clip', attendees: [], fileName: 'a.mp4', bytes: 4 })
+      const src = await t.action(api.uploads.start, { captureId: video.captureId, name: 'source.mp4', bytes: 4, contentType: 'video/mp4' })
+      await fetch(src.single!.url, { method: 'PUT', headers: src.single!.headers, body: new Uint8Array(4) })
+      await t.action(api.uploads.finish, { uploadId: src.uploadId })
+      await t.run(async (ctx) => {
+        const job = (await ctx.db.query('jobs').collect()).find((j) => j.kind === 'convert')!
+        await ctx.db.patch(job._id, { status: 'failed' }) // no worker took it; nothing active
+      })
+      const lost = await t.mutation(api.videos.create, { title: 'Lost', attendees: [], fileName: 'b.mp4', bytes: 4 })
+      await t.action(api.uploads.start, { captureId: lost.captureId, name: 'source.mp4', bytes: 4, contentType: 'video/mp4' })
+      await uploadCapture(t, tinyCapture({ id: ids(6) }), { skip: ['video.mov'] })
+      await t.run(async (ctx) => {
+        for (const j of await ctx.db.query('jobs').collect()) if (j.status !== 'done') await ctx.db.patch(j._id, { status: 'failed' })
+      })
+
+      vi.setSystemTime(Date.now() + 6 * DAY)
+      expect(await t.mutation(internal.captures.sweepAbandoned, {})).toEqual([])
+      await upload(t, ids(6), 'video.mov', tinyCapture().files['video.mov'])
+      vi.setSystemTime(Date.now() + 2 * DAY)
+      const removed = await t.mutation(internal.captures.sweepAbandoned, {})
+      expect(removed.sort()).toEqual([ids(1), lost.captureId].sort())
+      const left = (await t.query(api.captures.list, {})).map((c) => c.id)
+      expect(left.sort()).toEqual([ids(2), ids(3), video.captureId, ids(6)].sort())
+      vi.useRealTimers()
+      await runScheduled(t)
+      expect([...bucket.keys()].some((k) => k.includes(ids(1)))).toBe(false)
+      expect([...bucket.keys()].some((k) => k.includes(ids(2)))).toBe(true)
+      // The tombstones are gone, so the same id could be uploaded again.
+      expect(await t.run(async (ctx) => (await ctx.db.query('captures').collect()).filter((c) => c.deleting))).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

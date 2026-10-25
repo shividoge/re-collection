@@ -87,10 +87,8 @@ struct Uploader {
                 do {
                     let resumed = try await convex.resumeUpload(uploadId: uploadId)
                     return FilePlan(index: i, name: file.name, bytes: file.bytes, target: resumed.target, done: resumed.done)
-                } catch let error as UploadError where error.isRetryable {
-                    throw error
-                } catch {
-                    // The old upload is gone (aborted or expired); start this file over.
+                } catch where Self.shouldRestart(afterResumeFailed: error) {
+                    // The old upload is gone (aborted, expired or already finished); start this file over.
                 }
             }
             let target = try await convex.startUpload(captureId: captureId, name: file.name, bytes: file.bytes)
@@ -164,6 +162,17 @@ struct Uploader {
 
         // 4. Every file is in; Convex checks the package against the manifest.
         try await convex.complete(captureId: captureId)
+    }
+
+    /// Whether a failed `uploads:resume` means the old upload is gone, so the
+    /// file starts over with `uploads:start`. Only the backend can say that, with
+    /// a non-retryable function error (`not_found`, "already finished", R2 no
+    /// longer knowing the multipart upload). Anything else (network, 5xx, a
+    /// storage hiccup marked retryable, cancellation) keeps the upload id and
+    /// fails the round, so the parts already in R2 aren't thrown away.
+    static func shouldRestart(afterResumeFailed error: Error) -> Bool {
+        if case .convex(_, _, _, _, retryable: false) = error as? UploadError { return true }
+        return false
     }
 
     /// Waits for one file's PUTs, then finishes the upload. Returns the first

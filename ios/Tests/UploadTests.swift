@@ -91,7 +91,7 @@ final class ConvexClientTests: XCTestCase {
     func testFunctionErrorsKeepTheirMessage() {
         let data = Data(#"{"status":"error","errorMessage":"Uncaught Error: no such capture","logLines":[]}"#.utf8)
         XCTAssertThrowsError(try ConvexClient.parse(data, status: 560, path: "uploads:start") as Captured) { error in
-            XCTAssertEqual(error as? UploadError, .convex(function: "uploads:start", message: "Uncaught Error: no such capture", code: nil, details: []))
+            XCTAssertEqual(error as? UploadError, .convex(function: "uploads:start", message: "Uncaught Error: no such capture", code: nil, details: [], retryable: false))
             XCTAssertFalse((error as? UploadError)?.isRetryable ?? true)
         }
     }
@@ -106,7 +106,30 @@ final class ConvexClientTests: XCTestCase {
     func testOddErrorDataStillGivesTheMessage() {
         let data = Data(#"{"status":"error","errorMessage":"boom","errorData":"just a string"}"#.utf8)
         XCTAssertThrowsError(try ConvexClient.parse(data, status: 560, path: "uploads:finish") as Captured) { error in
-            XCTAssertEqual(error as? UploadError, .convex(function: "uploads:finish", message: "boom", code: nil, details: []))
+            XCTAssertEqual(error as? UploadError, .convex(function: "uploads:finish", message: "boom", code: nil, details: [], retryable: false))
+        }
+    }
+
+    func testTheBackendDecidesWhetherAFunctionErrorIsRetried() {
+        let storage = Data(#"{"status":"error","errorMessage":"storage","errorData":{"code":"storage","message":"R2 list failed: HTTP 503","retryable":true}}"#.utf8)
+        XCTAssertThrowsError(try ConvexClient.parse(storage, status: 560, path: "uploads:resume") as Captured) { error in
+            XCTAssertEqual(error as? UploadError, .convex(function: "uploads:resume", message: "storage", code: "storage", details: [], retryable: true))
+            XCTAssertTrue((error as? UploadError)?.isRetryable ?? false)
+        }
+        let refused = Data(#"{"status":"error","errorMessage":"claude","errorData":{"code":"claude","message":"bad request","retryable":false}}"#.utf8)
+        XCTAssertThrowsError(try ConvexClient.parse(refused, status: 560, path: "uploads:resume") as Captured) { error in
+            XCTAssertFalse((error as? UploadError)?.isRetryable ?? true)
+        }
+        // No `retryable` (not_found, invalid) means no.
+        let gone = Data(#"{"status":"error","errorMessage":"gone","errorData":{"code":"not_found","message":"No upload u1."}}"#.utf8)
+        XCTAssertThrowsError(try ConvexClient.parse(gone, status: 560, path: "uploads:resume") as Captured) { error in
+            XCTAssertEqual(error as? UploadError, .convex(function: "uploads:resume", message: "gone", code: "not_found", details: [], retryable: false))
+            XCTAssertFalse((error as? UploadError)?.isRetryable ?? true)
+        }
+        // A `retryable` that isn't a Bool is ignored, not a reason to fail parsing.
+        let odd = Data(#"{"status":"error","errorMessage":"odd","errorData":{"code":"storage","retryable":"yes"}}"#.utf8)
+        XCTAssertThrowsError(try ConvexClient.parse(odd, status: 560, path: "uploads:resume") as Captured) { error in
+            XCTAssertEqual(error as? UploadError, .convex(function: "uploads:resume", message: "odd", code: "storage", details: [], retryable: false))
         }
     }
 
@@ -139,6 +162,30 @@ final class ConvexClientTests: XCTestCase {
         let args = try XCTUnwrap(json["args"] as? [String: Any])
         XCTAssertEqual(args["uploadId"] as? String, "u")
         XCTAssertNil(args["parts"])   // omitted, not null, for a single PUT
+    }
+}
+
+final class UploaderResumeTests: XCTestCase {
+    private func convex(_ code: String?, retryable: Bool) -> UploadError {
+        .convex(function: "uploads:resume", message: "m", code: code, details: [], retryable: retryable)
+    }
+
+    func testOnlyAGoneUploadStartsTheFileOver() {
+        // The backend says the old upload is gone or finished: start a new one.
+        XCTAssertTrue(Uploader.shouldRestart(afterResumeFailed: convex("not_found", retryable: false)))
+        XCTAssertTrue(Uploader.shouldRestart(afterResumeFailed: convex("invalid", retryable: false)))
+        XCTAssertTrue(Uploader.shouldRestart(afterResumeFailed: convex("storage", retryable: false)))   // R2 NoSuchUpload
+        XCTAssertTrue(Uploader.shouldRestart(afterResumeFailed: convex(nil, retryable: false)))
+    }
+
+    func testPassingTroubleKeepsTheUploadAndItsParts() {
+        XCTAssertFalse(Uploader.shouldRestart(afterResumeFailed: convex("storage", retryable: true)))
+        XCTAssertFalse(Uploader.shouldRestart(afterResumeFailed: UploadError.network("offline")))
+        XCTAssertFalse(Uploader.shouldRestart(afterResumeFailed: UploadError.http(status: 503, function: "uploads:resume", message: nil)))
+        XCTAssertFalse(Uploader.shouldRestart(afterResumeFailed: CancellationError()))
+        // Not the backend saying the upload is gone, so it isn't thrown away either.
+        XCTAssertFalse(Uploader.shouldRestart(afterResumeFailed: UploadError.http(status: 400, function: "uploads:resume", message: nil)))
+        XCTAssertFalse(Uploader.shouldRestart(afterResumeFailed: UploadError.unexpected("x")))
     }
 }
 

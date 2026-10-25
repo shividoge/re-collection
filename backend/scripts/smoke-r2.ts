@@ -83,16 +83,16 @@ try {
   check(await client.action(api.uploads.finish, { uploadId: short.uploadId }).then(() => false, (e: Error) => /didn't arrive/.test(e.message)), "finish refuses an upload that didn't arrive")
 
   await timed('captures.complete', () => client.action(api.captures.complete, { captureId: id }))
-  const job = await client.mutation(api.worker.claim, { token, workerId: WORKER, kinds: ['bake'], gpu: false })
+  const job = await client.mutation(api.worker.claim, { token, workerId: WORKER, kinds: ['bake'], gpu: false, protocol: 2 })
   if (!job || job.captureId !== id) {
     check(false, `claimed this capture's bake job (got ${job ? `${job.kind} for ${job.captureId}` : 'nothing'}; a live bake worker may have taken it)`)
-    if (job) await client.mutation(api.worker.fail, { token, jobId: job.jobId, error: 'Claimed by the R2 smoke test by mistake; re-queued.', retryable: true })
+    if (job) await client.mutation(api.worker.fail, { token, jobId: job.jobId, attempt: job.attempt, error: 'Claimed by the R2 smoke test by mistake; re-queued.', retryable: true })
   } else {
-    const [out] = await client.action(api.worker.outputUrls, { token, jobId: job.jobId, files: [{ name: 'points.pack', bytes: points.length, contentType: 'application/octet-stream', contentEncoding: 'gzip', area: 'derived' }] })
+    const [out] = await client.action(api.worker.outputUrls, { token, jobId: job.jobId, attempt: job.attempt, files: [{ name: 'points.pack', bytes: points.length, contentType: 'application/octet-stream', contentEncoding: 'gzip', area: 'derived' }] })
     check(Boolean(out.target.parts?.length), `gzip output is multipart (${out.target.parts?.length} parts)`)
     const parts = await timed(`upload points.pack gzip (${(points.length / 1024 ** 2).toFixed(1)} MB)`, () => put(out.target, points))
-    await client.action(api.worker.finishOutput, { token, jobId: job.jobId, uploadId: out.target.uploadId, ...(parts ? { parts } : {}) })
-    await client.mutation(api.worker.fail, { token, jobId: job.jobId, error: 'R2 smoke test: not a real bake.', retryable: false })
+    await client.action(api.worker.finishOutput, { token, jobId: job.jobId, attempt: job.attempt, uploadId: out.target.uploadId, ...(parts ? { parts } : {}) })
+    await client.mutation(api.worker.fail, { token, jobId: job.jobId, attempt: job.attempt, error: 'R2 smoke test: not a real bake.', retryable: false })
   }
 
   const detail = await timed('captures.get (signs every URL in the query)', () => client.query(api.captures.get, { captureId: id }))

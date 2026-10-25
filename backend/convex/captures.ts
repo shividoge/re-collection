@@ -2,10 +2,11 @@ import { ConvexError, v } from 'convex/values'
 import { parseManifest } from '../../shared/manifest'
 import { internal } from './_generated/api'
 import type { Doc } from './_generated/dataModel'
-import { action, internalAction, internalMutation, mutation, query } from './_generated/server'
-import { getCapture, getFile, getMomentDoc, initialStatus, invalid, listFiles, manifestOf, requireCapture } from './lib/data'
+import { action, internalAction, internalMutation, mutation, query, type MutationCtx } from './_generated/server'
+import { conflict, getCapture, getFile, getMomentDoc, initialStatus, invalid, listFiles, manifestOf, requireCapture } from './lib/data'
 import { abortMultipart, deletePrefix, r2Config, r2ConfigOrNull, stableGetUrl, type R2Config } from './lib/r2'
 import { completeUpload } from './lib/stages'
+import { isSourceName } from './lib/validate'
 import { captureStatus, derived, fileUrl } from './validators'
 
 export const namedFile = v.object({ name: v.string(), ...fileUrl.fields })
@@ -31,6 +32,8 @@ export const captureDetail = v.object({
   derived: v.union(derived, v.null()),
   /** Derived files (names as in derived.files), presigned GET URLs. */
   derivedFiles: v.array(namedFile),
+  /** A video capture's uploaded source (`source.<ext>` under videos/<id>/), or null. */
+  sourceVideo: v.union(namedFile, v.null()),
 })
 
 /** Presigned, day-stable GET URLs for files (architecture-v3.md §6.4). */
@@ -63,7 +66,7 @@ export const begin = mutation({
       durationSec: manifest.video.durationSec ?? 0,
     }
     const existing = await ctx.db.query('captures').withIndex('by_captureId', (q) => q.eq('captureId', manifest.id)).unique()
-    if (existing?.deleting) throw invalid('This capture is being deleted.')
+    if (existing?.deleting) throw conflict('This capture was just deleted and its files are still being removed. Try again in a minute.')
     if (existing) {
       // Keep a splat the splat job added, if this manifest doesn't bring one.
       const splat = manifestOf(existing)?.room?.splat
@@ -135,7 +138,8 @@ export const get = query({
     if (!capture) return null
     const raw = await listFiles(ctx, capture.captureId, 'raw')
     const derivedRows = await listFiles(ctx, capture.captureId, 'derived')
-    const cfg = raw.length || derivedRows.length ? r2Config() : null
+    const videoRows = (await listFiles(ctx, capture.captureId, 'video')).filter((f) => isSourceName(f.name))
+    const cfg = raw.length || derivedRows.length || videoRows.length ? r2Config() : null
     return {
       id: capture.captureId,
       manifestJson: capture.manifestJson,
@@ -144,6 +148,7 @@ export const get = query({
       files: cfg ? signFiles(cfg, raw) : [],
       derived: capture.derived,
       derivedFiles: cfg ? signFiles(cfg, derivedRows) : [],
+      sourceVideo: cfg ? (signFiles(cfg, videoRows)[0] ?? null) : null,
     }
   },
 })
@@ -158,46 +163,104 @@ export const setPublic = mutation({
   },
 })
 
-/** Deletes the capture's rows now; a scheduled action deletes its R2 objects. */
+/**
+ * Deletes the capture's rows now and leaves a tombstone (`deleting`), so the id can't be used
+ * again until a scheduled action has deleted its R2 objects; that action then drops the tombstone.
+ */
 export const remove = mutation({
   args: { captureId: v.string() },
   returns: v.object({ ok: v.literal(true) }),
   handler: async (ctx, { captureId }) => {
-    const capture = await requireCapture(ctx, captureId)
-    const id = capture.captureId
-    const openUploads: { key: string; uploadId: string }[] = []
-    for (const u of await ctx.db.query('uploads').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()) {
-      if (u.status === 'open' && u.r2UploadId) openUploads.push({ key: u.key, uploadId: u.r2UploadId })
-      await ctx.db.delete(u._id)
-    }
-    for (const f of await listFiles(ctx, id)) await ctx.db.delete(f._id)
-    for (const j of await ctx.db.query('jobs').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()) await ctx.db.delete(j._id)
-    for (const s of await ctx.db.query('sessions').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()) await ctx.db.delete(s._id)
-    const moment = await getMomentDoc(ctx, id)
-    if (moment) await ctx.db.delete(moment._id)
-    const arrangement = await ctx.db.query('museumArrangement').first()
-    if (arrangement?.items.some((i) => i.capture === id)) {
-      await ctx.db.patch(arrangement._id, { items: arrangement.items.filter((i) => i.capture !== id), updatedAt: new Date().toISOString() })
-    }
-    await ctx.db.delete(capture._id)
-    await ctx.scheduler.runAfter(0, internal.captures.purge, { captureId: id, openUploads })
+    await removeCapture(ctx, await requireCapture(ctx, captureId))
     return { ok: true as const }
   },
 })
 
-/** Deletes a removed capture's objects from R2. */
+/** Deletes a capture's rows, leaves the tombstone and schedules the purge (captures.remove, the abandoned sweep). */
+async function removeCapture(ctx: MutationCtx, capture: Doc<'captures'>): Promise<void> {
+  const id = capture.captureId
+  const openUploads: { key: string; uploadId: string }[] = []
+  for (const u of await ctx.db.query('uploads').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()) {
+    if (u.status === 'open' && u.r2UploadId) openUploads.push({ key: u.key, uploadId: u.r2UploadId })
+    await ctx.db.delete(u._id)
+  }
+  for (const f of await listFiles(ctx, id)) await ctx.db.delete(f._id)
+  for (const j of await ctx.db.query('jobs').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()) await ctx.db.delete(j._id)
+  for (const s of await ctx.db.query('sessions').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()) await ctx.db.delete(s._id)
+  const moment = await getMomentDoc(ctx, id)
+  if (moment) await ctx.db.delete(moment._id)
+  const arrangement = await ctx.db.query('museumArrangement').first()
+  if (arrangement?.items.some((i) => i.capture === id)) {
+    await ctx.db.patch(arrangement._id, { items: arrangement.items.filter((i) => i.capture !== id), updatedAt: new Date().toISOString() })
+  }
+  await ctx.db.patch(capture._id, { deleting: true })
+  await ctx.scheduler.runAfter(0, internal.captures.purge, { captureId: id, openUploads })
+}
+
+/** An upload nobody has touched for this long is abandoned. */
+export const ABANDONED_MS = 7 * 24 * 3600_000
+
+/**
+ * The daily sweep: removes captures whose upload was started but abandoned (still receiving, no
+ * file, upload or status change for 7 days, nothing queued or running). Never one with a session,
+ * reviewed facts, or (video) an uploaded source, since those hold someone's work.
+ */
+export const sweepAbandoned = internalMutation({
+  args: {},
+  returns: v.array(v.string()),
+  handler: async (ctx) => {
+    const cutoff = Date.now() - ABANDONED_MS
+    const removed: string[] = []
+    for (const c of await ctx.db.query('captures').collect()) {
+      if (c.deleting || c.status.upload !== 'receiving' || c.status.updatedAt > cutoff) continue
+      const id = c.captureId
+      const files = await listFiles(ctx, id)
+      if (files.some((f) => f.createdAt > cutoff || f.area === 'video')) continue
+      const uploads = await ctx.db.query('uploads').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()
+      if (uploads.some((u) => u.createdAt > cutoff)) continue
+      const jobs = await ctx.db.query('jobs').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()
+      if (jobs.some((j) => j.status === 'queued' || j.status === 'leased')) continue
+      if (await ctx.db.query('sessions').withIndex('by_capture', (q) => q.eq('captureId', id)).first()) continue
+      if ((await getMomentDoc(ctx, id))?.facts.some((f) => f.status !== 'pending')) continue
+      await removeCapture(ctx, c)
+      removed.push(id)
+    }
+    if (removed.length) console.log(`Removed ${removed.length} abandoned upload(s): ${removed.join(', ')}`)
+    return removed
+  },
+})
+
+/** Deletes a removed capture's objects from R2, then its tombstone. Retried until it works. */
 export const purge = internalAction({
-  args: { captureId: v.string(), openUploads: v.array(v.object({ key: v.string(), uploadId: v.string() })) },
+  args: { captureId: v.string(), openUploads: v.array(v.object({ key: v.string(), uploadId: v.string() })), retry: v.optional(v.number()) },
   returns: v.null(),
-  handler: async (_ctx, { captureId, openUploads }) => {
+  handler: async (ctx, { captureId, openUploads, retry = 0 }) => {
     const cfg = r2ConfigOrNull()
     if (!cfg) {
       console.error(`R2 isn't configured, so the files of deleted capture ${captureId} were left in the bucket.`)
-      return null
+    } else {
+      try {
+        for (const u of openUploads) await abortMultipart(cfg, u.key, u.uploadId)
+        const deleted = (await deletePrefix(cfg, `captures/${captureId}/`)) + (await deletePrefix(cfg, `videos/${captureId}/`))
+        console.log(`Deleted ${deleted} objects of capture ${captureId}.`)
+      } catch (error) {
+        const waitMs = Math.min(60_000 * 2 ** retry, 3_600_000)
+        console.error(`Deleting the files of capture ${captureId} failed (trying again in ${waitMs / 1000} s): ${error instanceof Error ? error.message : String(error)}`)
+        await ctx.scheduler.runAfter(waitMs, internal.captures.purge, { captureId, openUploads, retry: retry + 1 })
+        return null
+      }
     }
-    for (const u of openUploads) await abortMultipart(cfg, u.key, u.uploadId)
-    const deleted = (await deletePrefix(cfg, `captures/${captureId}/`)) + (await deletePrefix(cfg, `videos/${captureId}/`))
-    console.log(`Deleted ${deleted} objects of capture ${captureId}.`)
+    await ctx.runMutation(internal.captures.dropTombstone, { captureId })
+    return null
+  },
+})
+
+export const dropTombstone = internalMutation({
+  args: { captureId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { captureId }) => {
+    const row = await ctx.db.query('captures').withIndex('by_captureId', (q) => q.eq('captureId', captureId)).unique()
+    if (row?.deleting) await ctx.db.delete(row._id)
     return null
   },
 })

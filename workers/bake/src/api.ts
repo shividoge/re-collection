@@ -29,6 +29,35 @@ export function convexWorkerApi(url: string, token: string): WorkerApi {
   }
 }
 
+/** The backend refused a call because this attempt no longer holds the job's lease. */
+export function isCancelled(error: unknown): boolean {
+  const data = (error as { data?: unknown } | null)?.data
+  return typeof data === 'object' && data !== null && (data as { code?: unknown }).code === 'cancelled'
+}
+
+/** A Convex call that took longer than its deadline. */
+export class CallTimeout extends Error {}
+
+/**
+ * Waits for `call` at most `ms`, and no longer once `signal` aborts (rejecting with its reason).
+ * ConvexHttpClient can't cancel a request, so this only stops waiting: a lease the call may have
+ * changed meanwhile is left to the backend's reaper.
+ */
+export function bounded<T>(call: Promise<T>, what: string, ms: number, signal?: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason)
+    const onAbort = () => finish(() => reject(signal!.reason))
+    const timer = setTimeout(() => finish(() => reject(new CallTimeout(`${what} didn't answer within ${Math.round(ms / 1000)} s.`))), ms)
+    function finish(settle: () => void) {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      settle()
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+    call.then((v) => finish(() => resolve(v)), (e: unknown) => finish(() => reject(e)))
+  })
+}
+
 /** system.health, to see whether the backend is deployed. */
 export function health(url: string): Promise<{ ok: true; mock: boolean; workers: unknown[] }> {
   return new ConvexHttpClient(url).query(api.system.health, {})

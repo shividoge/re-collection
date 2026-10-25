@@ -7,7 +7,8 @@ import type { Fact, Moment, Session } from '../convex/validators'
 /** Files the guide wrote itself, partial uploads and Mac litter: never uploaded. */
 export function isPackageFile(name: string): boolean {
   const base = name.split('/').pop() ?? ''
-  if (name === 'status.json' || name === 'moment.json') return false
+  // room.ply is the cloud for desktop viewers; v3 doesn't store it (room.bin and the bake replace it).
+  if (name === 'status.json' || name === 'moment.json' || name === 'room.ply') return false
   if (base.startsWith('.') || base.endsWith('.part') || base.endsWith('.tmp')) return false
   return /^(?:keyframes\/)?[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) && !name.includes('..')
 }

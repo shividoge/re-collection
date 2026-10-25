@@ -3,7 +3,8 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { Id } from './_generated/dataModel'
 import { STOPPED_RESPONDING } from './lib/jobs'
-import { CAPTURE_ID, TOKEN, api, internal, runScheduled, setup, statusOf, tinyCapture, uploadCapture, type Bytes, type T } from './test.helpers'
+import { convertFrames } from './lib/validate'
+import { CAPTURE_ID, JPEG, TOKEN, api, bucket, internal, runScheduled, setup, statusOf, tinyCapture, uploadCapture, type Bytes, type T } from './test.helpers'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -11,9 +12,9 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const cpu = { token: TOKEN, workerId: 'fedora-bake', kinds: ['bake' as const], gpu: false }
-const fedoraGpu = { token: TOKEN, workerId: 'fedora-gpu', kinds: ['convert' as const, 'splat' as const], gpu: true, maxFrames: 67 }
-const gx10 = { token: TOKEN, workerId: 'gx10', kinds: ['convert' as const, 'splat' as const, 'bake' as const], gpu: true, maxFrames: 240 }
+const cpu = { token: TOKEN, workerId: 'fedora-bake', kinds: ['bake' as const], gpu: false, protocol: 2 }
+const fedoraGpu = { token: TOKEN, workerId: 'fedora-gpu', kinds: ['convert' as const, 'splat' as const], gpu: true, maxFrames: 67, protocol: 2 }
+const gx10 = { token: TOKEN, workerId: 'gx10', kinds: ['convert' as const, 'splat' as const, 'bake' as const], gpu: true, maxFrames: 240, protocol: 2 }
 
 async function completedCapture(): Promise<T> {
   const t = setup()
@@ -24,12 +25,16 @@ async function completedCapture(): Promise<T> {
 
 const jobRow = (t: T, jobId: Id<'jobs'>) => t.run(async (ctx) => ctx.db.get(jobId))
 
+/** What every worker call after claim carries: the token, the job and the attempt. */
+type Claimed = { jobId: Id<'jobs'>; attempt: number }
+const as = (c: Claimed | null) => ({ token: TOKEN, jobId: c!.jobId, attempt: c!.attempt })
+
 /** PUTs every target a worker got and finishes it. */
-async function writeOutputs(t: T, jobId: Id<'jobs'>, files: { name: string; area: 'raw' | 'derived'; bytes: Bytes; contentType: string; contentEncoding?: string }[]) {
-  const targets = await t.action(api.worker.outputUrls, { token: TOKEN, jobId, files: files.map(({ bytes, ...f }) => ({ ...f, bytes: bytes.length })) })
+async function writeOutputs(t: T, c: Claimed, files: { name: string; area: 'raw' | 'derived'; bytes: Bytes; contentType: string; contentEncoding?: string }[]) {
+  const targets = await t.action(api.worker.outputUrls, { ...as(c), files: files.map(({ bytes, ...f }) => ({ ...f, bytes: bytes.length })) })
   for (const [i, { target }] of targets.entries()) {
     await fetch(target.single!.url, { method: 'PUT', headers: target.single!.headers, body: files[i].bytes })
-    await t.action(api.worker.finishOutput, { token: TOKEN, jobId, uploadId: target.uploadId })
+    await t.action(api.worker.finishOutput, { ...as(c), uploadId: target.uploadId })
   }
   return targets
 }
@@ -39,9 +44,9 @@ describe('worker protocol', () => {
     const t = await completedCapture()
     await expect(t.mutation(api.worker.claim, { ...cpu, token: 'nope' })).rejects.toThrow(/Wrong worker token/)
     const job = await t.mutation(api.worker.claim, cpu)
-    await expect(t.mutation(api.worker.heartbeat, { token: 'nope', jobId: job!.jobId })).rejects.toThrow(/Wrong worker token/)
-    await expect(t.action(api.worker.inputs, { token: '', jobId: job!.jobId })).rejects.toThrow(/Wrong worker token/)
-    await expect(t.mutation(api.worker.fail, { token: 'x', jobId: job!.jobId, error: 'e', retryable: false })).rejects.toThrow(/token/)
+    await expect(t.mutation(api.worker.heartbeat, { ...as(job), token: 'nope' })).rejects.toThrow(/Wrong worker token/)
+    await expect(t.action(api.worker.inputs, { ...as(job), token: '' })).rejects.toThrow(/Wrong worker token/)
+    await expect(t.mutation(api.worker.fail, { ...as(job), token: 'x', error: 'e', retryable: false })).rejects.toThrow(/token/)
     vi.stubEnv('WORKER_TOKEN', '')
     await expect(t.mutation(api.worker.claim, cpu)).rejects.toThrow(/WORKER_TOKEN isn't set/)
   })
@@ -55,12 +60,12 @@ describe('worker protocol', () => {
     expect((await statusOf(t))?.bake).toBe('running')
     const jobId = claimed!.jobId
 
-    const inputs = await t.action(api.worker.inputs, { token: TOKEN, jobId })
+    const inputs = await t.action(api.worker.inputs, as(claimed))
     expect(inputs.files.map((f) => f.name)).toContain('depth.bin')
     expect(inputs.files.every((f) => f.area === 'raw' && f.url.startsWith('https://r2.test/'))).toBe(true)
 
     const progress = { stage: 'surface', fraction: 0.5, message: 'Building the room surface' }
-    expect(await t.mutation(api.worker.heartbeat, { token: TOKEN, jobId, progress })).toEqual({ ok: true, cancelled: false })
+    expect(await t.mutation(api.worker.heartbeat, { ...as(claimed), progress })).toEqual({ ok: true, cancelled: false })
     expect((await statusOf(t))?.progress).toEqual(progress)
     expect((await t.query(api.system.health, {})).workers.map((w) => w.workerId)).toEqual(['fedora-bake', 'fedora-gpu'])
 
@@ -68,17 +73,20 @@ describe('worker protocol', () => {
       format: 'braindance.derived' as const, version: 1, captureId: CAPTURE_ID, bakedAt: '2026-10-24T23:00:00Z', bakeVersion: 'test',
       files: { points: 'points.pack' }, stats: { points: 2, bakeMs: 5 },
     }
-    await expect(t.mutation(api.worker.complete, { token: TOKEN, jobId, result: { kind: 'bake', derived: derivedMeta } })).rejects.toThrow(/points\.pack isn't uploaded/)
-    const targets = await writeOutputs(t, jobId, [{ name: 'points.pack', area: 'derived', bytes: new Uint8Array(64), contentType: 'application/octet-stream', contentEncoding: 'gzip' }])
-    expect(targets[0].target.key).toBe(`captures/${CAPTURE_ID}/derived/points.pack`)
+    await expect(t.mutation(api.worker.complete, { ...as(claimed), result: { kind: 'bake', derived: derivedMeta } })).rejects.toThrow(/points\.pack wasn't uploaded by this attempt/)
+    const targets = await writeOutputs(t, claimed!, [{ name: 'points.pack', area: 'derived', bytes: new Uint8Array(64), contentType: 'application/octet-stream', contentEncoding: 'gzip' }])
+    expect(targets[0].target.key).toBe(`captures/${CAPTURE_ID}/derived/${jobId}.1/points.pack`)
     expect(targets[0].target.single?.headers['Content-Encoding']).toBe('gzip')
-    await t.mutation(api.worker.complete, { token: TOKEN, jobId, result: { kind: 'bake', derived: derivedMeta } })
+    expect((await t.query(api.captures.get, { captureId: CAPTURE_ID }))?.derivedFiles).toEqual([]) // staged, not published yet
+    await t.mutation(api.worker.complete, { ...as(claimed), result: { kind: 'bake', derived: derivedMeta } })
+    // A retried complete (its answer was lost) gets the same answer.
+    expect(await t.mutation(api.worker.complete, { ...as(claimed), result: { kind: 'bake', derived: derivedMeta } })).toEqual({ ok: true })
 
     const detail = await t.query(api.captures.get, { captureId: CAPTURE_ID })
     expect(detail?.status).toMatchObject({ bake: 'done', progress: null, upload: 'done' }) // worker outputs don't re-open the upload
     expect(detail?.derived?.files.points).toBe('points.pack')
     expect(detail?.derivedFiles.map((f) => f.name)).toEqual(['points.pack'])
-    expect(await t.mutation(api.worker.heartbeat, { token: TOKEN, jobId })).toEqual({ ok: false, cancelled: true })
+    expect(await t.mutation(api.worker.heartbeat, as(claimed))).toEqual({ ok: false, cancelled: true })
   })
 
   test('an expired lease is re-queued by the cron; three strikes fail the job', async () => {
@@ -109,7 +117,7 @@ describe('worker protocol', () => {
     for (let i = 0; i < 5; i++) {
       now += 100_000
       vi.setSystemTime(now)
-      await t.mutation(api.worker.heartbeat, { token: TOKEN, jobId: job!.jobId })
+      await t.mutation(api.worker.heartbeat, as(job))
       expect(await t.mutation(internal.jobsCron.reap, {})).toBe(0)
     }
     expect((await jobRow(t, job!.jobId))?.status).toBe('leased')
@@ -119,7 +127,7 @@ describe('worker protocol', () => {
     const t = await completedCapture()
     for (let attempt = 1; attempt <= 3; attempt++) {
       const job = await t.mutation(api.worker.claim, cpu)
-      await t.mutation(api.worker.fail, { token: TOKEN, jobId: job!.jobId, error: `disk full (${attempt})`, retryable: true })
+      await t.mutation(api.worker.fail, { ...as(job), error: `disk full (${attempt})`, retryable: true })
     }
     const status = await statusOf(t)
     expect(status?.bake).toBe('failed')
@@ -130,7 +138,7 @@ describe('worker protocol', () => {
     expect((await statusOf(t))?.bake).toBe('queued')
     expect((await statusOf(t))?.errors.bake).toBeUndefined()
     const job = await t.mutation(api.worker.claim, cpu)
-    await t.mutation(api.worker.fail, { token: TOKEN, jobId: job!.jobId, error: 'frames.jsonl has 2 moment lines, expected 3.', retryable: false })
+    await t.mutation(api.worker.fail, { ...as(job), error: 'frames.jsonl has 2 moment lines, expected 3.', retryable: false })
     expect(await statusOf(t)).toMatchObject({ bake: 'failed', errors: { bake: 'frames.jsonl has 2 moment lines, expected 3.' } })
   })
 
@@ -142,22 +150,113 @@ describe('worker protocol', () => {
     await t.mutation(internal.jobsCron.reap, {})
     const fresh = await t.mutation(api.worker.claim, gx10)
     expect(fresh).toMatchObject({ jobId: stale!.jobId, attempt: 2 })
-    expect(await t.mutation(api.worker.heartbeat, { token: TOKEN, jobId: stale!.jobId, attempt: 1 })).toEqual({ ok: false, cancelled: true })
-    await t.mutation(api.worker.fail, { token: TOKEN, jobId: stale!.jobId, error: 'stale', retryable: false, attempt: 1 })
+    expect(await t.mutation(api.worker.heartbeat, as(stale))).toEqual({ ok: false, cancelled: true })
+    await expect(t.mutation(api.worker.fail, { ...as(stale), error: 'stale', retryable: false })).rejects.toThrow(/doesn't hold the lease/)
     expect((await jobRow(t, stale!.jobId))?.status).toBe('leased')
     const derivedMeta = { format: 'braindance.derived' as const, version: 1, captureId: CAPTURE_ID, bakedAt: 'x', bakeVersion: 'x', files: { points: 'p.pack' }, stats: { points: 1, bakeMs: 1 } }
-    await t.mutation(api.worker.complete, { token: TOKEN, jobId: stale!.jobId, result: { kind: 'bake', derived: derivedMeta }, attempt: 1 })
+    await expect(t.mutation(api.worker.complete, { ...as(stale), result: { kind: 'bake', derived: derivedMeta } })).rejects.toThrow(/doesn't hold the lease/)
+    await expect(t.action(api.worker.inputs, as(stale))).rejects.toThrow(/doesn't hold the lease/)
+    await expect(t.action(api.worker.outputUrls, { ...as(stale), files: [] })).rejects.toThrow(/doesn't hold the lease/)
     expect((await t.query(api.captures.get, { captureId: CAPTURE_ID }))?.derived).toBeNull()
-    expect(await t.mutation(api.worker.heartbeat, { token: TOKEN, jobId: fresh!.jobId, attempt: 2 })).toEqual({ ok: true, cancelled: false })
+    expect(await t.mutation(api.worker.heartbeat, as(fresh))).toEqual({ ok: true, cancelled: false })
+  })
+
+  test('an outdated worker (no protocol 2) is refused at claim and takes nothing', async () => {
+    const t = await completedCapture()
+    const { protocol: _, ...old } = cpu
+    await expect(t.mutation(api.worker.claim, old)).rejects.toThrow(/job protocol 1, but the backend needs 2/)
+    expect((await statusOf(t))?.bake).toBe('queued')
+  })
+
+  test('every call after claim needs the attempt', async () => {
+    const t = await completedCapture()
+    const job = await t.mutation(api.worker.claim, cpu)
+    const noAttempt = { token: TOKEN, jobId: job!.jobId }
+    // The validators refuse a call without `attempt` (the old protocol skipped the ownership check).
+    await expect(t.mutation(api.worker.heartbeat, noAttempt as never)).rejects.toThrow(/attempt/)
+    await expect(t.mutation(api.worker.fail, { ...noAttempt, error: 'e', retryable: true } as never)).rejects.toThrow(/attempt/)
+    await expect(t.action(api.worker.inputs, noAttempt as never)).rejects.toThrow(/attempt/)
+    expect((await jobRow(t, job!.jobId))?.status).toBe('leased')
+  })
+
+  test("a stale attempt's late upload can't touch the winner's files, and its outputs are deleted", async () => {
+    const t = await completedCapture()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const stale = await t.mutation(api.worker.claim, cpu)
+    const file = (bytes: Bytes) => [{ name: 'points.pack', area: 'derived' as const, bytes, contentType: 'application/octet-stream' }]
+    const [staleOut] = await t.action(api.worker.outputUrls, { ...as(stale), files: [{ name: 'points.pack', area: 'derived', bytes: 64, contentType: 'application/octet-stream' }] })
+    vi.setSystemTime(Date.now() + 121_000)
+    await t.mutation(internal.jobsCron.reap, {})
+    const fresh = await t.mutation(api.worker.claim, gx10)
+    const winner = new Uint8Array(64).fill(7)
+    const [freshOut] = await writeOutputs(t, fresh!, file(winner))
+    expect(freshOut.target.key).not.toBe(staleOut.target.key)
+    const derivedMeta = { format: 'braindance.derived' as const, version: 1, captureId: CAPTURE_ID, bakedAt: 'x', bakeVersion: 'x', files: { points: 'points.pack' }, stats: { points: 1, bakeMs: 1 } }
+    await t.mutation(api.worker.complete, { ...as(fresh), result: { kind: 'bake', derived: derivedMeta } })
+
+    // The stale worker's PUT lands late, then it tries to finish and complete.
+    await fetch(staleOut.target.single!.url, { method: 'PUT', headers: staleOut.target.single!.headers, body: new Uint8Array(64).fill(1) })
+    // (The reap already dropped its upload, so there's nothing left to finish.)
+    await expect(t.action(api.worker.finishOutput, { ...as(stale), uploadId: staleOut.target.uploadId })).rejects.toThrow(/No upload/)
+    await expect(t.mutation(api.worker.complete, { ...as(stale), result: { kind: 'bake', derived: derivedMeta } })).rejects.toThrow(/doesn't hold the lease/)
+
+    const detail = await t.query(api.captures.get, { captureId: CAPTURE_ID })
+    const published = await t.run(async (ctx) => ctx.db.query('files').filter((q) => q.eq(q.field('name'), 'points.pack')).unique())
+    expect(published?.key).toBe(freshOut.target.key)
+    expect(detail?.derivedFiles.map((f) => f.name)).toEqual(['points.pack'])
+    expect(bucket.get(freshOut.target.key)?.bytes).toEqual(winner)
+
+    // The losing attempt's object is deleted, also after a late PUT (a second pass once its URLs expired).
+    vi.useRealTimers()
+    await runScheduled(t)
+    expect(bucket.has(staleOut.target.key)).toBe(false)
+    expect(bucket.get(freshOut.target.key)?.bytes).toEqual(winner)
+    const left = await t.run(async (ctx) => ctx.db.query('uploads').collect())
+    expect(left.filter((u) => u.jobId === stale!.jobId && u.attempt === 1)).toEqual([])
+  })
+
+  test("the sweep never deletes an object a file row uses (uploads from before attempt keys)", async () => {
+    const t = await completedCapture()
+    const job = await t.mutation(api.worker.claim, cpu)
+    const [out] = await writeOutputs(t, job!, [{ name: 'points.pack', area: 'derived', bytes: new Uint8Array(8).fill(3), contentType: 'application/octet-stream' }])
+    const derivedMeta = { format: 'braindance.derived' as const, version: 1, captureId: CAPTURE_ID, bakedAt: 'x', bakeVersion: 'x', files: { points: 'points.pack' }, stats: { points: 1, bakeMs: 1 } }
+    await t.mutation(api.worker.complete, { ...as(job), result: { kind: 'bake', derived: derivedMeta } })
+    // An old-protocol upload left open at the published key, for a job that's long done.
+    await t.run(async (ctx) => {
+      await ctx.db.insert('uploads', { captureId: CAPTURE_ID, area: 'derived', name: 'points.pack', key: out.target.key, bytes: 8, contentType: 'application/octet-stream', status: 'open', jobId: job!.jobId, createdAt: 0 })
+    })
+    await t.mutation(internal.jobsCron.reap, {})
+    await runScheduled(t)
+    expect(bucket.get(out.target.key)?.bytes).toEqual(new Uint8Array(8).fill(3))
+    expect((await t.run(async (ctx) => ctx.db.query('uploads').collect())).filter((u) => u.status === 'open')).toEqual([])
+  })
+
+  test('a re-bake replaces the derived files and deletes the old objects later', async () => {
+    const t = await completedCapture()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }) // so the delayed delete can be run
+    const derivedMeta = { format: 'braindance.derived' as const, version: 1, captureId: CAPTURE_ID, bakedAt: 'x', bakeVersion: 'x', files: { points: 'points.pack' }, stats: { points: 1, bakeMs: 1 } }
+    const keys: string[] = []
+    for (let i = 0; i < 2; i++) {
+      if (i) await t.action(api.captures.complete, { captureId: CAPTURE_ID })
+      const job = await t.mutation(api.worker.claim, cpu)
+      const [out] = await writeOutputs(t, job!, [{ name: 'points.pack', area: 'derived', bytes: new Uint8Array(8).fill(i), contentType: 'application/octet-stream' }])
+      await t.mutation(api.worker.complete, { ...as(job), result: { kind: 'bake', derived: derivedMeta } })
+      keys.push(out.target.key)
+    }
+    const [file] = (await t.query(api.captures.get, { captureId: CAPTURE_ID }))!.derivedFiles
+    expect(file.rev).toBe(2)
+    await t.finishAllScheduledFunctions(() => vi.runAllTimers())
+    expect(bucket.has(keys[0])).toBe(false)
+    expect(bucket.has(keys[1])).toBe(true)
   })
 
   test('a new upload completion supersedes a running bake', async () => {
     const t = await completedCapture()
     const old = await t.mutation(api.worker.claim, cpu)
     await t.action(api.captures.complete, { captureId: CAPTURE_ID })
-    expect(await t.mutation(api.worker.heartbeat, { token: TOKEN, jobId: old!.jobId })).toEqual({ ok: false, cancelled: true })
+    expect(await t.mutation(api.worker.heartbeat, as(old))).toEqual({ ok: false, cancelled: true })
     const derivedMeta = { format: 'braindance.derived' as const, version: 1, captureId: CAPTURE_ID, bakedAt: 'x', bakeVersion: 'x', files: { points: 'p.pack' }, stats: { points: 1, bakeMs: 1 } }
-    await t.mutation(api.worker.complete, { token: TOKEN, jobId: old!.jobId, result: { kind: 'bake', derived: derivedMeta } })
+    await expect(t.mutation(api.worker.complete, { ...as(old), result: { kind: 'bake', derived: derivedMeta } })).rejects.toThrow(/doesn't hold the lease/)
     expect(await statusOf(t)).toMatchObject({ bake: 'queued' })
     const next = await t.mutation(api.worker.claim, cpu)
     expect(next?.jobId).not.toBe(old!.jobId)
@@ -167,7 +266,7 @@ describe('worker protocol', () => {
     const t = await completedCapture()
     const job = await t.mutation(api.worker.claim, cpu)
     await t.mutation(api.captures.remove, { captureId: CAPTURE_ID })
-    expect(await t.mutation(api.worker.heartbeat, { token: TOKEN, jobId: job!.jobId })).toEqual({ ok: false, cancelled: true })
+    expect(await t.mutation(api.worker.heartbeat, as(job))).toEqual({ ok: false, cancelled: true })
   })
 })
 
@@ -189,7 +288,7 @@ describe('old video → capture', () => {
     expect(await t.mutation(api.worker.claim, fedoraGpu)).toBeNull()
     const job = await t.mutation(api.worker.claim, gx10)
     expect(job).toMatchObject({ kind: 'convert', captureId })
-    const inputs = await t.action(api.worker.inputs, { token: TOKEN, jobId: job!.jobId })
+    const inputs = await t.action(api.worker.inputs, as(job))
     expect(inputs.files.map((f) => [f.name, f.area])).toEqual([['source.mov', 'video']])
     expect(JSON.parse(inputs.manifestJson ?? '{}')).toMatchObject({ id: captureId, title: 'Sunday lunch', attendees: ['Priya'], source: 'video' })
 
@@ -197,9 +296,9 @@ describe('old video → capture', () => {
     const pkg = tinyCapture({ id: captureId })
     const manifest = { ...pkg.manifest, source: 'video', title: '' }
     pkg.files['manifest.json'] = new Uint8Array(new TextEncoder().encode(JSON.stringify(manifest)))
-    await writeOutputs(t, job!.jobId, Object.entries(pkg.files).map(([name, bytes]) => ({ name, area: 'raw' as const, bytes, contentType: 'application/octet-stream' })))
-    expect((await statusOf(t, captureId))?.facts).toBe('running') // keyframes + transcript are in: facts already started
-    await t.mutation(api.worker.complete, { token: TOKEN, jobId: job!.jobId, result: { kind: 'convert', manifestJson: JSON.stringify(manifest) } })
+    await writeOutputs(t, job!, Object.entries(pkg.files).map(([name, bytes]) => ({ name, area: 'raw' as const, bytes, contentType: 'application/octet-stream' })))
+    expect((await statusOf(t, captureId))?.facts).toBe('not_started') // staged until the conversion completes
+    await t.mutation(api.worker.complete, { ...as(job), result: { kind: 'convert', manifestJson: JSON.stringify(manifest) } })
     status = await statusOf(t, captureId)
     expect(status).toMatchObject({ convert: 'done', upload: 'done', bake: 'queued', splat: 'queued' })
     expect((await t.query(api.captures.list, {}))[0]).toMatchObject({ id: captureId, title: 'Sunday lunch', source: 'video' })
@@ -208,9 +307,9 @@ describe('old video → capture', () => {
     expect(splatJob?.kind).toBe('bake') // oldest first: bake was queued before splat
     const next = await t.mutation(api.worker.claim, gx10)
     expect(next?.kind).toBe('splat')
-    await writeOutputs(t, next!.jobId, [{ name: 'room.spz', area: 'raw', bytes: new Uint8Array(100), contentType: 'application/octet-stream' }])
+    await writeOutputs(t, next!, [{ name: 'room.spz', area: 'raw', bytes: new Uint8Array(100), contentType: 'application/octet-stream' }])
     const splat = { file: 'room.spz', format: 'spz' as const, count: 1000, shDegree: 0, source: 'trained-from-video' as const }
-    await t.mutation(api.worker.complete, { token: TOKEN, jobId: next!.jobId, result: { kind: 'splat', splat } })
+    await t.mutation(api.worker.complete, { ...as(next), result: { kind: 'splat', splat } })
     const detail = await t.query(api.captures.get, { captureId })
     expect(JSON.parse(detail!.manifestJson).room.splat).toEqual(splat)
     expect(detail?.status.splat).toBe('done')
@@ -225,11 +324,66 @@ describe('old video → capture', () => {
     await t.action(api.uploads.finish, { uploadId: target.uploadId })
     const job = await t.mutation(api.worker.claim, gx10) // unknown length → the cap
     const pkg = tinyCapture({ id: captureId, keyframes: 0, transcript: false })
-    await writeOutputs(t, job!.jobId, [{ name: 'manifest.json', area: 'raw', bytes: pkg.files['manifest.json'], contentType: 'application/json' }])
-    await t.mutation(api.worker.complete, { token: TOKEN, jobId: job!.jobId, result: { kind: 'convert', manifestJson: pkg.manifestJson } })
+    await writeOutputs(t, job!, [{ name: 'manifest.json', area: 'raw', bytes: pkg.files['manifest.json'], contentType: 'application/json' }])
+    await t.mutation(api.worker.complete, { ...as(job), result: { kind: 'convert', manifestJson: pkg.manifestJson } })
     const status = await statusOf(t, captureId)
     expect(status?.convert).toBe('failed')
     expect(status?.errors.convert).toMatch(/incomplete: .*video\.mov is missing/)
     expect(status?.upload).toBe('invalid')
+  })
+})
+
+/** What workers/gpu/client.py and worker.py rely on (the Python worker runs against this backend). */
+describe('GPU worker contract', () => {
+  const codeOf = (e: unknown) => (e as { data?: { code?: string } }).data?.code
+  // client.py LEASE_LOST_CODES: a refusal with one of these codes means "the job isn't ours any more".
+  const LEASE_LOST_CODES = ['not_leased', 'lease_lost', 'lease_expired', 'not_found', 'cancelled']
+
+  async function videoJob(t: T, durationSec?: number) {
+    const { captureId } = await t.mutation(api.videos.create, { title: 'Sunday lunch', attendees: ['Priya', 'Dev'], fileName: 'clip.mp4', bytes: 4, ...(durationSec ? { durationSec } : {}) })
+    const target = await t.action(api.uploads.start, { captureId, name: 'source.mp4', bytes: 4, contentType: 'video/mp4' })
+    await fetch(target.single!.url, { method: 'PUT', headers: target.single!.headers, body: new Uint8Array(4) })
+    await t.action(api.uploads.finish, { uploadId: target.uploadId })
+    return { captureId, job: await t.mutation(api.worker.claim, gx10) }
+  }
+
+  test('convert inputs: the seed manifest has title and attendees, and the source video is listed', async () => {
+    const t = setup()
+    const { captureId, job } = await videoJob(t, 12)
+    const inputs = await t.action(api.worker.inputs, as(job))
+    expect(JSON.parse(inputs.manifestJson ?? '{}')).toMatchObject({ id: captureId, title: 'Sunday lunch', attendees: ['Priya', 'Dev'] })
+    expect(inputs.files).toEqual([expect.objectContaining({ name: 'source.mp4', area: 'video', bytes: 4 })])
+  })
+
+  test('a job the worker no longer holds: heartbeat says ok false / cancelled, complete and fail throw a lease-lost code', async () => {
+    const t = setup()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const { job } = await videoJob(t)
+    vi.setSystemTime(Date.now() + 121_000)
+    await t.mutation(internal.jobsCron.reap, {})
+    expect(await t.mutation(api.worker.heartbeat, as(job))).toEqual({ ok: false, cancelled: true })
+    const complete = await t.mutation(api.worker.complete, { ...as(job), result: { kind: 'convert', manifestJson: '{}' } }).catch((e: unknown) => e)
+    const fail = await t.mutation(api.worker.fail, { ...as(job), error: 'x', retryable: true }).catch((e: unknown) => e)
+    const outputs = await t.action(api.worker.outputUrls, { ...as(job), files: [] }).catch((e: unknown) => e)
+    for (const e of [complete, fail, outputs]) expect(LEASE_LOST_CODES).toContain(codeOf(e))
+  })
+
+  test('finishOutput returns the stored size in bytes, also when asked again', async () => {
+    const t = setup()
+    const { job } = await videoJob(t)
+    const [out] = await t.action(api.worker.outputUrls, { ...as(job), files: [{ name: 'thumb.jpg', bytes: 4, contentType: 'image/jpeg', area: 'raw' }] })
+    await fetch(out.target.single!.url, { method: 'PUT', headers: out.target.single!.headers, body: JPEG })
+    expect(await t.action(api.worker.finishOutput, { ...as(job), uploadId: out.target.uploadId })).toEqual({ ok: true, bytes: 4 })
+    expect(await t.action(api.worker.finishOutput, { ...as(job), uploadId: out.target.uploadId })).toEqual({ ok: true, bytes: 4 })
+  })
+
+  test("needs.frames uses video2capture's sample_count: max(16, floor(10 s) + 1), capped at 240", async () => {
+    // tools/video2capture/convert.py sample_count / job_frames, at 10 samples per second.
+    const python = (d: number) => Math.min(240, Math.max(2, Math.max(16, Math.floor(d * 10) + 1)))
+    for (const d of [0.4, 1, 1.55, 6.6, 12, 23.9, 24, 60]) expect(convertFrames(d), `${d} s`).toBe(python(d))
+    expect(convertFrames(undefined)).toBe(240)
+    const t = setup()
+    await videoJob(t, 6.6)
+    expect((await t.run(async (ctx) => ctx.db.query('jobs').collect())).find((j) => j.kind === 'convert')?.needs).toEqual({ gpu: true, frames: 67 })
   })
 })

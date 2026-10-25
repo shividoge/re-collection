@@ -49,7 +49,7 @@ export function validatePackage(captureId: string, manifest: Manifest, files: re
   const room = manifest.room
   if (room) {
     requireFile(room.bin, 4 + room.points * 15, `${room.points} room points`)
-    if (room.ply) requireFile(room.ply, undefined, 'the room cloud for desktop viewers')
+    // room.ply (the cloud for desktop viewers) is never required: v3 clients don't upload it and nothing reads it.
     if (room.splat) {
       if (room.splat.format !== 'spz' && room.splat.format !== '3dgs-ply') {
         errors.push(`manifest.room.splat.format is "${String(room.splat.format)}", expected "spz" or "3dgs-ply".`)

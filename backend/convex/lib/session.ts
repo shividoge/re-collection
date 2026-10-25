@@ -42,9 +42,9 @@ export type GroundingContext = ReturnType<typeof groundingContext>
 export function finalReply(
   sentences: readonly ProposedSentence[],
   ctx: GroundingContext,
-  { distress = false, branch = false, echo }: { distress?: boolean; branch?: boolean; echo?: Set<string> } = {},
+  { distress = false, branch = false, echo, seen }: { distress?: boolean; branch?: boolean; echo?: Set<string>; seen?: Map<string, string> } = {},
 ): Grounded {
-  const grounded = groundReply(sentences, { ...ctx, extended: distress || branch, echo })
+  const grounded = groundReply(sentences, { ...ctx, extended: distress || branch, echo, seen })
   if (grounded.sentences.length === 0) grounded.sentences.push(distress ? SAFE_DISTRESS : SAFE_FALLBACK)
   return grounded
 }

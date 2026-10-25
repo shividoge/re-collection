@@ -97,6 +97,11 @@ export type GroundContext = {
   echo?: Set<string>
   /** Words always allowed: how the person likes to be addressed ("Mom"). */
   allow?: Set<string>
+  /**
+   * The facts (id → wording) Claude was given for this reply. When set, a sentence citing a fact
+   * whose wording isn't the same now (the family edited it meanwhile) is dropped.
+   */
+  seen?: Map<string, string>
 }
 
 /**
@@ -104,7 +109,7 @@ export type GroundContext = {
  * it's kept only if it passes the free-sentence rules.
  */
 export function groundReply(sentences: readonly ProposedSentence[] | null | undefined, ctx: GroundContext): Grounded {
-  const { allowed, moment, names, extended = false, echo = new Set<string>(), allow = new Set<string>() } = ctx
+  const { allowed, moment, names, extended = false, echo = new Set<string>(), allow = new Set<string>(), seen } = ctx
   const exempt = new Set([...echo, ...allow])
   const known = new Map((moment?.facts ?? []).map((f) => [f.id, f]))
   const maxFree = extended ? MAX_FREE_EXTENDED : MAX_FREE
@@ -133,7 +138,10 @@ export function groundReply(sentences: readonly ProposedSentence[] | null | unde
         const fact = known.get(id)
         if (!fact) return `cites unknown fact ${id}`
         if (fact.doNotRaise) return `cites ${id}, which the family marked "don't bring this up"`
-        if (!allowed.has(id)) return `cites ${id}, which the family hasn't approved`
+        const now = allowed.get(id)
+        if (!now) return `cites ${id}, which the family hasn't approved`
+        if (seen && !seen.has(id)) return `cites ${id}, which wasn't among the facts Claude was given`
+        if (seen && seen.get(id) !== now.text) return `cites ${id}, whose wording the family changed while Claude was answering`
         return null
       })
       .find(Boolean)
