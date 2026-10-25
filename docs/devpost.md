@@ -175,6 +175,38 @@ Upload from `~/Downloads/re-collection-devpost-gallery/` in this order (all 3:2,
 
 ---
 
+## Video demo link
+
+https://youtu.be/FQ0vPIS4VM8
+
+(Devpost's "Video demo link" field, under Project Media. Use the same link in "Try it out" too.)
+
+---
+
+## Team members
+
+Add everyone on Devpost so they're credited:
+
+- **Shivin Anand** (GitHub `shividoge`): iPhone app, Claude integration, front page, demo video
+- **Firdavs** (GitHub `boliyevfirdavs`): 3D viewer, Memory Palace, caretaker editor
+- **Srinivas I B** (GitHub `IBS27`): v3 backend (Convex, R2, workers), old-video to 3D, live family visit, AI guide
+
+---
+
+## Prizes to opt into
+
+Tick each one on the "Prizes" step that applies (these match what's built and in the video):
+
+- Anthropic: Claude for Public Benefit (our primary track)
+- Cal Hacks: overall, People-First Social Impact, Most Technically Advanced, Most Creative, Hacker's Choice
+- Convex
+- Cartesia
+- Moss
+- Meta: Bringing People Closer Together with AI (the live family visit)
+- MLH prizes we qualify for, plus MLH's supplemental form if a prize asks for it
+
+---
+
 ## Feedback on the technology we used
 
 **Claude (Anthropic: Opus 5.5, Sonnet 5.5 and Claude Code).** Claude is the heart of Re:Collection, and it made a sensitive project possible.
@@ -248,4 +280,5 @@ Thank you to every sponsor and organizer at Cal Hacks 13.0. The tools, the credi
 - *The live demo is the read-only public build of the current site: all 9 rooms, the Memory Palace scroll walk and stepping into any room. The voice guide and live family visit need the live backend, so they're not on the public copy; show them in the demo video.*
 - *The video's sponsor slide and end card list Meta, Microsoft and GoDaddy Registry. Make sure each is something we entered or used; if not, fix the slide or leave image 10 out.*
 - *If the live family visit wasn't tested on two devices, cut its WebRTC sentence from "How we built it".*
-- *Opt in to every track and sponsor prize on the form (Anthropic, Convex, Cartesia, Moss, Cal Hacks tracks, MLH), and fill in the team members.*
+- *Opt in to the prizes listed above and add all three team members.*
+- *Submit by 8:30 AM PT (hard deadline 9:00).*
