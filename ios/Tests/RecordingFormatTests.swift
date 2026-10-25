@@ -148,6 +148,7 @@ final class ManifestTests: XCTestCase {
         let room = try XCTUnwrap(json["room"] as? [String: Any])
         XCTAssertEqual(room["source"] as? String, "on-device")
         XCTAssertEqual(room["bin"] as? String, "room.bin")
+        XCTAssertNil(room["ply"])   // not uploaded, so not listed
     }
 }
 
@@ -212,14 +213,15 @@ final class KeyframeAndTranscriptTests: XCTestCase {
 }
 
 final class UploadPlanTests: XCTestCase {
-    func testSmallFilesGoFirstAndBigOnesLast() {
+    func testClaudesInputsGoFirstBigFilesLastAndRoomPlyStaysOnThePhone() {
         let order = UploadPlan.order([
-            "depth.bin", "video.mp4", "keyframes/k0001.jpg", "manifest.json", "confidence.bin",
+            "depth.bin", "video.mp4", "keyframes/k0001.jpg", "manifest.json", "depth.index.json",
             "frames.jsonl", "thumb.jpg", "room.bin", "keyframes/k0000.jpg", "transcript.json", "room.ply", ".DS_Store",
+            "keyframes/._k0000.jpg", "capture.zip",
         ])
         XCTAssertEqual(order, [
-            "manifest.json", "room.bin", "thumb.jpg", "transcript.json", "keyframes/k0000.jpg", "keyframes/k0001.jpg",
-            "frames.jsonl", "room.ply", "video.mp4", "confidence.bin", "depth.bin",
+            "manifest.json", "thumb.jpg", "transcript.json", "keyframes/k0000.jpg", "keyframes/k0001.jpg",
+            "room.bin", "frames.jsonl", "video.mp4", "depth.index.json", "depth.bin",
         ])
     }
 

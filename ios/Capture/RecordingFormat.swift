@@ -189,8 +189,9 @@ struct CaptureManifest: Codable, Equatable {
         var present: Bool
     }
 
+    /// room.ply stays on the phone for AirDrop and MeshLab but isn't uploaded
+    /// (the backend makes one from room.bin when needed), so it isn't listed.
     struct Room: Codable, Equatable {
-        var ply = "room.ply"
         var bin = "room.bin"
         var points: Int
         var voxelMeters: Double
@@ -302,46 +303,5 @@ enum TranscriptBuilder {
 
     private static func round3(_ value: Double) -> Double {
         (value * 1000).rounded() / 1000
-    }
-}
-
-// MARK: Upload
-
-enum UploadPlan {
-    /// The web shows the room as soon as manifest.json, room.bin and thumb.jpg
-    /// arrive, so those go first; the big files go last.
-    static func order(_ files: [String]) -> [String] {
-        func rank(_ name: String) -> Int {
-            switch name {
-            case "manifest.json": return 0
-            case "room.bin": return 1
-            case "thumb.jpg": return 2
-            case "transcript.json": return 3
-            case _ where name.hasPrefix("keyframes/"): return 4
-            case "frames.jsonl": return 5
-            case "room.ply": return 6
-            case _ where name.hasPrefix("video."): return 7
-            case "confidence.bin": return 8
-            case "depth.bin": return 9
-            default: return 10
-            }
-        }
-        return files
-            .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".zip") && !$0.contains("/.") }
-            .sorted { (rank($0), $0) < (rank($1), $1) }
-    }
-
-    /// Joins the guide's base URL (as typed in Settings) with an API path.
-    /// Adds https:// when no scheme was typed and drops trailing slashes.
-    static func url(base: String, path: String) -> URL? {
-        var trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        if !trimmed.contains("://") { trimmed = "https://" + trimmed }
-        while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        let encodedPath = path
-            .split(separator: "/", omittingEmptySubsequences: false)
-            .map { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
-            .joined(separator: "/")
-        return URL(string: trimmed + encodedPath)
     }
 }
