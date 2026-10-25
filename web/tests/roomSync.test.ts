@@ -128,9 +128,11 @@ describe('follow (the iPad)', () => {
 
   it('reads where the iPad is from the address', () => {
     expect(roomHere('#/memories')).toBe(null)
+    expect(roomHere('#/museum')).toBe(null)
+    expect(roomHere('#/museum?join=KTRB')).toBe(undefined)
     expect(roomHere(roomHash(A))).toBe(A)
     expect(roomHere(`#/window/${A}`)).toBe(undefined)
     expect(roomHere('#/memories?join=KTRB')).toBe(undefined)
-    expect(roomHash(null)).toBe('#/memories')
+    expect(roomHash(null)).toBe('#/museum')
   })
 })
