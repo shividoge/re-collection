@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchBytes, fetchRange } from '../api'
+import { fetchCaptureFile as fetchBytes, fetchCaptureRange as fetchRange, v1ConfidenceFile } from '../data/legacy'
 import type { Manifest } from '../api'
 import type { FrameRecord } from './formats'
 import type { LoadedCapture } from './loadCapture'
@@ -27,7 +27,8 @@ async function depthRun(id: string, manifest: Manifest, frames: FrameRecord[]): 
   const ks = frames.map((f) => f.d as number)
   const first = Math.min(...ks)
   const last = Math.max(...ks)
-  const { width, height, file, confidenceFile } = manifest.depth
+  const { width, height, file } = manifest.depth
+  const confidenceFile = v1ConfidenceFile(manifest.depth)
   const px = width * height
   const [depth, confidence] = await Promise.all([
     fetchRange(id, file, first * px * 2, (last - first + 1) * px * 2),

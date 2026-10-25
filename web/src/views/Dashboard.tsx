@@ -1,22 +1,12 @@
-import { useEffect, useState } from 'react'
-import { fileUrl, guide } from '../api'
-import type { CaptureSummary, Progress } from '../api'
+import { useCaptures, useMoment, useProgress, useProgressMany, type CaptureSummary, type Progress } from '../data'
 
-/** Every scan with facts, and its progress (null while it loads or when it has none). */
+/** Every scan with facts, and its progress (null while it loads or when it has none). Live. */
 function useAllProgress() {
-  const [rows, setRows] = useState<{ capture: CaptureSummary; progress: Progress | null }[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  useEffect(() => {
-    guide
-      .captures()
-      .then(async (list) => {
-        const withFacts = list.filter((c) => c.status.facts === 'done')
-        const progress = await Promise.all(withFacts.map((c) => guide.progress(c.id).catch(() => null)))
-        setRows(withFacts.map((capture, i) => ({ capture, progress: progress[i] })))
-      })
-      .catch((e: Error) => setError(e.message))
-  }, [])
-  return { rows, error }
+  const captures = useCaptures()
+  const withFacts = captures.status === 'ready' ? captures.data.filter((c) => c.status.facts === 'done') : []
+  const progress = useProgressMany(withFacts.map((c) => c.id))
+  const rows = captures.status === 'ready' ? withFacts.map((capture) => ({ capture, progress: progress[capture.id] ?? null })) : null
+  return { rows, error: captures.status === 'error' ? captures.message : null }
 }
 
 /** All scans side by side: how many revisits each had and how the latest one went. */
@@ -50,11 +40,11 @@ export function DashboardOverview() {
             return (
               <li key={capture.id}>
                 <a className="scan-row" href={`#/dashboard/${capture.id}`}>
-                  {capture.thumb ? <img src={fileUrl(capture.thumb)} alt="" loading="lazy" /> : <div className="thumb-missing" />}
+                  {capture.thumbUrl ? <img src={capture.thumbUrl} alt="" loading="lazy" /> : <div className="thumb-missing" />}
                   <div>
                     <h2>{capture.title || 'Untitled visit'}</h2>
                     <p className="meta">
-                      {capture.createdAt ? fmt(capture.createdAt) : 'Unknown date'} · {plural(total, 'approved fact')} ·{' '}
+                      {fmt(capture.createdAt)} · {plural(total, 'approved fact')} ·{' '}
                       {plural(progress?.sessions.length ?? 0, 'revisit')}
                     </p>
                     <p className="meta">
@@ -97,13 +87,8 @@ function Sparkline({ sessions, total }: { sessions: Progress['sessions']; total:
 
 /** Links to the other scans' dashboards. */
 function ScanSwitcher({ id }: { id: string }) {
-  const [scans, setScans] = useState<CaptureSummary[]>([])
-  useEffect(() => {
-    guide
-      .captures()
-      .then((list) => setScans(list.filter((c) => c.status.facts === 'done')))
-      .catch(() => {})
-  }, [])
+  const captures = useCaptures()
+  const scans: CaptureSummary[] = captures.status === 'ready' ? captures.data.filter((c) => c.status.facts === 'done') : []
   if (scans.length < 2) return null
   return (
     <nav className="scan-switcher">
@@ -118,23 +103,13 @@ function ScanSwitcher({ id }: { id: string }) {
 
 /** The family's view of recall over time (CLAUDE.md 7.5). Real session times only. */
 export function Dashboard({ id }: { id: string }) {
-  const [data, setData] = useState<Progress | null>(null)
-  const [title, setTitle] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const progress = useProgress(id)
+  const moment = useMoment(id)
+  const title = moment.status === 'ready' ? (moment.data.moment?.moment.title ?? '') : ''
 
-  useEffect(() => {
-    guide
-      .progress(id)
-      .then(setData)
-      .catch((e: Error) => setError(e.message))
-    guide
-      .moment(id)
-      .then((m) => setTitle(m.moment.title))
-      .catch(() => {})
-  }, [id])
-
-  if (error) return <div className="center-message error">{error}</div>
-  if (!data) return <div className="center-message">Loading…</div>
+  if (progress.status === 'error') return <div className="center-message error">{progress.message}</div>
+  if (progress.status === 'loading') return <div className="center-message">Loading…</div>
+  const data: Progress = progress.data
 
   const factText = new Map(data.facts.map((f) => [f.id, f.text]))
   const sessions = data.sessions

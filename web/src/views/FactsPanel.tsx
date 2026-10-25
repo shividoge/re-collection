@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 
-import { captureFileUrl, guide, GuideError } from '../api'
-import type { CaptureStatus, Fact, FactChange, Moment } from '../api'
+import { errorMessage, family, useCaptureAssets, useMoment, type Fact, type FactChange } from '../data'
 
 /** Jumps to a moment of the visit; `play` starts playback there. */
 export type Seek = (t: number, play?: boolean) => void
@@ -9,79 +8,67 @@ export type Seek = (t: number, play?: boolean) => void
 /**
  * Family review (CLAUDE.md 6.3): every fact Claude extracted, next to the
  * evidence that backs it. Nothing reaches the patient until it's approved
- * here. Clicking evidence seeks the video to that moment.
+ * here. Clicking evidence seeks the video to that moment. Live: facts appear
+ * as soon as Claude is done, and a change made on another screen shows here.
  */
 export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: Seek }) {
-  const [moment, setMoment] = useState<Moment | null>(null)
-  const [status, setStatus] = useState<CaptureStatus | null>(null)
+  const data = useMoment(captureId)
+  const assets = useCaptureAssets(captureId)
+  const keyframeUrl = (name: string) => (assets.status === 'ready' ? assets.assets.rawUrl(name) : null)
   const [error, setError] = useState<string | null>(null)
   const [showDropped, setShowDropped] = useState(false)
 
-  const load = useCallback(async () => {
-    try {
-      const detail = await guide.capture(captureId)
-      setStatus(detail.status)
-      if (detail.status.facts === 'done') {
-        setMoment(await guide.moment(captureId))
-        setError(null)
-      }
-    } catch (e) {
-      setError((e as GuideError).message)
-    }
-  }, [captureId])
-
-  useEffect(() => {
-    void load()
-  }, [load])
-
-  // While Claude is working, check back every few seconds.
-  const working = status?.facts === 'queued' || status?.facts === 'running'
-  useEffect(() => {
-    if (!working) return
-    const timer = setInterval(() => void load(), 3000)
-    return () => clearInterval(timer)
-  }, [working, load])
-
   async function change(fact: Fact, update: FactChange) {
     try {
-      const saved = await guide.updateFact(captureId, fact.id, update)
-      setMoment((m) => m && { ...m, facts: m.facts.map((f) => (f.id === saved.id ? saved : f)) })
+      await family.patchFact(captureId, fact.id, update)
+      setError(null)
     } catch (e) {
-      setError(`Couldn't save: ${(e as GuideError).message}`)
+      setError(`Couldn't save: ${errorMessage(e)}`)
     }
   }
 
   async function reextract() {
     try {
-      await guide.reextract(captureId)
-      setStatus((s) => s && { ...s, facts: 'queued', factsError: null })
+      await family.reextract(captureId)
+      setError(null)
     } catch (e) {
-      setError((e as GuideError).message)
+      setError(errorMessage(e))
     }
   }
 
-  if (!status)
+  if (data.status === 'error') return <section className="facts-panel"><p className="error">{data.message}</p></section>
+  if (data.status === 'loading')
     return (
       <section className="facts-panel">
         <p className="muted">Loading facts…</p>
       </section>
     )
 
-  if (status.upload !== 'done') {
+  const { moment, status } = data.data
+  const facts = status?.facts ?? (moment ? 'done' : 'not_started')
+  const working = facts === 'queued' || facts === 'running'
+
+  if (!moment && status?.upload === 'invalid') {
     return (
       <section className="facts-panel">
-        <p className="muted">Facts are extracted once the whole capture has uploaded.</p>
+        <p className="error">This capture didn't upload completely: {status.uploadErrors[0] ?? 'some files are missing'}.</p>
       </section>
     )
   }
 
-  if (working || status.facts === 'not_started') {
+  if (!moment && (working || facts === 'not_started')) {
     return (
       <section className="facts-panel">
         <div className="working">
           <span className="pulse" aria-hidden />
           <div>
-            <p>{status.facts === 'running' ? 'Claude is reading the keyframes and transcript…' : 'Waiting for Claude…'}</p>
+            <p>
+              {facts === 'running'
+                ? 'Claude is reading the keyframes and transcript…'
+                : facts === 'queued'
+                  ? 'Waiting for Claude…'
+                  : 'Facts start as soon as the keyframes and transcript have uploaded.'}
+            </p>
             <p className="muted small">Usually under a minute. Facts appear here for you to check.</p>
           </div>
         </div>
@@ -89,16 +76,17 @@ export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: S
     )
   }
 
-  if (status.facts === 'failed') {
+  if (facts === 'failed') {
     return (
       <section className="facts-panel">
-        <p className="error">Fact extraction failed: {status.factsError}</p>
+        <p className="error">Fact extraction failed{status?.errors.facts ? `: ${status.errors.facts}` : '.'}</p>
         <button onClick={() => void reextract()}>Try again</button>
+        {error && <p className="error small">{error}</p>}
       </section>
     )
   }
 
-  if (!moment) return <section className="facts-panel">{error ? <p className="error">{error}</p> : <p className="muted">Loading facts…</p>}</section>
+  if (!moment) return <section className="facts-panel"><p className="muted">No facts yet.</p></section>
 
   const approved = moment.facts.filter((f) => f.status === 'approved').length
   const pending = moment.facts.filter((f) => f.status === 'pending').length
@@ -126,10 +114,11 @@ export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: S
       </header>
 
       {error && <p className="error small">{error}</p>}
+      {working && <p className="muted small">Claude is looking again; facts you reviewed stay as they are.</p>}
 
       <ol className="facts">
         {moment.facts.map((fact) => (
-          <FactCard key={fact.id} captureId={captureId} fact={fact} onChange={(u) => void change(fact, u)} onSeek={onSeek} />
+          <FactCard key={fact.id} keyframeUrl={keyframeUrl} fact={fact} onChange={(u) => void change(fact, u)} onSeek={onSeek} />
         ))}
       </ol>
 
@@ -162,7 +151,7 @@ export function FactsPanel({ captureId, onSeek }: { captureId: string; onSeek: S
   )
 }
 
-function FactCard({ captureId, fact, onChange, onSeek }: { captureId: string; fact: Fact; onChange: (update: FactChange) => void; onSeek: Seek }) {
+function FactCard({ keyframeUrl, fact, onChange, onSeek }: { keyframeUrl: (name: string) => string | null; fact: Fact; onChange: (update: FactChange) => void; onSeek: Seek }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(fact.editedText ?? fact.text)
   const shown = fact.editedText ?? fact.text
@@ -205,7 +194,7 @@ function FactCard({ captureId, fact, onChange, onSeek }: { captureId: string; fa
         {fact.evidence.map((e, k) =>
           e.type === 'frame' ? (
             <button key={k} className="frame" onClick={() => onSeek(e.t)} title={`Show ${formatTime(e.t)}`}>
-              <img src={captureFileUrl(captureId, e.keyframe)} alt={`Keyframe at ${formatTime(e.t)}`} loading="lazy" />
+              {keyframeUrl(e.keyframe) ? <img src={keyframeUrl(e.keyframe)!} alt={`Keyframe at ${formatTime(e.t)}`} loading="lazy" /> : <span className="thumb-missing" />}
               <span>{formatTime(e.t)}</span>
             </button>
           ) : (

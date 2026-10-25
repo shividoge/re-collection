@@ -4,7 +4,7 @@ import { EffectComposer, SMAA, ToneMapping, Vignette } from '@react-three/postpr
 import { ToneMappingMode } from 'postprocessing'
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import * as THREE from 'three'
-import { publicGuide, type PublicCapture } from '../api'
+import type { PublicCapture } from '../api'
 import { Artwork } from '../museum/Artwork'
 import { Furniture, Sconces, Window } from '../museum/Classic'
 import type { Artwork as Art } from '../museum/exhibitions'
@@ -128,7 +128,7 @@ function hallItems(captures: PublicCapture[]): Art[] {
   return captures.map((c) => ({
     id: c.id,
     kind: 'photo' as const,
-    src: publicGuide.file(c.id, 'thumb.jpg'),
+    src: c.thumbUrl ?? '',
     title: c.title || 'A visit',
     date: c.createdAt ? new Date(c.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : '',
     captureId: c.id,
@@ -145,7 +145,7 @@ function hallItems(captures: PublicCapture[]): Art[] {
 export default function MemoryLane({ captures, diveId }: { captures: PublicCapture[]; diveId?: string }) {
   // Oldest first; the visit the page goes on to explain hangs last, so the walk ends by diving into it.
   const moments = useMemo(() => {
-    const sorted = captures.filter((c) => c.thumb).sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')))
+    const sorted = captures.filter((c) => c.thumbUrl).sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')))
     const k = sorted.findIndex((c) => c.id === diveId)
     return k >= 0 ? [...sorted.slice(0, k), ...sorted.slice(k + 1), sorted[k]] : sorted
   }, [captures, diveId])

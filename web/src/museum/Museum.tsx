@@ -2,7 +2,7 @@ import { Html } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
-import { fileUrl, guide, type CaptureSummary } from '../api'
+import { family, type CaptureSummary } from '../data'
 import { roomHash } from './roomSync'
 import { HelperTogether, PatientTogether } from './Together'
 import { useMuseumRoom } from './useMuseumRoom'
@@ -41,8 +41,8 @@ export function Museum({ join }: { join?: string } = {}) {
   })
 
   useEffect(() => {
-    guide
-      .captures()
+    family
+      .listCaptures()
       .then((list) => {
         const ready = list
           .filter((c) => c.status.upload === 'done')
@@ -179,9 +179,9 @@ function Hall({ length }: { length: number }) {
 function Frame({ moment, index, active, onTap }: { moment: Moment; index: number; active: boolean; onTap: () => void }) {
   const [texture, setTexture] = useState<THREE.Texture | null>(null)
   useEffect(() => {
-    if (!moment.thumb) return
+    if (!moment.thumbUrl) return
     let disposed = false
-    new THREE.TextureLoader().load(fileUrl(moment.thumb), (t) => {
+    new THREE.TextureLoader().load(moment.thumbUrl, (t) => {
       if (disposed) return t.dispose()
       t.colorSpace = THREE.SRGBColorSpace
       setTexture(t)
@@ -189,7 +189,7 @@ function Frame({ moment, index, active, onTap }: { moment: Moment; index: number
     return () => {
       disposed = true
     }
-  }, [moment.thumb])
+  }, [moment.thumbUrl])
   useEffect(() => () => texture?.dispose(), [texture])
 
   // Fit the picture inside the frame, keeping its shape.

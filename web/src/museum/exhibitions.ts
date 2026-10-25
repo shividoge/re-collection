@@ -7,7 +7,7 @@
 //   are still there after a reload.
 // Nothing is invented: an exhibition only shows what was put into it.
 
-import { captureFileUrl, guide, publicGuide, STATIC, type Arrangement, type ArrangementItem, type Manifest } from '../api'
+import { arrangements, loadVisitSources, type Arrangement, type ArrangementItem, type CaptureAssets, type Manifest } from '../data'
 
 export type ArtworkKind = 'photo' | 'video'
 
@@ -65,37 +65,24 @@ async function curated(): Promise<Exhibition[]> {
 const formatDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''
 
-/** A finished visit on the guide, with what's needed to hang pieces of it. */
+/** A finished visit, with what's needed to hang pieces of it. */
 export interface Visit {
   id: string
   title: string
   date: string
   thumb: boolean
   manifest: Manifest
+  assets: CaptureAssets
 }
 
 /** Every finished visit, oldest first (on the public site: the published ones). */
 export async function loadVisits(): Promise<Visit[]> {
-  let list
   try {
-    // The public (static) site has only the visits the family published, all finished uploads.
-    list = STATIC
-      ? (await publicGuide.captures()).map((c) => ({ ...c, status: { upload: 'done' } }))
-      : await guide.captures()
+    const sources = await loadVisitSources()
+    return sources.map((v) => ({ id: v.id, title: v.title || v.assets.manifest.title || 'A visit', date: formatDate(v.createdAt), thumb: v.hasThumb, manifest: v.assets.manifest, assets: v.assets }))
   } catch {
     return []
   }
-  const done = list.filter((c) => c.status.upload === 'done').sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
-  const out: Visit[] = []
-  for (const c of done) {
-    try {
-      const { manifest } = await guide.capture(c.id)
-      out.push({ id: c.id, title: c.title || manifest.title || 'A visit', date: formatDate(c.createdAt), thumb: Boolean(c.thumb), manifest })
-    } catch {
-      // A capture whose manifest can't be read is left out, not guessed at.
-    }
-  }
-  return out
 }
 
 /** The pieces of a visit that can hang: its video, its thumbnail, and a still every few seconds. */
@@ -113,56 +100,22 @@ export function piecesOf(v: Visit): string[] {
 
 /** One piece of a visit as a picture on the wall; null if the visit doesn't have that piece. */
 export function pieceArtwork(v: Visit, piece: string, title = '', caption = '', n = 0): Artwork | null {
-  const poster = v.thumb ? captureFileUrl(v.id, 'thumb.jpg') : undefined
+  const poster = (v.thumb && v.assets.rawUrl('thumb.jpg')) || undefined
   const base = { id: `${v.id}-${piece}-${n}`, title: title || v.title, date: v.date, caption: caption || undefined, captureId: v.id }
-  if (piece === 'video') return v.manifest.video?.file ? { ...base, kind: 'video', src: captureFileUrl(v.id, v.manifest.video.file), poster, t: 0 } : null
+  const video = v.manifest.video?.file ? v.assets.rawUrl(v.manifest.video.file) : null
+  if (piece === 'video') return video ? { ...base, kind: 'video', src: video, poster, t: 0 } : null
   if (piece === 'thumb') return poster ? { ...base, kind: 'photo', src: poster, t: 0 } : null
   const kf = v.manifest.keyframes
   const k = /^k(\d{4})$/.exec(piece)
   if (!k || !kf || Number(k[1]) >= kf.count) return null
-  return { ...base, kind: 'photo', src: captureFileUrl(v.id, `${kf.dir}/${piece}.jpg`), t: Number(k[1]) * kf.everySec }
+  const src = v.assets.rawUrl(`${kf.dir}/${piece}.jpg`)
+  return src ? { ...base, kind: 'photo', src, t: Number(k[1]) * kf.everySec } : null
 }
-
-/**
- * The public site has no server to save to, so a caretaker trying the editor there saves into
- * this browser only (and the museum in this browser shows it).
- */
-const LOCAL_ARRANGEMENT = 'braindance.museum.arrangement'
 
 /** The museum the caretaker saved, or null for the automatic one. */
-export async function loadArrangement(): Promise<Arrangement | null> {
-  if (STATIC) {
-    try {
-      const local = localStorage.getItem(LOCAL_ARRANGEMENT)
-      if (local) return JSON.parse(local) as Arrangement
-    } catch {
-      /* no storage: fall through to the published one */
-    }
-    return publicGuide.arrangement()
-  }
-  return guide.arrangement().catch(() => null)
-}
-
-export async function saveArrangement(a: Omit<Arrangement, 'updatedAt'>): Promise<Arrangement> {
-  if (STATIC) {
-    const saved = { ...a, updatedAt: new Date().toISOString() }
-    localStorage.setItem(LOCAL_ARRANGEMENT, JSON.stringify(saved))
-    return saved
-  }
-  return guide.saveArrangement(a)
-}
-
-export async function resetArrangement(): Promise<void> {
-  if (STATIC) {
-    try {
-      localStorage.removeItem(LOCAL_ARRANGEMENT)
-    } catch {
-      /* nothing saved */
-    }
-    return
-  }
-  await guide.resetArrangement()
-}
+export const loadArrangement = (): Promise<Arrangement | null> => arrangements.load().catch(() => null)
+export const saveArrangement = (a: Omit<Arrangement, 'updatedAt'>): Promise<Arrangement> => arrangements.save(a)
+export const resetArrangement = (): Promise<void> => arrangements.clear()
 
 /** The museum built from an arrangement: its pictures, in its order, with its words. */
 export function arrangedExhibition(a: Arrangement, visits: Visit[]): Exhibition {

@@ -37,6 +37,7 @@ export function useNow(ms = 15_000): number {
 }
 
 export const family = {
+  listCaptures: (): Promise<CaptureSummary[]> => convex().query(api.captures.list, {}),
   patchFact: (captureId: string, factId: string, change: FactChange): Promise<Fact> => convex().mutation(api.moments.patchFact, { captureId, factId, ...change }),
   reextract: (captureId: string) => convex().mutation(api.moments.reextract, { captureId }),
   setPublic: (captureId: string, on: boolean) => convex().mutation(api.captures.setPublic, { captureId, public: on }),
@@ -44,6 +45,11 @@ export const family = {
 }
 
 export const sessions = {
+  /** The moment with its current review state, read once when a visit starts. */
+  approvedMoment: async (captureId: string): Promise<Moment | null> => {
+    const result = (await convex().query(api.moments.get, { captureId })) as { moment: Moment | null }
+    return result.moment
+  },
   start: (captureId: string): Promise<{ sessionId: string; welcome: Reply }> => convex().mutation(api.sessions.start, { captureId }),
   narrate: (sessionId: string, chapterIndex: number): Promise<{ reply: Reply }> => convex().action(api.sessions.narrate, { sessionId, chapterIndex }),
   turn: (sessionId: string, text: string, focus?: Focus): Promise<{ reply: Reply; branch: string | null; distress: boolean }> =>

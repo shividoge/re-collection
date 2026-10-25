@@ -2,7 +2,7 @@ import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, type MutableRefObject } from 'react'
 import * as THREE from 'three'
 
-import { fetchRange } from '../api'
+import { fetchCaptureRange as fetchRange, v1ConfidenceFile } from '../data/legacy'
 import type { Manifest } from '../api'
 import type { FrameRecord } from './formats'
 import { depthMeshIndices, movingPixels } from './gaps'
@@ -324,7 +324,7 @@ export function DepthReplay({
     const confBytes = width * height
     Promise.all([
       fetchRange(captureId, manifest.depth.file, k * depthBytes, depthBytes),
-      fetchRange(captureId, manifest.depth.confidenceFile, k * confBytes, confBytes),
+      fetchRange(captureId, v1ConfidenceFile(manifest.depth), k * confBytes, confBytes),
     ])
       .then(([depth, conf]) => cache.current.set(k, decodeDepthFrame(depth, conf, width * height)))
       .catch(() => cache.current.delete(k))

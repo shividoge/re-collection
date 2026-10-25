@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { guide, STATIC } from '../api'
-import type { EndReason, Fact, Moment, Reply } from '../api'
+import { dataMode, errorMessage, sessions, type EndReason, type Fact, type Moment, type Reply } from '../data'
 import type { ViewerControls } from '../scene/SceneViewer'
 import type { Selection } from '../scene/useRoomIndex'
 import { RecognitionCtor, speak, type Recognition } from '../speech'
@@ -8,6 +7,8 @@ import { RecognitionCtor, speak, type Recognition } from '../speech'
 const SESSION_LIMIT_MS = 10 * 60 * 1000
 const GOODBYE = "Thank you for sharing this with me. I'll be here whenever you want to look again."
 const TOUR_SPEED = 0.75
+/** sessions.narrate's chapterIndex for a moment without chapters: narrate all of it. */
+const WHOLE_MOMENT = -1
 
 type Span = { index: number | null; from: number; to: number }
 type Tour = 'off' | 'running' | 'paused'
@@ -15,11 +16,11 @@ type Tour = 'off' | 'running' | 'paused'
 /**
  * Revisiting inside the playground (CLAUDE.md 7.4): a narrated tour along the phone's path that
  * the person can pause at any moment to look around, point at things and ask about them. Every
- * reply comes from the guide's grounded companion; ending the visit scores it for the dashboard.
+ * reply comes from the server's grounded companion; ending the visit scores it for the dashboard.
  */
-/** The published (static) site has no guide server to talk to, so it has no visit to run. */
+/** The published (static) site has no server to talk to, so it has no visit to run. */
 export function VisitDock(props: { captureId: string; controls: ViewerControls }) {
-  return STATIC ? null : <LiveVisitDock {...props} />
+  return dataMode === 'static' ? null : <LiveVisitDock {...props} />
 }
 
 function LiveVisitDock({ captureId, controls }: { captureId: string; controls: ViewerControls }) {
@@ -53,8 +54,8 @@ function LiveVisitDock({ captureId, controls }: { captureId: string; controls: V
   /** Starts a session on first use, with fresh approvals. */
   const ensureSession = async (): Promise<string> => {
     if (sidRef.current) return sidRef.current
-    moment.current = await guide.moment(captureId)
-    const { sessionId, welcome } = await guide.startSession(captureId)
+    moment.current = await sessions.approvedMoment(captureId)
+    const { sessionId, welcome } = await sessions.start(captureId)
     sidRef.current = sessionId
     endedRef.current = false
     setSid(sessionId)
@@ -78,9 +79,9 @@ function LiveVisitDock({ captureId, controls }: { captureId: string; controls: V
       setCaption(GOODBYE)
       void speak([GOODBYE], () => false)
       try {
-        await guide.endSession(id, reason)
+        await sessions.end(id, reason)
       } catch (e) {
-        setFailure(`Couldn't save this visit: ${(e as Error).message}`)
+        setFailure(`Couldn't save this visit: ${errorMessage(e)}`)
       }
     },
     [],
@@ -99,7 +100,7 @@ function LiveVisitDock({ captureId, controls }: { captureId: string; controls: V
     const leave = () => {
       if (sidRef.current && !endedRef.current) {
         endedRef.current = true
-        void guide.endSession(sidRef.current, 'complete', true).catch(() => {})
+        sessions.endOnUnload(sidRef.current, 'complete')
       }
     }
     window.addEventListener('pagehide', leave)
@@ -162,7 +163,7 @@ function LiveVisitDock({ captureId, controls }: { captureId: string; controls: V
         } else {
           ctl.current.playback.pause()
           ctl.current.playback.seek(part.from)
-          const { reply } = await guide.narrate(id, part.index)
+          const { reply } = await sessions.narrate(id, part.index ?? WHOLE_MOMENT)
           await say(reply, token)
           if (token !== tourToken.current || endedRef.current) return
         }
@@ -177,7 +178,7 @@ function LiveVisitDock({ captureId, controls }: { captureId: string; controls: V
         ctl.current.setSpeed(1)
       }
     } catch (e) {
-      setFailure((e as Error).message)
+      setFailure(errorMessage(e))
       setTour('off')
     }
   }
@@ -201,11 +202,11 @@ function LiveVisitDock({ captureId, controls }: { captureId: string; controls: V
     setFailure(null)
     try {
       const id = await ensureSession()
-      const { reply, distress } = await guide.turn(id, text.trim(), focusFor(ctl.current.selection, moment.current))
+      const { reply, distress } = await sessions.turn(id, text.trim(), focusFor(ctl.current.selection, moment.current))
       await say(reply)
       if (distress) await finish('distress')
     } catch (e) {
-      setFailure((e as Error).message)
+      setFailure(errorMessage(e))
     } finally {
       setBusy(false)
     }

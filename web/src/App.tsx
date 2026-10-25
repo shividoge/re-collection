@@ -1,19 +1,23 @@
-import { useEffect, useState } from 'react'
-import { CaptureView } from './views/CaptureView'
-import { Dashboard, DashboardOverview } from './views/Dashboard'
-import { FactsPage } from './views/FactsPage'
-import { Gallery } from './views/Gallery'
-import { PublicView } from './views/PublicView'
-import { MuseumEditor } from './museum/MuseumEditor'
-import { MuseumPage } from './museum/MuseumPage'
-import { RoomFile } from './views/RoomFile'
-import { Showcase } from './views/Showcase'
-import { MemoryWindow } from './window/MemoryWindow'
-import { Museum } from './museum/Museum'
-import { setPublicMode, STATIC } from './api'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { dataMode, useHealth } from './data'
 import './views/views.css'
 
-/** Hash routes, so the guide can serve this app as plain static files. */
+// Every screen is its own chunk: the front page never downloads three.js, the museum,
+// postprocessing, Spark or MediaPipe, and a family screen never downloads the front page.
+const CaptureView = lazy(() => import('./views/CaptureView').then((m) => ({ default: m.CaptureView })))
+const Dashboard = lazy(() => import('./views/Dashboard').then((m) => ({ default: m.Dashboard })))
+const DashboardOverview = lazy(() => import('./views/Dashboard').then((m) => ({ default: m.DashboardOverview })))
+const FactsPage = lazy(() => import('./views/FactsPage').then((m) => ({ default: m.FactsPage })))
+const Gallery = lazy(() => import('./views/Gallery').then((m) => ({ default: m.Gallery })))
+const PublicView = lazy(() => import('./views/PublicView').then((m) => ({ default: m.PublicView })))
+const MuseumEditor = lazy(() => import('./museum/MuseumEditor').then((m) => ({ default: m.MuseumEditor })))
+const MuseumPage = lazy(() => import('./museum/MuseumPage').then((m) => ({ default: m.MuseumPage })))
+const RoomFile = lazy(() => import('./views/RoomFile').then((m) => ({ default: m.RoomFile })))
+const Showcase = lazy(() => import('./views/Showcase').then((m) => ({ default: m.Showcase })))
+const MemoryWindow = lazy(() => import('./window/MemoryWindow').then((m) => ({ default: m.MemoryWindow })))
+const Museum = lazy(() => import('./museum/Museum').then((m) => ({ default: m.Museum })))
+
+/** Hash routes, so the app works as plain static files. */
 const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
   // #/capture/<id>, or #/capture/<id>?t=12.5 to open at that second (from a fact's evidence).
   [/^#\/capture\/([0-9a-f-]{36})(?:\?t=([\d.]+))?$/i, (id, t) => <CaptureView key={`${id}@${t ?? ''}`} id={id} startAt={t ? Number(t) : undefined} />],
@@ -33,6 +37,38 @@ const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
   [/^#\/museum\/edit$/, () => <MuseumEditor />],
 ]
 
+function view(hash: string): React.ReactNode {
+  // Visitors read only the public routes: the front page ("#/", and anchors like "#how") and
+  // "#/p/<id>". The family's tools live at "#/captures" and below.
+  const visitor = /^#\/p\/([0-9a-f-]{36})$/i.exec(hash)
+  if (visitor) return <PublicView key={visitor[1]} id={visitor[1]} />
+  const front = !hash.startsWith('#/') || hash === '#/'
+  // A static site has no family tools: everything but the museum and its Memory Windows lands
+  // on the front page. (Visit together needs the live server, so #/memories isn't in it.)
+  const staticPage = /^#\/(museum(\/[\w-]+)?|window\/[0-9a-f-]{36}(\?from=museum)?)$/i.test(hash)
+  if (front || (dataMode === 'static' && !staticPage)) return <Showcase />
+
+  let page: React.ReactNode = <Gallery />
+  if (hash === '#/room') page = <RoomFile />
+  if (hash === '#/dashboard') page = <DashboardOverview />
+  for (const [pattern, render] of ROUTES) {
+    const m = pattern.exec(hash)
+    if (m) page = render(m[1], m[2])
+  }
+  return page
+}
+
+/** Red and impossible to miss when Claude's answers are canned (MOCK_CLAUDE=1 on the server). */
+function MockBanner() {
+  const health = useHealth()
+  if (health.status !== 'ready' || !health.data.mock) return null
+  return (
+    <div className="mock-banner" role="alert">
+      MOCK MODE: Claude isn't being called. Every answer is canned and starts with [mock].
+    </div>
+  )
+}
+
 export default function App() {
   const [hash, setHash] = useState(location.hash)
 
@@ -42,28 +78,12 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onChange)
   }, [])
 
-  // Visitors never need a key: the front page ("#/", and anchors like "#how") and "#/p/<id>"
-  // read only the read-only /public routes. The family's tools live at "#/captures" and below.
-  const visitor = /^#\/p\/([0-9a-f-]{36})$/i.exec(hash)
-  const front = !hash.startsWith('#/') || hash === '#/'
-  if (!STATIC) setPublicMode(Boolean(visitor) || front)
-
-  let view: React.ReactNode = <Gallery />
-  if (hash === '#/room') view = <RoomFile />
-  if (hash === '#/dashboard') view = <DashboardOverview />
-  for (const [pattern, render] of ROUTES) {
-    const m = pattern.exec(hash)
-    if (m) view = render(m[1], m[2])
-  }
-  // A static site has no family tools: everything but the museum and its Memory Windows lands
-  // on the front page. (Visit together needs the live guide, so #/memories isn't in it.)
-  const staticPage = /^#\/(museum(\/[\w-]+)?|window\/[0-9a-f-]{36}(\?from=museum)?)$/i.test(hash)
-  if (visitor) view = <PublicView key={visitor[1]} id={visitor[1]} />
-  else if (front || (STATIC && !staticPage)) view = <Showcase />
-
   return (
     <div className="app">
-      <div className="app-body">{view}</div>
+      {dataMode === 'live' && <MockBanner />}
+      <div className="app-body">
+        <Suspense fallback={<div className="center-message">Loading…</div>}>{view(hash)}</Suspense>
+      </div>
     </div>
   )
 }
