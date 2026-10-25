@@ -214,6 +214,22 @@ describe('worker protocol', () => {
     expect(left.filter((u) => u.jobId === stale!.jobId && u.attempt === 1)).toEqual([])
   })
 
+  test("the sweep never deletes an object a file row uses (uploads from before attempt keys)", async () => {
+    const t = await completedCapture()
+    const job = await t.mutation(api.worker.claim, cpu)
+    const [out] = await writeOutputs(t, job!, [{ name: 'points.pack', area: 'derived', bytes: new Uint8Array(8).fill(3), contentType: 'application/octet-stream' }])
+    const derivedMeta = { format: 'braindance.derived' as const, version: 1, captureId: CAPTURE_ID, bakedAt: 'x', bakeVersion: 'x', files: { points: 'points.pack' }, stats: { points: 1, bakeMs: 1 } }
+    await t.mutation(api.worker.complete, { ...as(job), result: { kind: 'bake', derived: derivedMeta } })
+    // An old-protocol upload left open at the published key, for a job that's long done.
+    await t.run(async (ctx) => {
+      await ctx.db.insert('uploads', { captureId: CAPTURE_ID, area: 'derived', name: 'points.pack', key: out.target.key, bytes: 8, contentType: 'application/octet-stream', status: 'open', jobId: job!.jobId, createdAt: 0 })
+    })
+    await t.mutation(internal.jobsCron.reap, {})
+    await runScheduled(t)
+    expect(bucket.get(out.target.key)?.bytes).toEqual(new Uint8Array(8).fill(3))
+    expect((await t.run(async (ctx) => ctx.db.query('uploads').collect())).filter((u) => u.status === 'open')).toEqual([])
+  })
+
   test('a re-bake replaces the derived files and deletes the old objects later', async () => {
     const t = await completedCapture()
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }) // so the delayed delete can be run

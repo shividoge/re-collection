@@ -49,7 +49,8 @@ export default defineSchema({
     indexedBytes: v.optional(v.number()),
     indexedCount: v.optional(v.number()),
   })
-    .index('by_capture', ['captureId', 'area', 'name']),
+    .index('by_capture', ['captureId', 'area', 'name'])
+    .index('by_key', ['key']),
 
   uploads: defineTable({
     captureId: v.string(),

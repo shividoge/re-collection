@@ -20,7 +20,7 @@ export type NewFile = {
   key?: string
 }
 
-/** Objects to delete from R2 (and multipart uploads to abort). */
+/** Objects to delete from R2 (and multipart uploads to abort first). Keys a file row uses are kept. */
 export type Discard = { key: string; r2UploadId?: string }[]
 
 /** Presigned PUTs stay valid this long, so an object may come back once more within it. */
@@ -141,6 +141,7 @@ export async function sweepStaleOutputs(ctx: MutationCtx): Promise<number> {
       if (!u.jobId) continue
       const job = await ctx.db.get(u.jobId)
       if (job && holdsLease(job, u.attempt ?? 0)) continue
+      // (Uploads from before attempt keys wrote to the published key; uploads.discard keeps those.)
       objects.push({ key: u.key, ...(status === 'open' && u.r2UploadId ? { r2UploadId: u.r2UploadId } : {}) })
       await ctx.db.delete(u._id)
     }

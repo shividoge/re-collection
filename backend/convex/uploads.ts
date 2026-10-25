@@ -217,16 +217,28 @@ export async function finishUpload(ctx: ActionCtx, upload: Doc<'uploads'>, parts
   return head.bytes
 }
 
+export const keysInUse = internalQuery({
+  args: { keys: v.array(v.string()) },
+  returns: v.array(v.string()),
+  handler: async (ctx, { keys }) => {
+    const used: string[] = []
+    for (const key of keys) if (await ctx.db.query('files').withIndex('by_key', (q) => q.eq('key', key)).first()) used.push(key)
+    return used
+  },
+})
+
 /** Deletes objects (aborting their multipart uploads first); see stages.scheduleDiscard. */
 export const discard = internalAction({
   args: { objects: v.array(v.object({ key: v.string(), r2UploadId: v.optional(v.string()) })) },
   returns: v.null(),
-  handler: async (_ctx, { objects }) => {
+  handler: async (ctx, { objects }) => {
     const cfg = r2ConfigOrNull()
     if (!cfg) return null
+    // Checked now, not when scheduled: a file registered at one of these keys meanwhile keeps it.
+    const inUse = new Set(await ctx.runQuery(internal.uploads.keysInUse, { keys: objects.map((o) => o.key) }))
     for (const o of objects) {
       if (o.r2UploadId) await abortMultipart(cfg, o.key, o.r2UploadId)
-      await deleteObject(cfg, o.key)
+      if (!inUse.has(o.key)) await deleteObject(cfg, o.key)
     }
     return null
   },
