@@ -51,7 +51,12 @@ export const sessions = {
     return result.moment
   },
   start: (captureId: string): Promise<{ sessionId: string; welcome: Reply }> => convex().mutation(api.sessions.start, { captureId }),
-  narrate: (sessionId: string, chapterIndex: number): Promise<{ reply: Reply }> => convex().action(api.sessions.narrate, { sessionId, chapterIndex }),
+  /**
+   * `chapterIndex: null` narrates the whole moment (one without chapters). The backend's arg is
+   * still a plain number; until it takes null (asked for), null is sent as -1.
+   */
+  narrate: (sessionId: string, chapterIndex: number | null): Promise<{ reply: Reply }> =>
+    convex().action(api.sessions.narrate, { sessionId, chapterIndex: chapterIndex ?? -1 }),
   turn: (sessionId: string, text: string, focus?: Focus): Promise<{ reply: Reply; branch: string | null; distress: boolean }> =>
     convex().action(api.sessions.turn, focus ? { sessionId, text, focus } : { sessionId, text }),
   end: (sessionId: string, reason: EndReason): Promise<SessionEnd> => convex().action(api.sessions.end, { sessionId, reason }),

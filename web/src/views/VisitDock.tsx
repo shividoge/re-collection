@@ -7,8 +7,6 @@ import { RecognitionCtor, speak, type Recognition } from '../speech'
 const SESSION_LIMIT_MS = 10 * 60 * 1000
 const GOODBYE = "Thank you for sharing this with me. I'll be here whenever you want to look again."
 const TOUR_SPEED = 0.75
-/** sessions.narrate's chapterIndex for a moment without chapters: narrate all of it. */
-const WHOLE_MOMENT = -1
 
 type Span = { index: number | null; from: number; to: number }
 type Tour = 'off' | 'running' | 'paused'
@@ -163,7 +161,7 @@ function LiveVisitDock({ captureId, controls }: { captureId: string; controls: V
         } else {
           ctl.current.playback.pause()
           ctl.current.playback.seek(part.from)
-          const { reply } = await sessions.narrate(id, part.index ?? WHOLE_MOMENT)
+          const { reply } = await sessions.narrate(id, part.index)
           await say(reply, token)
           if (token !== tourToken.current || endedRef.current) return
         }

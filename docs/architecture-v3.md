@@ -261,7 +261,7 @@ Worker functions take `token` (env `WORKER_TOKEN` in Convex; workers read it fro
 
 ## 8. Static site export
 
-`backend/scripts/export-static.ts` writes `.static-site/` for GitHub Pages from the public data: `data/captures.json`, `data/captures/<id>.json` (same shape as `public.capture`, with relative file URLs), `data/moments/<id>.json`, `data/progress/<id>.json`, `data/sessions/<id>.json`, `data/museum/arrangement.json`, and `data/files/<id>/...` holding the derived files (gzip removed, since Pages compresses), the video, keyframes, thumb, `frames.jsonl`, the depth v2 files and the splat. The web's static mode reads exactly these.
+`backend/scripts/export-static.ts` writes `.static-site/` for GitHub Pages from the public data: `data/captures.json`, `data/captures/<id>.json` (same shape as `public.capture`, with relative file URLs), `data/moments/<id>.json`, `data/progress/<id>.json`, `data/sessions/<id>.json`, `data/museum/arrangement.json`, and `data/files/<id>/...` holding the derived files (gzip removed, since Pages compresses), the video, keyframes, thumb, `frames.jsonl`, the depth v2 files and the splat. The web's static mode reads exactly these. **Every URL inside a `data/*.json` file is relative to that JSON file** (as in HTML), so the export works from any folder or sub-path: e.g. `../files/<id>/video.mp4` inside `data/captures/<id>.json`, and `files/<id>/thumb.jpg` for `thumbUrl` inside `data/captures.json`. `data/captures.json` has the shape of `public.captures`; a missing moment, progress or session file means none (the web treats a 404 as null).
 
 ## 9. Cutover checklist
 

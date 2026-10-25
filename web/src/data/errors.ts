@@ -7,7 +7,7 @@ const CODES: Record<string, string> = {
   not_found: 'This visit isn’t here any more.',
   invalid: 'Some files in this capture don’t match its manifest.',
   forbidden: 'This isn’t shared publicly.',
-  ended: 'This visit has already ended.',
+  conflict: 'That can’t be done right now.',
 }
 
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
