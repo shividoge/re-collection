@@ -13,10 +13,10 @@ export const useMoment = (captureId: string): Loadable<{ moment: Moment | null; 
 export const useProgress = (captureId: string): Loadable<Progress> => useLive(api.progress.get, { captureId })
 export const usePerson = (): Loadable<Person> => useLive(api.people.get, {})
 
-/** The capture's live pipeline status (shares useCaptureAssets' subscription). */
-export function useCaptureStatus(captureId: string | null): Loadable<CaptureStatus | null> {
+/** The capture's live pipeline status and queued jobs (shares useCaptureAssets' subscription). */
+export function useCaptureStatus(captureId: string | null): Loadable<Pick<CaptureDetail, 'status' | 'queued'> | null> {
   const detail: Loadable<CaptureDetail | null> = useLive(api.captures.get, captureId ? { captureId } : 'skip')
-  return detail.status === 'ready' ? { status: 'ready', data: detail.data?.status ?? null } : detail
+  return detail.status === 'ready' ? { status: 'ready', data: detail.data ? { status: detail.data.status, queued: detail.data.queued } : null } : detail
 }
 
 /** Progress for several captures at once: undefined while loading, null when it failed. */

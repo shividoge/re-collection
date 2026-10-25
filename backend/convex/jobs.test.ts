@@ -335,10 +335,14 @@ describe('old video → capture', () => {
     await t.action(api.uploads.finish, { uploadId: target.uploadId })
     status = await statusOf(t, captureId)
     expect(status?.convert).toBe('queued')
+    // The web sees what the queued job needs, so it can say no online GPU can take it.
+    expect((await t.query(api.captures.list, {}))[0].queued).toEqual([{ kind: 'convert', needs: { gpu: true, frames: 240 } }])
+    expect((await t.query(api.captures.get, { captureId }))?.queued).toEqual([{ kind: 'convert', needs: { gpu: true, frames: 240 } }])
 
     // 30 s → 240 model frames: too many for the 16 GB card, fine for the GX10.
     expect(await t.mutation(api.worker.claim, fedoraGpu)).toBeNull()
     const job = await t.mutation(api.worker.claim, gx10)
+    expect((await t.query(api.captures.get, { captureId }))?.queued).toEqual([]) // leased, no longer queued
     expect(job).toMatchObject({ kind: 'convert', captureId })
     const inputs = await t.action(api.worker.inputs, as(job))
     expect(inputs.files.map((f) => [f.name, f.area])).toEqual([['source.mov', 'video']])

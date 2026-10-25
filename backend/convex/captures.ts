@@ -5,11 +5,15 @@ import type { Doc } from './_generated/dataModel'
 import { action, internalAction, internalMutation, mutation, query, type MutationCtx } from './_generated/server'
 import { conflict, getCapture, getFile, getMomentDoc, initialStatus, invalid, keepSplat, listFiles, requireCapture } from './lib/data'
 import { abortMultipart, deletePrefix, r2Config, r2ConfigOrNull, stableGetUrl, type R2Config } from './lib/r2'
+import { queuedJobs } from './lib/jobs'
 import { completeUpload } from './lib/stages'
 import { isSourceName } from './lib/validate'
-import { captureStatus, derived, fileUrl } from './validators'
+import { captureStatus, derived, fileUrl, jobKind } from './validators'
 
 export const namedFile = v.object({ name: v.string(), ...fileUrl.fields })
+
+/** A queued job and what it needs, so the web can say when no online worker can take it. */
+export const queuedJob = v.object({ kind: jobKind, needs: v.object({ gpu: v.boolean(), frames: v.optional(v.number()) }) })
 
 export const captureSummary = v.object({
   id: v.string(),
@@ -19,6 +23,7 @@ export const captureSummary = v.object({
   source: v.union(v.literal('phone'), v.literal('video')),
   thumbUrl: v.union(v.string(), v.null()),
   status: captureStatus,
+  queued: v.array(queuedJob),
   public: v.boolean(),
 })
 
@@ -26,6 +31,7 @@ export const captureDetail = v.object({
   id: v.string(),
   manifestJson: v.string(),
   status: captureStatus,
+  queued: v.array(queuedJob),
   public: v.boolean(),
   /** Raw files (names as in capture-format.md, e.g. "keyframes/k0001.jpg"), presigned GET URLs. */
   files: v.array(namedFile),
@@ -116,6 +122,7 @@ export const list = query({
           source: c.status.source,
           thumbUrl: await thumbUrl(ctx, c.captureId),
           status: c.status,
+          queued: await queuedJobs(ctx, c.captureId),
           public: c.public,
         }
       }),
@@ -137,6 +144,7 @@ export const get = query({
       id: capture.captureId,
       manifestJson: capture.manifestJson,
       status: capture.status,
+      queued: await queuedJobs(ctx, capture.captureId),
       public: capture.public,
       files: cfg ? signFiles(cfg, raw) : [],
       derived: capture.derived,
