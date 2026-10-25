@@ -150,6 +150,8 @@ class FakeConvex:
 
     def _claim(self, a: dict[str, object]) -> object:
         self.claim_times.append(self.clock())
+        if a.get("protocol") != 2:  # like worker.claim: an outdated worker takes no jobs
+            raise ConvexError("This worker speaks job protocol 1, but the backend needs 2.", {"code": "invalid"})
         if self.claim_errors:
             raise self.claim_errors.pop(0)
         max_frames = a.get("maxFrames")
@@ -370,7 +372,7 @@ def test_convert_happy_path(harness: Harness) -> None:
     by_name = {u["name"]: u["contentType"] for u in harness.convex.uploads.values()}
     assert by_name["manifest.json"] == "application/json" and by_name["frames.jsonl"] == "application/x-ndjson"
     claim_args = harness.convex.calls[0][1]
-    assert claim_args == {"workerId": "test-gpu", "kinds": ["convert", "splat"], "gpu": True, "maxFrames": 67}
+    assert claim_args == {"workerId": "test-gpu", "kinds": ["convert", "splat"], "gpu": True, "maxFrames": 67, "protocol": 2}
     assert any(p["stage"] == "depth" for p in j["progress"])  # type: ignore[union-attr]
     assert harness.job_dir_gone(job)
 

@@ -163,7 +163,8 @@ class WorkerApi:
             raise
 
     def claim(self, worker_id: str, kinds: list[str], gpu: bool, max_frames: int) -> Claim | None:
-        args: dict[str, object] = {"workerId": worker_id, "kinds": kinds, "gpu": gpu, "maxFrames": max_frames}
+        # `protocol` 2: the job protocol this worker speaks (attempt on every call); Convex refuses others.
+        args: dict[str, object] = {"workerId": worker_id, "kinds": kinds, "gpu": gpu, "maxFrames": max_frames, "protocol": 2}
         return cast(Claim | None, self._call("mutation", "worker:claim", args))
 
     # Every call after claim carries the claim's `attempt`: Convex ignores calls from a worker

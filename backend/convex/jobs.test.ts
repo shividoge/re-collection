@@ -3,7 +3,8 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { Id } from './_generated/dataModel'
 import { STOPPED_RESPONDING } from './lib/jobs'
-import { CAPTURE_ID, TOKEN, api, bucket, internal, runScheduled, setup, statusOf, tinyCapture, uploadCapture, type Bytes, type T } from './test.helpers'
+import { convertFrames } from './lib/validate'
+import { CAPTURE_ID, JPEG, TOKEN, api, bucket, internal, runScheduled, setup, statusOf, tinyCapture, uploadCapture, type Bytes, type T } from './test.helpers'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -329,5 +330,60 @@ describe('old video → capture', () => {
     expect(status?.convert).toBe('failed')
     expect(status?.errors.convert).toMatch(/incomplete: .*video\.mov is missing/)
     expect(status?.upload).toBe('invalid')
+  })
+})
+
+/** What workers/gpu/client.py and worker.py rely on (the Python worker runs against this backend). */
+describe('GPU worker contract', () => {
+  const codeOf = (e: unknown) => (e as { data?: { code?: string } }).data?.code
+  // client.py LEASE_LOST_CODES: a refusal with one of these codes means "the job isn't ours any more".
+  const LEASE_LOST_CODES = ['not_leased', 'lease_lost', 'lease_expired', 'not_found', 'cancelled']
+
+  async function videoJob(t: T, durationSec?: number) {
+    const { captureId } = await t.mutation(api.videos.create, { title: 'Sunday lunch', attendees: ['Priya', 'Dev'], fileName: 'clip.mp4', bytes: 4, ...(durationSec ? { durationSec } : {}) })
+    const target = await t.action(api.uploads.start, { captureId, name: 'source.mp4', bytes: 4, contentType: 'video/mp4' })
+    await fetch(target.single!.url, { method: 'PUT', headers: target.single!.headers, body: new Uint8Array(4) })
+    await t.action(api.uploads.finish, { uploadId: target.uploadId })
+    return { captureId, job: await t.mutation(api.worker.claim, gx10) }
+  }
+
+  test('convert inputs: the seed manifest has title and attendees, and the source video is listed', async () => {
+    const t = setup()
+    const { captureId, job } = await videoJob(t, 12)
+    const inputs = await t.action(api.worker.inputs, as(job))
+    expect(JSON.parse(inputs.manifestJson ?? '{}')).toMatchObject({ id: captureId, title: 'Sunday lunch', attendees: ['Priya', 'Dev'] })
+    expect(inputs.files).toEqual([expect.objectContaining({ name: 'source.mp4', area: 'video', bytes: 4 })])
+  })
+
+  test('a job the worker no longer holds: heartbeat says ok false / cancelled, complete and fail throw a lease-lost code', async () => {
+    const t = setup()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const { job } = await videoJob(t)
+    vi.setSystemTime(Date.now() + 121_000)
+    await t.mutation(internal.jobsCron.reap, {})
+    expect(await t.mutation(api.worker.heartbeat, as(job))).toEqual({ ok: false, cancelled: true })
+    const complete = await t.mutation(api.worker.complete, { ...as(job), result: { kind: 'convert', manifestJson: '{}' } }).catch((e: unknown) => e)
+    const fail = await t.mutation(api.worker.fail, { ...as(job), error: 'x', retryable: true }).catch((e: unknown) => e)
+    const outputs = await t.action(api.worker.outputUrls, { ...as(job), files: [] }).catch((e: unknown) => e)
+    for (const e of [complete, fail, outputs]) expect(LEASE_LOST_CODES).toContain(codeOf(e))
+  })
+
+  test('finishOutput returns the stored size in bytes, also when asked again', async () => {
+    const t = setup()
+    const { job } = await videoJob(t)
+    const [out] = await t.action(api.worker.outputUrls, { ...as(job), files: [{ name: 'thumb.jpg', bytes: 4, contentType: 'image/jpeg', area: 'raw' }] })
+    await fetch(out.target.single!.url, { method: 'PUT', headers: out.target.single!.headers, body: JPEG })
+    expect(await t.action(api.worker.finishOutput, { ...as(job), uploadId: out.target.uploadId })).toEqual({ ok: true, bytes: 4 })
+    expect(await t.action(api.worker.finishOutput, { ...as(job), uploadId: out.target.uploadId })).toEqual({ ok: true, bytes: 4 })
+  })
+
+  test("needs.frames uses video2capture's sample_count: max(16, floor(10 s) + 1), capped at 240", async () => {
+    // tools/video2capture/convert.py sample_count / job_frames, at 10 samples per second.
+    const python = (d: number) => Math.min(240, Math.max(2, Math.max(16, Math.floor(d * 10) + 1)))
+    for (const d of [0.4, 1, 1.55, 6.6, 12, 23.9, 24, 60]) expect(convertFrames(d), `${d} s`).toBe(python(d))
+    expect(convertFrames(undefined)).toBe(240)
+    const t = setup()
+    await videoJob(t, 6.6)
+    expect((await t.run(async (ctx) => ctx.db.query('jobs').collect())).find((j) => j.kind === 'convert')?.needs).toEqual({ gpu: true, frames: 67 })
   })
 })
