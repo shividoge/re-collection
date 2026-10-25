@@ -24,7 +24,7 @@ export interface DepthV2 {
 
 export async function fromV1(depth: Uint8Array, confidence: Uint8Array, o: { width: number; height: number; count: number }): Promise<DepthV2> {
   const packed = packV1(u16(depth), confidence)
-  const { bin, index } = await encodeDepthV2(packed, o, deflate)
+  const { bin, index } = await encodeDepthV2(packed, { ...o, filter: 'row-delta' }, deflate)
   return { bin, index, packed }
 }
 
