@@ -291,10 +291,12 @@ def prune(g: dict[str, torch.Tensor], contrib: torch.Tensor, keep_max: int, min_
 def train_from_package(capture: Path, masks_model, device: str, holdout_frames: list[int] | None = None,
                        passes: float = 30, batch: int = 4, width: int = 1280, cap: int = 800_000,
                        keep_max: int = 500_000, sh_degree: int = 1, log=print, checkpoint=lambda: None,
-                       progress=lambda fraction: None, timings: dict | None = None) -> dict[str, np.ndarray]:
+                       progress=lambda fraction: None, timings: dict | None = None,
+                       max_views: int = 240) -> dict[str, np.ndarray]:
     """Train the room splat from a capture package on disk (video.mp4, frames.jsonl, depth,
     room.bin): the model frames (lines with `d`) minus `holdout_frames`. Same inputs whether it
-    runs right after the conversion or as the GPU worker's separate splat job."""
+    runs right after the conversion or as the GPU worker's separate splat job. At most
+    `max_views` frames, evenly spread, so memory stays bounded for long videos."""
     import json
     import time
 
@@ -311,6 +313,8 @@ def train_from_package(capture: Path, masks_model, device: str, holdout_frames: 
     lines = [l for l in lines if l["i"] not in skip]
     if len(lines) < 2:
         raise decode.ConvertError("Fewer than two frames with depth to train the splat on.")
+    if len(lines) > max_views:  # a long video: an even selection keeps memory bounded
+        lines = [lines[int(j)] for j in np.linspace(0, len(lines) - 1, max_views).round()]
     info = decode.probe(capture / manifest["video"]["file"])
     dec = decode.decode(info, [l["i"] for l in lines], width, None, checkpoint=checkpoint)
     images_cpu = torch.from_numpy(np.stack([dec.frames[l["i"]] for l in lines]))
