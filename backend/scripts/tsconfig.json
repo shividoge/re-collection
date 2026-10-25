@@ -1,0 +1,6 @@
+{
+  "extends": "../convex/tsconfig.json",
+  "compilerOptions": { "types": ["bun", "node"] },
+  "include": ["./**/*", "../convex/**/*"],
+  "exclude": ["../convex/_generated"]
+}

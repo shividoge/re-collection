@@ -5,8 +5,11 @@
   "scripts": {
     "dev": "convex dev",
     "codegen": "convex codegen",
-    "typecheck": "tsc --noEmit -p convex",
-    "test": "vitest run"
+    "typecheck": "tsc --noEmit -p convex && tsc --noEmit -p scripts",
+    "test": "vitest run",
+    "import": "bun scripts/import-guide-data.ts",
+    "export-static": "bun scripts/export-static.ts",
+    "smoke": "bun scripts/smoke-claude.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
@@ -14,6 +17,7 @@
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
+    "@types/bun": "^1.4.4",
     "@types/node": "^26.6.5",
     "convex-test": "^0.0.65",
     "typescript": "^7.0.2",
