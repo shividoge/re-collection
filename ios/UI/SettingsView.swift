@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Where captures upload: the guide server's tunnel URL and optional key.
+/// Guide server address (where captures upload) and room-scan options.
 struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -37,8 +37,16 @@ struct SettingsView: View {
                     case .failed(let message): Label(message, systemImage: "xmark.octagon.fill").foregroundStyle(.red)
                     }
                 }
+
+                Section {
+                    Toggle("Keep medium-confidence depth", isOn: $model.keepMediumConfidence)
+                } header: {
+                    Text("Room scan")
+                } footer: {
+                    Text("Adds weaker LiDAR points within 3 m. Try it for glossy surfaces or bright light; it can add noise. Applies to the next scan.")
+                }
             }
-            .navigationTitle("Upload settings")
+            .navigationTitle("Settings")
             .toolbar { Button("Done") { dismiss() } }
         }
     }

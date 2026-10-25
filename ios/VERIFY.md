@@ -68,6 +68,13 @@ Not built yet.
 - [ ] The video plays in Chrome on a laptop (it's H.264 video.mp4 now)
 - [ ] Locking the phone during "Transcribing…" doesn't lose the capture; it finishes when you come back
 
+## Medium-confidence option (Settings > Room scan)
+
+- [ ] Off by default: a scan with the toggle off behaves as before (point count similar to earlier scans of the same place)
+- [ ] With the toggle on, scanning the same place gives more points, with no obvious floating noise
+- [ ] The toggle survives quitting and relaunching the app
+- [ ] Scanning still works with the toggle on (this also checks the shader's uniform layout matches the Swift struct, 112 bytes)
+
 ## Checkpoint 7 (15:00): coverage hints, thermal and lifecycle edge cases
 
 Not built yet.

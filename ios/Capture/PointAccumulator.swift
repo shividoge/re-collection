@@ -5,7 +5,7 @@ import simd
 /// Builds the room's colored point cloud on the GPU (IOS_CAPTURE_PLAN.md 5.1-5.2).
 ///
 /// Each accepted depth frame runs `unprojectKernel`, which turns every
-/// `stride`-th high-confidence depth pixel into a world-space point colored
+/// `stride`-th trusted depth pixel (high confidence, plus medium within `mediumMaxDepth` when enabled) into a world-space point colored
 /// from the camera image, and appends it to `pointBuffer`. The renderer draws
 /// straight from the same buffer.
 ///
@@ -22,6 +22,15 @@ final class PointAccumulator {
 
     let device: MTLDevice
     let pointBuffer: MTLBuffer
+
+    /// Medium-confidence depth is kept out to this distance (meters) when
+    /// `keepsMediumConfidence` is on. Beyond it, only high confidence counts.
+    static let mediumMaxDepth: Float = 3.0
+
+    /// Off by default (the room scan stays high-confidence only). Turn on for
+    /// scenes where LiDAR returns are weak: glossy surfaces, bright light.
+    /// Set on the main thread between scans, read on the capture queue.
+    var keepsMediumConfidence = false
 
     /// Every `stride`-th depth pixel in each direction. 2 gives about 12k points
     /// per pass from a 256x192 map.
@@ -114,7 +123,8 @@ final class PointAccumulator {
                 depthWidth: Float(depthWidth), depthHeight: Float(depthHeight)),
             depthRange: Self.depthRange,
             stride: stride,
-            maxPoints: UInt32(Self.maxPoints))
+            maxPoints: UInt32(Self.maxPoints),
+            mediumMaxDepth: keepsMediumConfidence ? Self.mediumMaxDepth : 0)
 
         encoder.setComputePipelineState(pipeline)
         encoder.setTexture(CVMetalTextureGetTexture(depth), index: 0)
@@ -156,11 +166,12 @@ final class PointAccumulator {
     }
 }
 
-/// Mirrors `AccumulateUniforms` in Shaders.metal field for field (96 bytes).
+/// Mirrors `AccumulateUniforms` in Shaders.metal field for field (stride 112 bytes).
 struct AccumulateUniforms {
     var cameraToWorld: simd_float4x4
     var intrinsics: SIMD4<Float>   // fx, fy, cx, cy at depth resolution
     var depthRange: SIMD2<Float>   // min, max meters
     var stride: UInt32
     var maxPoints: UInt32
+    var mediumMaxDepth: Float      // 0 = high confidence only
 }
