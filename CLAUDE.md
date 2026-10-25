@@ -323,6 +323,7 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 - 2026-10-24 16:00 | Shivin + Claude | pushed web/museum (WIP) and tools/video-to-3d; handed all remaining work to Firdavs and IBS27 for two hours (TASKS.md "Right now") | Firdavs: #25 + #16, museum; IBS27: video-to-3D, Devpost
 - 2026-10-24 16:20 | Shivin + Claude | video2capture fixed and run on three real clips (render in viewer + Memory Window); data release team-data-1; docs/LAST-STEP.md with the shared-museum spec | Firdavs: museum canvas + iPad; IBS27: Visit together
 - 2026-10-24 16:30 | Shivin + Claude | one master list of everything left until submission (TASKS.md top), Status rewritten, data release team-data-1 | team follows the Must list
+- 2026-10-24 18:50 | IBS27 + Claude | PR #37: video2capture on DA3NESTED-GIANT-LARGE-1.1 (metric), clean room fusion (edges, multi-view check, people masked), trained Gaussian splat `room.splat.ply` (gsplat, people left empty), contract entry + guide validation, Spark splat view with Points (raw) toggle; held-out PSNR 7–12 dB before, 18–19 points, 22–31 splat (`tools/video2capture/README.md`) | merge #37 last (M6); rerun the team clips with the new script for the demo; splat files are 30–80 MB, compress (SPZ) before the public site
 
 ---
 
