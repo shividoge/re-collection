@@ -3,7 +3,7 @@ import Foundation
 import Metal
 
 /// Phases from IOS_CAPTURE_PLAN.md Section 3. `roomSaved` is the plan's
-/// readyToRecord; `savingMoment` covers finishing, keyframes and transcription.
+/// readyToRecord; `savingMoment` covers finishing the files and the transcript.
 enum CapturePhase: Equatable {
     case idle
     case scanningRoom
@@ -23,13 +23,6 @@ enum CapturePhase: Equatable {
     }
 }
 
-enum UploadState: Equatable {
-    case idle
-    case uploading(Uploader.Progress)
-    case done
-    case failed(String)
-}
-
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var phase: CapturePhase = .idle
@@ -38,15 +31,8 @@ final class AppModel: ObservableObject {
     @Published var pointCount = 0
     @Published var roomCaptured = false
     @Published var showsCameraFeed = true
-    @Published private(set) var upload: UploadState = .idle
-
-    /// Guide server address and key, typed in Settings.
-    @Published var guideURL: String = UserDefaults.standard.string(forKey: "guideURL") ?? "" {
-        didSet { UserDefaults.standard.set(guideURL, forKey: "guideURL") }
-    }
-    @Published var guideKey: String = UserDefaults.standard.string(forKey: "guideKey") ?? "" {
-        didSet { UserDefaults.standard.set(guideKey, forKey: "guideKey") }
-    }
+    /// Set when the review screen's title or names couldn't be saved.
+    @Published private(set) var saveError: String?
 
     /// Also keep medium-confidence depth within 3 m in the room scan (Settings).
     @Published var keepMediumConfidence: Bool = UserDefaults.standard.bool(forKey: "keepMediumConfidence") {
@@ -181,41 +167,34 @@ final class AppModel: ObservableObject {
     /// Saves the title and attendees from the review screen into manifest.json.
     func saveDetails(title: String, attendees: [String]) {
         guard case .review(var capture) = phase else { return }
-        capture.manifest.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Rewriting an unchanged manifest would make an upload send it again;
+        // and once uploading, manifest.json is one of the files going up.
+        guard title != capture.manifest.title || attendees != capture.manifest.attendees,
+              !UploadCenter.shared.isUploading
+        else { return }
+        capture.manifest.title = title
         capture.manifest.attendees = attendees
         do {
             try CaptureStore.writeManifest(capture.manifest, in: capture.folder)
+            saveError = nil
             phase = .review(capture)
         } catch {
-            upload = .failed("The details couldn't be saved: \(error.localizedDescription)")
+            saveError = "The details couldn't be saved: \(error.localizedDescription)"
         }
     }
 
+    /// Sends the capture on the review screen through Convex and R2. It
+    /// carries on in the background, and after a relaunch.
     func uploadCapture() {
         guard case .review(let capture) = phase else { return }
-        if case .uploading = upload { return }
-        guard UploadPlan.url(base: guideURL, path: "/health") != nil else {
-            upload = .failed("Set the guide server address in Settings first.")
-            return
-        }
-        upload = .uploading(.init(sentBytes: 0, totalBytes: 0, currentFile: "manifest.json"))
-        let uploader = Uploader(baseURL: guideURL, key: guideKey)
-        Task {
-            do {
-                try await uploader.upload(capture) { progress in
-                    if case .uploading = self.upload { self.upload = .uploading(progress) }
-                }
-                upload = .done
-            } catch {
-                upload = .failed(error.localizedDescription)
-            }
-        }
+        UploadCenter.shared.upload(folder: capture.folder, manifestId: capture.id, title: capture.manifest.title)
     }
 
-    /// Leaves the review screen. The capture stays on the phone (Files app).
+    /// Leaves the review screen. The capture stays on the phone (Files app),
+    /// and an upload in progress keeps going.
     func finishReview() {
-        if case .uploading = upload { return }
-        upload = .idle
+        saveError = nil
         phase = .idle
     }
 
@@ -251,26 +230,14 @@ final class AppModel: ObservableObject {
         let videoURL = folder.appending(path: moment.videoFile)
         var warnings: [String] = []
 
-        phase = .savingMoment(step: "Making keyframes…")
-        var keyframeCount = 0
-        do {
-            keyframeCount = try await PostProcessor.makeKeyframes(video: videoURL, folder: folder, durationSec: moment.durationSec)
-        } catch {
-            warnings.append("Keyframes failed: \(error.localizedDescription)")
-        }
-
-        phase = .savingMoment(step: "Transcribing on the phone…")
-        var transcript: TranscriptFile?
-        do {
-            transcript = try await PostProcessor.transcribe(video: videoURL, folder: folder)
-        } catch {
-            warnings.append(error.localizedDescription)
-        }
+        phase = .savingMoment(step: "Finishing the transcript…")
+        let (transcript, transcriptWarning) = await PostProcessor.transcript(live: moment.transcriber, video: videoURL, folder: folder)
+        if let transcriptWarning { warnings.append(transcriptWarning) }
 
         guard token == activeToken else { return }
         let manifest = CaptureStore.manifest(
             id: token, createdAt: captureStartedAt, moment: moment, room: room,
-            keyframeCount: keyframeCount, transcript: transcript, extraWarnings: warnings)
+            keyframeCount: moment.keyframeCount, transcript: transcript, extraWarnings: warnings)
         do {
             try CaptureStore.writeManifest(manifest, in: folder)
         } catch {
@@ -278,7 +245,7 @@ final class AppModel: ObservableObject {
             return
         }
         activeToken = nil
-        upload = .idle
+        saveError = nil
         phase = .review(SavedCapture(id: manifest.id, folder: folder, manifest: manifest, transcript: transcript))
     }
 

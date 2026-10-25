@@ -1,11 +1,14 @@
 import ARKit
 import AVFoundation
 import CoreImage
+import ImageIO
+import UniformTypeIdentifiers
 
-/// Writes the capture package: depth.bin and confidence.bin at 10 Hz plus a
-/// frames.jsonl pose line per frame during both the scan and the moment, and
-/// video.mp4 (H.264 + AAC, so every browser plays it) during the moment only
-/// (IOS_CAPTURE_PLAN.md 6, docs/capture-format.md).
+/// Writes the capture package: depth v2 (depth.bin + depth.index.json) at
+/// 10 Hz plus a frames.jsonl pose line per frame during both the scan and the
+/// moment, and video.mp4 (H.264 + AAC, so every browser plays it) and one
+/// keyframe per whole second during the moment only (IOS_CAPTURE_PLAN.md 6,
+/// docs/capture-format.md).
 ///
 /// Every method runs on the capture queue. Conversions happen right there
 /// (a 256x192 depth map takes microseconds) and the resulting `Data` goes to
@@ -21,12 +24,16 @@ final class CaptureRecorder {
         let durationSec: Double
         let frameCount: Int
         let depthCount: Int
+        /// keyframes/k0000.jpg up to k(count-1), with no gaps.
+        var keyframeCount = 0
         let videoFile: String
         let videoSize: CGSize
         let fps: Int
         let audioSampleRate: Int
         let scanSpan: CaptureManifest.Span?
-        let warnings: [String]
+        var warnings: [String]
+        /// Heard the moment while it recorded; nil when live recognition wasn't available.
+        let transcriber: LiveTranscriber?
     }
 
     static let maxMomentSeconds: Double = 180
@@ -41,13 +48,13 @@ final class CaptureRecorder {
 
     private let fileQueue = DispatchQueue(label: "braindance.files", qos: .utility)
     private let depthHandle: FileHandle
-    private let confidenceHandle: FileHandle
     private let framesHandle: FileHandle
+    /// Only used on the file queue, so compressing a chunk never blocks the camera.
+    private let depthChunks: DepthChunkWriter
     /// Set on the file queue when a write fails (usually a full disk).
     private var writeError: Error?
 
     private var depthCount = 0
-    private var depthSize = CGSize.zero
     private var lastDepthTimestamp: TimeInterval?
 
     /// Scan lines wait in memory until the moment's t0 is known, since every
@@ -68,6 +75,13 @@ final class CaptureRecorder {
     private var droppedVideoFrames = 0
     private var droppedAudioBuffers = 0
     private var thumbnailTaken = false
+    /// The next whole second of moment time that needs a keyframe.
+    private var nextKeyframeSecond = 0
+    private var keyframesStopped = false
+    /// File queue only: keyframes written so far (always 0..<count) and why they stopped.
+    private var keyframeCount = 0
+    private var keyframeFailure: String?
+    private var transcriber: LiveTranscriber?
     private lazy var ciContext = CIContext()
 
     init(folder: URL, fps: Int) throws {
@@ -80,9 +94,12 @@ final class CaptureRecorder {
             }
             return try FileHandle(forWritingTo: url)
         }
-        depthHandle = try open("depth.bin")
-        confidenceHandle = try open("confidence.bin")
+        let depthHandle = try open("depth.bin")
+        self.depthHandle = depthHandle
         framesHandle = try open("frames.jsonl")
+        depthChunks = DepthChunkWriter(width: RecordingFormat.depthWidth, height: RecordingFormat.depthHeight) { chunk in
+            try depthHandle.write(contentsOf: chunk)
+        }
     }
 
     // MARK: Phase changes
@@ -119,6 +136,8 @@ final class CaptureRecorder {
         guard mode == .moment, let t0, let audioInput else { return }
         // Drop audio from before the first video frame.
         guard CMSampleBufferGetPresentationTimeStamp(buffer).seconds >= t0 else { return }
+        // Every buffer goes to the recognizer, even one the writer drops.
+        transcriber?.append(buffer, t0: t0)
         guard audioInput.isReadyForMoreMediaData,
               let retimed = RecordingFormat.retimedAudio(buffer, t0: t0),
               audioInput.append(retimed)
@@ -140,6 +159,12 @@ final class CaptureRecorder {
         let size = frame.camera.imageResolution
         let videoURL = folder.appending(path: Self.videoFileName)
         try? FileManager.default.removeItem(at: videoURL)
+        do {
+            try FileManager.default.createDirectory(
+                at: folder.appending(path: "keyframes", directoryHint: .isDirectory), withIntermediateDirectories: true)
+        } catch {
+            return "The keyframes folder couldn't be created: \(error.localizedDescription)"
+        }
 
         let writer: AVAssetWriter
         do {
@@ -153,6 +178,15 @@ final class CaptureRecorder {
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: Int(size.width),
             AVVideoHeightKey: Int(size.height),
+            // The encoder's default for 1920x1440 is about 19 Mbps (71 MB per 30 s).
+            // 8 Mbps looks the same for a handheld visit at well under half the size.
+            // A keyframe every second keeps seeking in the browser quick.
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: RecordingFormat.videoBitRate,
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+                AVVideoExpectedSourceFrameRateKey: fps,
+                AVVideoMaxKeyFrameIntervalKey: fps,
+            ] as [String: Any],
         ])
         video.expectsMediaDataInRealTime = true
         // Stored in the sensor's landscape orientation, untransformed; the
@@ -172,6 +206,8 @@ final class CaptureRecorder {
         guard writer.canAdd(video), writer.canAdd(audio) else { return "The video writer rejected its inputs." }
         writer.add(video)
         writer.add(audio)
+        // Make the image context now, not on the first keyframe, so frame 0 isn't late.
+        _ = ciContext
         guard writer.startWriting() else {
             return "Video recording couldn't start: \(writer.error?.localizedDescription ?? "unknown error")"
         }
@@ -185,6 +221,7 @@ final class CaptureRecorder {
         let t0 = frame.timestamp
         self.t0 = t0
         mode = .moment
+        transcriber = LiveTranscriber.start()
 
         // Now that t0 is known, the scan lines can be written before the moment's.
         let scanLines = pendingScanLines.map { entry -> String in
@@ -228,6 +265,10 @@ final class CaptureRecorder {
             thumbnailTaken = true
             saveThumbnail(frame.capturedImage)
         }
+        if !keyframesStopped, let seconds = RecordingFormat.keyframeSecondsDue(at: t, next: nextKeyframeSecond) {
+            nextKeyframeSecond = seconds.upperBound + 1
+            saveKeyframe(frame.capturedImage, seconds: seconds)
+        }
         return .ok
     }
 
@@ -238,6 +279,7 @@ final class CaptureRecorder {
     func finishMoment(completion: @escaping (Result<MomentResult, Error>) -> Void) {
         guard mode == .moment, let writer, let t0 else {
             mode = .finished
+            transcriber?.cancel()
             closeFiles(cancelWriter: true) {}
             completion(.failure(RecorderError.noFrames))
             return
@@ -263,19 +305,26 @@ final class CaptureRecorder {
             fps: fps,
             audioSampleRate: audioSampleRate,
             scanSpan: scanSpan,
-            warnings: warnings)
+            warnings: warnings,
+            transcriber: transcriber)
 
         writer.finishWriting { [self] in
             if writer.status != .completed {
-                completion(.failure(RecorderError.videoFailed(writer.error?.localizedDescription ?? "unknown error")))
+                transcriber?.cancel()
+                let message = writer.error?.localizedDescription ?? "unknown error"
+                closeFiles(cancelWriter: true) { completion(.failure(RecorderError.videoFailed(message))) }
                 return
             }
             closeFiles(cancelWriter: false) { [self] in
+                // On the file queue, after every keyframe is on disk.
                 if let writeError {
                     completion(.failure(RecorderError.writeFailed(writeError.localizedDescription)))
-                } else {
-                    completion(.success(result))
+                    return
                 }
+                var result = result
+                result.keyframeCount = keyframeCount
+                if let keyframeFailure { result.warnings.append(keyframeFailure) }
+                completion(.success(result))
             }
         }
     }
@@ -284,13 +333,22 @@ final class CaptureRecorder {
     func cancel() {
         guard mode != .finished else { return }
         mode = .finished
+        transcriber?.cancel()
         closeFiles(cancelWriter: true) {}
     }
 
     private func closeFiles(cancelWriter: Bool, then: @escaping () -> Void) {
         if cancelWriter, let writer, writer.status == .writing { writer.cancelWriting() }
         fileQueue.async { [self] in
-            for handle in [depthHandle, confidenceHandle, framesHandle] {
+            if !cancelWriter, writeError == nil {
+                do {
+                    let index = try depthChunks.finish()
+                    try index.encoded().write(to: folder.appending(path: "depth.index.json"), options: .atomic)
+                } catch {
+                    writeError = error
+                }
+            }
+            for handle in [depthHandle, framesHandle] {
                 do { try handle.close() } catch { writeError = writeError ?? error }
             }
             then()
@@ -299,25 +357,25 @@ final class CaptureRecorder {
 
     // MARK: Helpers
 
-    /// Converts and queues this frame's depth and confidence if 10 Hz says
-    /// it's due. Returns the depth index, or nil if no depth was written.
+    /// Packs and queues this frame's depth and confidence if 10 Hz says it's
+    /// due. Returns the depth index, or nil if no depth was written.
     private func writeDepthIfDue(_ frame: ARFrame) -> Int? {
         guard RecordingFormat.isDepthDue(at: frame.timestamp, lastDepth: lastDepthTimestamp),
               let sceneDepth = frame.smoothedSceneDepth ?? frame.sceneDepth,
               let confidenceMap = sceneDepth.confidenceMap,
-              let depth = RecordingFormat.millimeterData(fromDepth: sceneDepth.depthMap),
-              let confidence = RecordingFormat.confidenceData(from: confidenceMap)
+              // Every frame must be the size depth.index.json declares.
+              CVPixelBufferGetWidth(sceneDepth.depthMap) == RecordingFormat.depthWidth,
+              CVPixelBufferGetHeight(sceneDepth.depthMap) == RecordingFormat.depthHeight,
+              let packed = RecordingFormat.packedDepthData(depth: sceneDepth.depthMap, confidence: confidenceMap)
         else { return nil }
-
-        // depth.bin is a flat array of same-sized frames; never mix sizes.
-        let size = CGSize(width: CVPixelBufferGetWidth(sceneDepth.depthMap), height: CVPixelBufferGetHeight(sceneDepth.depthMap))
-        if depthCount == 0 { depthSize = size } else if size != depthSize { return nil }
 
         lastDepthTimestamp = frame.timestamp
         let index = depthCount
         depthCount += 1
-        write(depth, to: depthHandle)
-        write(confidence, to: confidenceHandle)
+        fileQueue.async { [self] in
+            guard writeError == nil else { return }
+            do { try depthChunks.append(packed) } catch { writeError = error }
+        }
         return index
     }
 
@@ -338,6 +396,53 @@ final class CaptureRecorder {
             guard writeError == nil else { return }
             do { try handle.write(contentsOf: data) } catch { writeError = error }
         }
+    }
+
+    /// Renders a copy at most 1024 px on the long side right away, so the
+    /// camera's buffer goes straight back to ARKit, then writes it as the
+    /// keyframe for each second in `seconds` (more than one only if frames
+    /// went missing for over a second). Stored in the sensor's landscape
+    /// orientation, like the video.
+    private func saveKeyframe(_ pixelBuffer: CVPixelBuffer, seconds: ClosedRange<Int>) {
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        let scale = RecordingFormat.keyframeScale(width: width, height: height)
+        let image = CIImage(cvPixelBuffer: pixelBuffer).transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let rect = CGRect(x: 0, y: 0, width: (CGFloat(width) * scale).rounded(), height: (CGFloat(height) * scale).rounded())
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let cgImage = ciContext.createCGImage(image, from: rect, format: .RGBA8, colorSpace: colorSpace)
+        else {
+            stopKeyframes(at: seconds.lowerBound, "the camera image couldn't be converted")
+            return
+        }
+        let folder = folder
+        fileQueue.async { [self] in
+            guard keyframeFailure == nil else { return }
+            for second in seconds {
+                let url = folder.appending(path: RecordingFormat.keyframeName(second: second))
+                guard Self.writeJPEG(cgImage, to: url) else {
+                    keyframeFailure = "Keyframes stopped at \(second) s: \(url.lastPathComponent) couldn't be written."
+                    return
+                }
+                keyframeCount = second + 1
+            }
+        }
+    }
+
+    /// Keyframes must have no gaps, so the first failure ends them.
+    private func stopKeyframes(at second: Int, _ reason: String) {
+        keyframesStopped = true
+        fileQueue.async { [self] in
+            keyframeFailure = keyframeFailure ?? "Keyframes stopped at \(second) s: \(reason)."
+        }
+    }
+
+    private static func writeJPEG(_ image: CGImage, to url: URL) -> Bool {
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else {
+            return false
+        }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+        return CGImageDestinationFinalize(destination)
     }
 
     private func saveThumbnail(_ pixelBuffer: CVPixelBuffer) {

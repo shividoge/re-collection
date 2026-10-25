@@ -23,12 +23,13 @@ It's 93 MB zipped: a 46 s room scan, then a 28 s moment at 30 fps, with 1,064,34
 capture-<uuid>/
   manifest.json      [built] what's in the folder; read this first
   room.bin           [built] the room's point cloud, compact format for the web
-  room.ply           [built] same cloud for MeshLab / CloudCompare
+  room.ply           [built] same cloud for MeshLab / CloudCompare. Phone v3: written for AirDrop but not uploaded and not in the manifest
   room.splat.ply     [optional] the room as 3D Gaussians, trained off the phone; see "room splat"
   video.mp4          [built on ios/upload] H.264 + AAC, so every browser can play it. The sample capture predates this and has video.mov (HEVC)
   frames.jsonl       [built] one line per frame: camera pose, intrinsics, depth index
-  depth.bin          [built] 10 Hz depth frames, UInt16 millimeters
-  confidence.bin     [built] 10 Hz confidence frames, UInt8
+  depth.bin          [built] 10 Hz depth frames. Phone v3 writes depth v2 (docs/architecture-v3.md §3)
+  depth.index.json   [phone v3] depth v2 chunk index
+  confidence.bin     [v1 only] 10 Hz confidence frames, UInt8; the phone no longer writes it
   thumb.jpg          [built] one frame about 2 s into the moment
   transcript.json    [built on ios/upload] on-device speech recognition with word times
   keyframes/kNNNN.jpg [built on ios/upload] one frame per second of the moment, long side 1024
@@ -139,6 +140,8 @@ One JSON object per line. Scan lines come first, then moment lines.
 Moment lines number exactly `video.frameCount`, one per video frame in order. To find the pose for video time `currentTime`, use the moment line with the nearest `t`.
 
 ## depth.bin and confidence.bin [built]
+
+**The phone now writes depth v2** (`"depth": { "encoding": "v2", "index": "depth.index.json", ... }`, no `confidence.bin`): confidence packed into the top two bits of each UInt16 and the frames in raw-DEFLATE chunks. The spec is `docs/architecture-v3.md` §3. What follows is v1, which older captures and the video converter still use; treat a manifest without `encoding` as v1.
 
 - `depth.bin`: `depth.count` frames × 256 × 192 × `UInt16` millimeters, little-endian, row-major. Frame k starts at byte `k·256·192·2` (98,304 bytes per frame). **0 means no data.**
 - `confidence.bin`: same frames × 256 × 192 × `UInt8` (0 low, 1 medium, 2 high). Frame k starts at `k·256·192`.

@@ -2,9 +2,10 @@ import AVKit
 import SwiftUI
 
 /// After recording: play the clip back, name the moment, list who was there,
-/// then upload to the guide or AirDrop the zip (IOS_CAPTURE_PLAN.md 8–9).
+/// then upload through Convex or AirDrop the zip (IOS_CAPTURE_PLAN.md 8–9).
 struct ReviewView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var uploads: UploadCenter
     let capture: SavedCapture
 
     @State private var title = ""
@@ -31,11 +32,17 @@ struct ReviewView: View {
                 }
 
                 Section {
+                    // Locked while uploading: manifest.json is one of the files going up.
                     TextField("Sunday lunch at Mom's", text: $title)
                         .focused($editing)
+                        .disabled(isUploading)
                     TextField("Priya, Dev, Grandma", text: $attendees, axis: .vertical)
                         .focused($editing)
                         .textInputAutocapitalization(.words)
+                        .disabled(isUploading)
+                    if let saveError = model.saveError {
+                        Text(saveError).foregroundStyle(.red)
+                    }
                 } header: {
                     Text("Name this moment")
                 } footer: {
@@ -85,7 +92,6 @@ struct ReviewView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Finish") { confirmsLeaving = true }
-                        .disabled(isUploading)
                 }
                 ToolbarItem(placement: .keyboard) {
                     Button("Save") { editing = false }
@@ -98,13 +104,17 @@ struct ReviewView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(.bar)
             }
-            .onChange(of: model.upload) { _, state in
+            .onChange(of: myUpload) { _, state in
                 if state == .done { Haptics.success() }
             }
             .confirmationDialog("Leave the review?", isPresented: $confirmsLeaving, titleVisibility: .visible) {
                 Button("Leave") { model.finishReview() }
             } message: {
-                Text(model.upload == .done ? "The visit is uploaded." : "It hasn't been uploaded. It stays on the phone in the Files app.")
+                switch myUpload {
+                case .done: Text("The visit is uploaded.")
+                case .uploading: Text("It keeps uploading in the background. Home shows how it's going.")
+                default: Text("It hasn't been uploaded. It stays on the phone in the Files app.")
+                }
             }
             .sheet(isPresented: $showsSettings) { SettingsView() }
         }
@@ -123,32 +133,47 @@ struct ReviewView: View {
         }
     }
 
+    /// This capture's upload. Another capture's upload counts as not started here.
+    private var myUpload: UploadCenter.State {
+        if uploads.captureId == capture.id { return uploads.state }
+        return uploads.sent.contains(capture.id) ? .done : .idle
+    }
+
     private var isUploading: Bool {
-        if case .uploading = model.upload { return true }
+        if case .uploading = myUpload { return true }
         return false
     }
 
     @ViewBuilder
     private var uploadRow: some View {
-        switch model.upload {
+        switch myUpload {
         case .idle:
             Button {
                 Haptics.tap()
                 startUpload()
             } label: {
-                Label("Send to your family's guide", systemImage: "icloud.and.arrow.up")
+                Label("Send to your family's Braindance", systemImage: "icloud.and.arrow.up")
             }
             .buttonStyle(BigButtonStyle())
+            .disabled(uploads.isUploading)
             .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
             .listRowBackground(Color.clear)
+            if uploads.isUploading {
+                Text("Another visit is still uploading. Send this one when it's done.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
         case .uploading(let progress):
             VStack(alignment: .leading, spacing: 6) {
                 ProgressView(value: progress.fraction)
-                Text("Uploading \(progress.currentFile)… \(Int(progress.fraction * 100))%")
+                Text(progress.fileCount > 0
+                     ? "Uploading… \(Int(progress.fraction * 100))% (\(progress.filesDone) of \(progress.fileCount) files)"
+                     : "Starting the upload…")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Text("It keeps going if you lock the phone or leave the app.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         case .done:
-            Label("Sent. The guide checked every file.", systemImage: "checkmark.circle.fill")
+            Label("Sent. Braindance checked every file.", systemImage: "checkmark.circle.fill")
                 .foregroundStyle(Brand.good)
         case .failed(let message):
             VStack(alignment: .leading, spacing: 8) {
@@ -165,7 +190,7 @@ struct ReviewView: View {
 
     private func startUpload() {
         saveDetails()
-        if model.guideURL.isEmpty {
+        if uploads.convexURL.trimmingCharacters(in: .whitespaces).isEmpty {
             showsSettings = true
         } else {
             model.uploadCapture()

@@ -14,50 +14,46 @@ final class DepthConversionTests: XCTestCase {
         XCTAssertEqual(RecordingFormat.millimeters(-1), 0)
     }
 
-    func testDepthBufferBecomesRowMajorLittleEndianMillimeters() throws {
+    private func pixelBuffer(_ width: Int, _ height: Int, _ format: OSType) throws -> CVPixelBuffer {
         var buffer: CVPixelBuffer?
-        XCTAssertEqual(CVPixelBufferCreate(nil, 3, 2, kCVPixelFormatType_DepthFloat32, nil, &buffer), kCVReturnSuccess)
-        let depth = try XCTUnwrap(buffer)
+        XCTAssertEqual(CVPixelBufferCreate(nil, width, height, format, nil, &buffer), kCVReturnSuccess)
+        return try XCTUnwrap(buffer)
+    }
+
+    func testDepthAndConfidenceBecomePackedRowMajorLittleEndianPixels() throws {
+        let depth = try pixelBuffer(3, 2, kCVPixelFormatType_DepthFloat32)
+        let confidence = try pixelBuffer(3, 2, kCVPixelFormatType_OneComponent8)
 
         CVPixelBufferLockBaseAddress(depth, [])
-        let base = try XCTUnwrap(CVPixelBufferGetBaseAddress(depth))
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(depth)
-        let values: [[Float]] = [[0.5, 1.0, 1.5], [2.0, .nan, 4.5]]
-        for (row, rowValues) in values.enumerated() {
-            let p = (base + row * bytesPerRow).assumingMemoryBound(to: Float32.self)
-            for (col, v) in rowValues.enumerated() { p[col] = v }
-        }
-        CVPixelBufferUnlockBaseAddress(depth, [])
-
-        let data = try XCTUnwrap(RecordingFormat.millimeterData(fromDepth: depth))
-        XCTAssertEqual(data.count, 3 * 2 * 2)   // row padding dropped
-        let bytes = [UInt8](data)
-        let mm = Swift.stride(from: 0, to: bytes.count, by: 2).map { UInt16(bytes[$0]) | UInt16(bytes[$0 + 1]) << 8 }
-        XCTAssertEqual(mm, [500, 1000, 1500, 2000, 0, 4500])
-    }
-
-    func testConfidenceBufferIsCopiedWithoutPadding() throws {
-        var buffer: CVPixelBuffer?
-        XCTAssertEqual(CVPixelBufferCreate(nil, 3, 2, kCVPixelFormatType_OneComponent8, nil, &buffer), kCVReturnSuccess)
-        let confidence = try XCTUnwrap(buffer)
-
         CVPixelBufferLockBaseAddress(confidence, [])
-        let base = try XCTUnwrap(CVPixelBufferGetBaseAddress(confidence))
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(confidence)
+        let depthBase = try XCTUnwrap(CVPixelBufferGetBaseAddress(depth))
+        let confidenceBase = try XCTUnwrap(CVPixelBufferGetBaseAddress(confidence))
+        let meters: [[Float]] = [[0.5, 1.0, 1.5], [2.0, .nan, 20]]
         for row in 0..<2 {
-            let p = (base + row * bytesPerRow).assumingMemoryBound(to: UInt8.self)
-            for col in 0..<3 { p[col] = UInt8((row * 3 + col) % 3) }
+            let d = (depthBase + row * CVPixelBufferGetBytesPerRow(depth)).assumingMemoryBound(to: Float32.self)
+            let c = (confidenceBase + row * CVPixelBufferGetBytesPerRow(confidence)).assumingMemoryBound(to: UInt8.self)
+            for col in 0..<3 {
+                d[col] = meters[row][col]
+                c[col] = UInt8((row * 3 + col) % 3)
+            }
         }
         CVPixelBufferUnlockBaseAddress(confidence, [])
+        CVPixelBufferUnlockBaseAddress(depth, [])
 
-        let data = try XCTUnwrap(RecordingFormat.confidenceData(from: confidence))
-        XCTAssertEqual([UInt8](data), [0, 1, 2, 0, 1, 2])
+        let data = try XCTUnwrap(RecordingFormat.packedDepthData(depth: depth, confidence: confidence))
+        XCTAssertEqual(data.count, 3 * 2 * 2)   // row padding dropped
+        let bytes = [UInt8](data)
+        let packed = Swift.stride(from: 0, to: bytes.count, by: 2).map { UInt16(bytes[$0]) | UInt16(bytes[$0 + 1]) << 8 }
+        // 20 m clamps to 16,383 mm; NaN is "no data" (0) but keeps its confidence.
+        XCTAssertEqual(packed, [500, 1000 | 1 << 14, 1500 | 2 << 14, 2000, 0 | 1 << 14, 16_383 | 2 << 14])
     }
 
-    func testWrongPixelFormatIsRejected() throws {
-        var buffer: CVPixelBuffer?
-        XCTAssertEqual(CVPixelBufferCreate(nil, 2, 2, kCVPixelFormatType_32BGRA, nil, &buffer), kCVReturnSuccess)
-        XCTAssertNil(RecordingFormat.millimeterData(fromDepth: try XCTUnwrap(buffer)))
+    func testWrongPixelFormatOrSizeIsRejected() throws {
+        let bgra = try pixelBuffer(2, 2, kCVPixelFormatType_32BGRA)
+        let confidence = try pixelBuffer(2, 2, kCVPixelFormatType_OneComponent8)
+        XCTAssertNil(RecordingFormat.packedDepthData(depth: bgra, confidence: confidence))
+        let depth = try pixelBuffer(3, 2, kCVPixelFormatType_DepthFloat32)
+        XCTAssertNil(RecordingFormat.packedDepthData(depth: depth, confidence: confidence))
     }
 }
 
@@ -145,21 +141,53 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(json["imageOrientation"] as? String, "landscapeRight")
         let depth = try XCTUnwrap(json["depth"] as? [String: Any])
         XCTAssertEqual(depth["file"] as? String, "depth.bin")
-        XCTAssertEqual(depth["confidenceFile"] as? String, "confidence.bin")
+        XCTAssertEqual(depth["index"] as? String, "depth.index.json")
+        XCTAssertEqual(depth["encoding"] as? String, "v2")
+        XCTAssertNil(depth["confidenceFile"])
         XCTAssertEqual(depth["unit"] as? String, "mm")
         let room = try XCTUnwrap(json["room"] as? [String: Any])
         XCTAssertEqual(room["source"] as? String, "on-device")
         XCTAssertEqual(room["bin"] as? String, "room.bin")
+        XCTAssertNil(room["ply"])   // not uploaded, so not listed
     }
 }
 
 final class KeyframeAndTranscriptTests: XCTestCase {
-    func testOneKeyframePerWholeSecondWithVideo() {
-        XCTAssertEqual(RecordingFormat.keyframeSeconds(durationSec: 28.434), Array(0...28))
-        XCTAssertEqual(RecordingFormat.keyframeSeconds(durationSec: 3.0), [0, 1, 2])
-        XCTAssertEqual(RecordingFormat.keyframeSeconds(durationSec: 0.4), [0])
-        XCTAssertEqual(RecordingFormat.keyframeSeconds(durationSec: 0), [])
+    /// Replays frame times through the live keyframe picker.
+    private func keyframes(frameTimes: [Double]) -> [Int: Double] {
+        var next = 0
+        var picked: [Int: Double] = [:]
+        for t in frameTimes {
+            guard let seconds = RecordingFormat.keyframeSecondsDue(at: t, next: next) else { continue }
+            for s in seconds { picked[s] = t }
+            next = seconds.upperBound + 1
+        }
+        return picked
+    }
+
+    func testOneKeyframePerWholeSecondFromTheFirstFrameAtOrAfterIt() {
+        // 28.434 s at 30 fps, frames at k/30 with a little jitter.
+        let times = (0..<853).map { max(0, Double($0) / 30 + ($0.isMultiple(of: 2) ? 0.0004 : -0.0004)) }
+        let picked = keyframes(frameTimes: times)
+        XCTAssertEqual(picked.keys.sorted(), Array(0...28))
+        for (second, t) in picked {
+            XCTAssertGreaterThanOrEqual(t, Double(second))
+            XCTAssertLessThan(t, Double(second) + 1.0 / 30 + 0.001)   // within one frame of the whole second
+        }
         XCTAssertEqual(RecordingFormat.keyframeName(second: 12), "keyframes/k0012.jpg")
+    }
+
+    func testAGapLongerThanASecondLeavesNoMissingKeyframes() {
+        let picked = keyframes(frameTimes: [0, 0.5, 0.97, 1.01, 1.5, 3.2, 3.9, 4.0])
+        XCTAssertEqual(picked, [0: 0, 1: 1.01, 2: 3.2, 3: 3.2, 4: 4.0])
+        XCTAssertNil(RecordingFormat.keyframeSecondsDue(at: 0.99, next: 1))
+        XCTAssertNil(RecordingFormat.keyframeSecondsDue(at: .nan, next: 0))
+    }
+
+    func testKeyframesAreAtMost1024OnTheLongSide() {
+        XCTAssertEqual(RecordingFormat.keyframeScale(width: 1920, height: 1440) * 1440, 768, accuracy: 0.001)
+        XCTAssertEqual(RecordingFormat.keyframeScale(width: 1920, height: 1440) * 1920, 1024, accuracy: 0.001)
+        XCTAssertEqual(RecordingFormat.keyframeScale(width: 640, height: 480), 1)
     }
 
     func testTranscriptSplitsOnPausesAndSentenceEnds() {
@@ -210,28 +238,5 @@ final class KeyframeAndTranscriptTests: XCTestCase {
         XCTAssertEqual((json["transcript"] as? [String: Any])?["file"] as? String, "transcript.json")
         XCTAssertEqual((json["keyframes"] as? [String: Any])?["dir"] as? String, "keyframes")
         XCTAssertEqual((json["keyframes"] as? [String: Any])?["count"] as? Int, 2)
-    }
-}
-
-final class UploadPlanTests: XCTestCase {
-    func testSmallFilesGoFirstAndBigOnesLast() {
-        let order = UploadPlan.order([
-            "depth.bin", "video.mp4", "keyframes/k0001.jpg", "manifest.json", "confidence.bin",
-            "frames.jsonl", "thumb.jpg", "room.bin", "keyframes/k0000.jpg", "transcript.json", "room.ply", ".DS_Store",
-        ])
-        XCTAssertEqual(order, [
-            "manifest.json", "room.bin", "thumb.jpg", "transcript.json", "keyframes/k0000.jpg", "keyframes/k0001.jpg",
-            "frames.jsonl", "room.ply", "video.mp4", "confidence.bin", "depth.bin",
-        ])
-    }
-
-    func testGuideURLsAreBuiltFromWhateverWasTyped() {
-        XCTAssertEqual(UploadPlan.url(base: "https://abc.trycloudflare.com/", path: "/health")?.absoluteString,
-                       "https://abc.trycloudflare.com/health")
-        XCTAssertEqual(UploadPlan.url(base: " abc.trycloudflare.com ", path: "/health")?.absoluteString,
-                       "https://abc.trycloudflare.com/health")
-        XCTAssertEqual(UploadPlan.url(base: "http://192.168.1.20:8787", path: "/api/captures/x/files/keyframes/k0001.jpg")?.absoluteString,
-                       "http://192.168.1.20:8787/api/captures/x/files/keyframes/k0001.jpg")
-        XCTAssertNil(UploadPlan.url(base: "  ", path: "/health"))
     }
 }
