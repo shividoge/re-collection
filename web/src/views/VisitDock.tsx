@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { dataMode, errorMessage, sessions, type EndReason, type Fact, type Moment, type Reply } from '../data'
 import type { ViewerControls } from '../scene/SceneViewer'
 import type { Selection } from '../scene/useRoomIndex'
-import { RecognitionCtor, speak, type Recognition } from '../speech'
+import { canListen, listenOnce, speak, stopSpeaking } from '../speech'
 
 const SESSION_LIMIT_MS = 10 * 60 * 1000
 const GOODBYE = "Thank you for sharing this with me. I'll be here whenever you want to look again."
@@ -39,7 +39,7 @@ function LiveVisitDock({ captureId, controls }: { captureId: string; controls: V
   const tourToken = useRef(0)
   const tourAt = useRef<{ span: number; time: number } | null>(null)
   const moment = useRef<Moment | null>(null)
-  const recognition = useRef<Recognition | null>(null)
+  const listener = useRef<{ stop: () => void } | null>(null)
 
   const say = useCallback(async (reply: Reply, token?: number) => {
     for (const s of reply.sentences) {
@@ -69,8 +69,8 @@ function LiveVisitDock({ captureId, controls }: { captureId: string; controls: V
       endedRef.current = true
       tourToken.current++
       setTour('off')
-      window.speechSynthesis?.cancel()
-      recognition.current?.stop()
+      stopSpeaking()
+      listener.current?.stop()
       ctl.current.playback.pause()
       ctl.current.setSpeed(1)
       setEnded(true)
@@ -104,7 +104,7 @@ function LiveVisitDock({ captureId, controls }: { captureId: string; controls: V
     window.addEventListener('pagehide', leave)
     return () => {
       window.removeEventListener('pagehide', leave)
-      window.speechSynthesis?.cancel()
+      stopSpeaking()
       leave()
     }
   }, [])
@@ -186,7 +186,7 @@ function LiveVisitDock({ captureId, controls }: { captureId: string; controls: V
     if (tour === 'off' && span === undefined) return
     const at = span ?? tourAt.current?.span ?? 0
     tourToken.current++
-    window.speechSynthesis?.cancel()
+    stopSpeaking()
     ctl.current.playback.pause()
     tourAt.current = { span: at, time: ctl.current.video?.currentTime ?? ctl.current.playback.timeRef.current }
     ctl.current.setSpeed(1)
@@ -210,28 +210,20 @@ function LiveVisitDock({ captureId, controls }: { captureId: string; controls: V
     }
   }
 
+  /** Push to talk: Cartesia Ink-2 listens until they finish (or a second press), then it's sent. */
   const talk = () => {
-    if (!RecognitionCtor || busy) return
-    if (listening) return recognition.current?.stop()
+    if (!canListen() || busy) return
+    if (listening) return listener.current?.stop()
     if (tour === 'running') pauseTour()
-    window.speechSynthesis?.cancel()
-    const r = new RecognitionCtor()
-    r.lang = 'en-US'
-    r.interimResults = false
-    let heard = ''
-    r.onresult = (e) => {
-      heard = Array.from(e.results)
-        .map((res) => res[0].transcript)
-        .join(' ')
-    }
-    r.onerror = () => setFailure("I couldn't hear that. Please try again, or type it instead.")
-    r.onend = () => {
-      setListening(false)
-      if (heard) void send(heard)
-    }
-    recognition.current = r
+    stopSpeaking()
+    const l = listenOnce((message) => setFailure(message))
+    listener.current = l
     setListening(true)
-    r.start()
+    void l.done.then((heard) => {
+      setListening(false)
+      listener.current = null
+      if (heard) void send(heard)
+    })
   }
 
   const newVisit = () => {
@@ -272,7 +264,7 @@ function LiveVisitDock({ captureId, controls }: { captureId: string; controls: V
                 {sid ? 'Tour again' : 'Begin the visit'}
               </button>
             )}
-            <button className={`visit-talk${listening ? ' live' : ''}`} onClick={talk} disabled={busy || !RecognitionCtor} title={RecognitionCtor ? '' : "Speech isn't available in this browser; type instead"}>
+            <button className={`visit-talk${listening ? ' live' : ''}`} onClick={talk} disabled={busy || !canListen()} title={canListen() ? '' : "Speech isn't available in this browser; type instead"}>
               {busy ? '…' : listening ? "I'm listening" : selection ? 'Ask about this' : 'Talk'}
             </button>
             <button className="link" onClick={() => setTyping((t) => !t)}>
