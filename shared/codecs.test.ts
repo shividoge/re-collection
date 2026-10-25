@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { deflateRawSync, inflateRawSync } from 'node:zlib'
 import { decodePack, encodePack, packArray } from './pack'
-import { chunkOfFrame, decodeChunk, encodeDepthV2, packPixel, packV1, parseDepthIndex, pixelConfidence, pixelMm, unpack } from './depth'
+import { chunkOfFrame, decodeChunk, encodeDepthV2, packPixel, packV1, parseDepthIndex, pixelConfidence, pixelMm, rowDelta, unpack } from './depth'
 import { parseManifest, ManifestError } from './manifest'
 
 const deflate = (b: Uint8Array) => new Uint8Array(deflateRawSync(b))
@@ -63,6 +63,23 @@ describe('depth v2', () => {
       expect(Array.from(cf)).toEqual(Array.from(conf.subarray(frame * px, (frame + 1) * px)))
     }
     expect(() => chunkOfFrame(parsed, 23)).toThrow()
+  })
+  test('row-delta filter round trips, including wraparound, and leaves the input alone', async () => {
+    const w = 5, h = 2, count = 7, px = w * h
+    const packed = new Uint16Array(px * count).map((_, i) => (i % 3 === 0 ? 0xffff : (i * 7919) & 0xffff))
+    const before = packed.slice()
+    const { bin, index } = await encodeDepthV2(packed, { width: w, height: h, count, framesPerChunk: 3, filter: 'row-delta' }, deflate)
+    expect(Array.from(packed)).toEqual(Array.from(before))
+    const parsed = parseDepthIndex(JSON.stringify(index))
+    expect(parsed.filter).toBe('row-delta')
+    const out: number[] = []
+    for (let c = 0; c < parsed.chunks.length; c++) {
+      const [off, len] = parsed.chunks[c]
+      out.push(...(await decodeChunk(parsed, c, bin.subarray(off, off + len), inflate)))
+    }
+    expect(out).toEqual(Array.from(before))
+    expect(Array.from(rowDelta(Uint16Array.from([5, 3, 65535, 0]), 4))).toEqual([5, 65534, 65532, 1])
+    expect(() => parseDepthIndex(JSON.stringify({ ...index, filter: 'png-paeth' }))).toThrow()
   })
 })
 

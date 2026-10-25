@@ -1,0 +1,24 @@
+{
+  "name": "braindance-bake-worker",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun src/worker.ts",
+    "bake": "bun src/cli.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.check.json",
+    "lint": "oxlint src test scripts"
+  },
+  "dependencies": {
+    "convex": "^1.48.0",
+    "sharp": "^0.35.5",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "@types/three": "^0.186.0",
+    "oxlint": "^1.89.0",
+    "typescript": "^7.0.2"
+  }
+}

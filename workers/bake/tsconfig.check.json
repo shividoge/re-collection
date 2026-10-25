@@ -1,0 +1,13 @@
+{
+  // For `bun run typecheck` only. web/src/scene and backend/convex are compiled here too, and
+  // their packages (three, convex) resolve from this one. Not in tsconfig.json because Bun
+  // applies tsconfig paths at run time, where these would point at .d.ts files.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "three": ["./node_modules/@types/three/index.d.ts"],
+      "three/*": ["./node_modules/@types/three/*"],
+      "convex/*": ["./node_modules/convex/dist/esm-types/*"]
+    }
+  }
+}
