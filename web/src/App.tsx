@@ -29,8 +29,9 @@ const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
   // #/window/<id>?from=museum comes back to the museum.
   [/^#\/window\/([0-9a-f-]{36})(?:\?from=(museum))?$/i, (id, from) => <MemoryWindow key={id} id={id} from={from} />],
   // The walkable museum: #/museum, or #/museum/<exhibition id>; #/museum?join=CODE is a helper's
-  // phone joining the iPad's walk ("Visit together").
-  [/^#\/museum(?:\/([\w-]+))?(?:\?join=([A-Za-z]*))?$/, (id, join) => <MuseumPage key="museum" id={id} join={join} />],
+  // phone joining the iPad's walk ("Visit together"); #/museum?visit=<key> carries the live visit's
+  // key (read by the page itself).
+  [/^#\/museum(?:\/([\w-]+))?(?:\?join=([A-Za-z]*)|\?visit=[A-Za-z0-9_-]+)?$/, (id, join) => <MuseumPage key="museum" id={id} join={join} />],
   // The caretaker's editor for that museum (after the line above, so it wins over an exhibition id).
   [/^#\/museum\/edit$/, () => <MuseumEditor />],
 ]

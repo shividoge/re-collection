@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { dataMode, type Arrangement, type ArrangementItem } from '../data'
+import { dataMode, errorMessage, palaceLive, type Arrangement, type ArrangementItem } from '../data'
 import {
   arrangedExhibition,
   automaticArrangement,
@@ -12,6 +12,7 @@ import {
   type Visit,
 } from './exhibitions'
 import { planMuseum } from './layout'
+import { visitLink } from './live/visitKey'
 import { MuseumScene } from './MuseumScene'
 import type { WalkerHandle } from './Walker'
 import type { Dive } from './warp'
@@ -34,6 +35,53 @@ const toArrangement = (d: Draft): Omit<Arrangement, 'updatedAt'> => ({
   subtitle: d.subtitle.trim(),
   items: d.rows.map(({ capture, piece, title, caption }) => ({ capture, piece, title: title.trim(), caption: caption.trim() })),
 })
+
+/**
+ * Her link with the live visit's key: the same for her iPad and for family joining her visits.
+ * Making a new one stops the old link working (her iPad too) and lets everyone in a visit out.
+ */
+function VisitLink() {
+  const [key, setKey] = useState<string | null>(null)
+  const [state, setState] = useState<{ kind: 'busy' | 'ok' | 'error'; text: string } | null>({ kind: 'busy', text: 'Getting her link…' })
+  useEffect(() => {
+    palaceLive
+      .makeVisitKey(false)
+      .then((k) => {
+        setKey(k)
+        setState(null)
+      })
+      .catch((e: unknown) => setState({ kind: 'error', text: errorMessage(e) }))
+  }, [])
+  const replace = async () => {
+    if (!confirm('Make a new link? The old one stops working, on her iPad too, and anyone visiting now is let out.')) return
+    setState({ kind: 'busy', text: 'Making a new link…' })
+    try {
+      setKey(await palaceLive.makeVisitKey(true))
+      setState({ kind: 'ok', text: 'New link made. Open it on her iPad and send it to the family again.' })
+    } catch (e) {
+      setState({ kind: 'error', text: errorMessage(e) })
+    }
+  }
+  const link = key ? visitLink(key) : ''
+  return (
+    <div className="me-visit-link">
+      <label className="me-field me-link">
+        <span>Her link (her iPad, and family joining her visits)</span>
+        <input readOnly value={link} placeholder="…" onFocus={(e) => e.target.select()} />
+      </label>
+      <p className="me-hint">Family who open it can join her visits from anywhere and talk with her. Share it only with family.</p>
+      <div className="me-link-tools">
+        <button disabled={!key} onClick={() => void navigator.clipboard?.writeText(link).then(() => setState({ kind: 'ok', text: 'Link copied.' }))}>
+          Copy link
+        </button>
+        <button className="me-reset" disabled={!key || state?.kind === 'busy'} onClick={() => void replace()}>
+          Make a new link
+        </button>
+      </div>
+      {state && <p className={`me-status ${state.kind}`}>{state.text}</p>}
+    </div>
+  )
+}
 
 /**
  * The caretaker's side of the museum (`#/museum/edit`): choose which pictures hang, put them in
@@ -277,10 +325,14 @@ export function MuseumEditor() {
             </a>
           </div>
           {status && <p className={`me-status ${status.kind}`}>{status.text}</p>}
-          <label className="me-field me-link">
-            <span>Her link (for the iPad)</span>
-            <input readOnly value={patientLink} onFocus={(e) => e.target.select()} />
-          </label>
+          {STATIC ? (
+            <label className="me-field me-link">
+              <span>Her link (for the iPad)</span>
+              <input readOnly value={patientLink} onFocus={(e) => e.target.select()} />
+            </label>
+          ) : (
+            <VisitLink />
+          )}
           {custom && (
             <button className="me-reset" onClick={() => void reset()}>
               Go back to the automatic museum

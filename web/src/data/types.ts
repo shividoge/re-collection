@@ -13,6 +13,9 @@ import type {
   endSummary,
   evidence,
   focus,
+  iceServer,
+  palaceMember,
+  palaceView,
   peers,
   progressReport,
   publicSession,
@@ -65,3 +68,12 @@ export type RoomWho = { as: RoomRole; name: string | null; client: string }
 export type ArrangementItem = Infer<typeof arrangementItem>
 /** The museum as the caretaker set it up. `updatedAt` is absent on a draft. */
 export type Arrangement = Omit<Infer<typeof arrangement>, 'updatedAt'> & { updatedAt?: string }
+
+/** The live visit (architecture-v3.md §6.6 "Live visit"). */
+export type LiveRole = 'patient' | 'family'
+export type LiveMember = Infer<typeof palaceMember>
+/** Where she stands and looks, and which memory she's stepping into. */
+export type LiveView = Infer<typeof palaceView>
+/** Her view as palace.view returns it. */
+export type LiveViewState = LiveView & { rev: number; updatedAt: string }
+export type IceServer = Infer<typeof iceServer>

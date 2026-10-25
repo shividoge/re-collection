@@ -67,6 +67,7 @@ export function StepIn({
   onCovered,
   onGone,
   paint: paintProp,
+  canLeave = true,
 }: {
   art: Artwork
   stage: Stage
@@ -75,6 +76,8 @@ export function StepIn({
   onGone: () => void
   /** Paints a photo as the museum shows it (the museum's own renderer); without it, no painted overlay. */
   paint?: (src: string, maxW: number, maxH: number) => Promise<HTMLCanvasElement>
+  /** False for family following her in a live visit: they come back out when she does. */
+  canLeave?: boolean
 }) {
   const world = useRef<HTMLDivElement>(null)
   const cover = useRef<HTMLDivElement>(null)
@@ -149,11 +152,11 @@ export function StepIn({
   // Escape steps back out.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === 'Escape' && stage === 'here') onBack()
+      if (e.code === 'Escape' && stage === 'here' && canLeave) onBack()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [stage, onBack])
+  }, [stage, onBack, canLeave])
 
   const onPaintSettled = useCallback(() => setUnpainted(!paint), [paint])
   // Nothing to paint (no picture, it didn't load, or no painter): nothing to wait for either.
@@ -213,9 +216,11 @@ export function StepIn({
         )}
       </div>
       <div className={`stepin-ui${showUi ? ' shown' : ''}`}>
-        <button className="stepin-back" onClick={onBack}>
-          <span aria-hidden="true">‹</span> Museum
-        </button>
+        {canLeave && (
+          <button className="stepin-back" onClick={onBack}>
+            <span aria-hidden="true">‹</span> Museum
+          </button>
+        )}
         {hasRoom ? (
           roomError && <div className="stepin-caption">Couldn't open this room: {roomError}</div>
         ) : (
