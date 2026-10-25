@@ -12,6 +12,8 @@ export interface RetryOptions {
   backoffMs?: number
   signal?: AbortSignal
   fetch?: Fetch
+  /** Overrides transferTimeoutMs (tests). */
+  timeoutMs?: number
 }
 
 const wait = (ms: number, signal?: AbortSignal) =>
@@ -20,14 +22,26 @@ const wait = (ms: number, signal?: AbortSignal) =>
     signal?.addEventListener('abort', () => (clearTimeout(t), reject(signal.reason)), { once: true })
   })
 
-async function withRetry<T>(what: string, o: RetryOptions, run: (fetch: Fetch) => Promise<T>): Promise<T> {
+/**
+ * How long one try of a transfer may take before it's abandoned and retried: a stalled
+ * connection (it happens when the uplink is saturated) otherwise hangs the job forever while
+ * its heartbeat keeps the lease alive. Assumes at least ~4 Mbit/s, plus 30 s of slack.
+ */
+export const transferTimeoutMs = (bytes: number) => 30_000 + Math.ceil(bytes / 512_000) * 1000
+
+async function withRetry<T>(what: string, o: RetryOptions, bytes: number, run: (fetch: Fetch) => Promise<T>): Promise<T> {
   const attempts = o.attempts ?? 4
+  const base = o.fetch ?? fetch
   let last: unknown
   for (let a = 0; a < attempts; a++) {
     o.signal?.throwIfAborted()
     if (a > 0) await wait((o.backoffMs ?? 1000) * 2 ** (a - 1), o.signal)
+    // One timeout per try, covering the response body too (the same signal aborts the stream).
+    const timeout = AbortSignal.timeout(o.timeoutMs ?? transferTimeoutMs(bytes))
+    const signal = o.signal ? AbortSignal.any([o.signal, timeout]) : timeout
+    const timed: Fetch = (url, init) => base(url, { ...init, signal })
     try {
-      return await run(o.fetch ?? fetch)
+      return await run(timed)
     } catch (e) {
       if (o.signal?.aborted) throw o.signal.reason
       last = e
@@ -44,8 +58,8 @@ async function ok(res: Response, what: string): Promise<Response> {
 
 /** Streams `url` to `path` and checks the size. */
 export async function download(url: string, path: string, bytes: number, o: RetryOptions = {}): Promise<void> {
-  await withRetry(`Downloading ${path.split('/').at(-1)}`, o, async (f) => {
-    const res = await ok(await f(url, { signal: o.signal }), 'GET')
+  await withRetry(`Downloading ${path.split('/').at(-1)}`, o, bytes, async (f) => {
+    const res = await ok(await f(url), 'GET')
     const written = await Bun.write(path, res)
     if (written !== bytes) throw new Error(`got ${written} bytes, expected ${bytes}`)
   })
@@ -64,8 +78,8 @@ export interface FinishedPart {
 export async function upload(target: UploadTarget, body: Uint8Array<ArrayBuffer>, o: RetryOptions & { parallel?: number } = {}): Promise<FinishedPart[] | undefined> {
   if (target.single) {
     const { url, headers } = target.single
-    await withRetry(`Uploading ${target.key}`, o, async (f) => {
-      await ok(await f(url, { method: 'PUT', headers, body, signal: o.signal }), 'PUT')
+    await withRetry(`Uploading ${target.key}`, o, body.byteLength, async (f) => {
+      await ok(await f(url, { method: 'PUT', headers, body }), 'PUT')
     })
     return undefined
   }
@@ -76,8 +90,8 @@ export async function upload(target: UploadTarget, body: Uint8Array<ArrayBuffer>
   const done: FinishedPart[] = []
   await inParallel(parts, o.parallel ?? 4, async ({ partNumber, url }) => {
     const slice = body.subarray((partNumber - 1) * size, partNumber * size)
-    const etag = await withRetry(`Uploading part ${partNumber} of ${target.key}`, o, async (f) => {
-      const res = await ok(await f(url, { method: 'PUT', body: slice, signal: o.signal }), 'PUT')
+    const etag = await withRetry(`Uploading part ${partNumber} of ${target.key}`, o, slice.byteLength, async (f) => {
+      const res = await ok(await f(url, { method: 'PUT', body: slice }), 'PUT')
       const tag = res.headers.get('etag')
       if (!tag) throw new Error('no ETag in the response')
       return tag
