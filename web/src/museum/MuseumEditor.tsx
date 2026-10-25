@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { dataMode, type Arrangement, type ArrangementItem } from '../data'
+import { dataMode, errorMessage, palaceLive, type Arrangement, type ArrangementItem } from '../data'
 import {
   arrangedExhibition,
   automaticArrangement,
@@ -11,10 +11,8 @@ import {
   saveArrangement,
   type Visit,
 } from './exhibitions'
-import { planMuseum } from './layout'
-import { MuseumScene } from './MuseumScene'
-import type { WalkerHandle } from './Walker'
-import type { Dive } from './warp'
+import { visitLink } from './live/visitKey'
+import { MuseumPage, type MuseumHandle } from './MuseumPage'
 import './museum.css'
 import './editor.css'
 
@@ -36,9 +34,56 @@ const toArrangement = (d: Draft): Omit<Arrangement, 'updatedAt'> => ({
 })
 
 /**
- * The caretaker's side of the museum (`#/museum/edit`): choose which pictures hang, put them in
+ * Her link with the live visit's key: the same for her iPad and for family joining her visits.
+ * Making a new one stops the old link working (her iPad too) and lets everyone in a visit out.
+ */
+function VisitLink() {
+  const [key, setKey] = useState<string | null>(null)
+  const [state, setState] = useState<{ kind: 'busy' | 'ok' | 'error'; text: string } | null>({ kind: 'busy', text: 'Getting her link…' })
+  useEffect(() => {
+    palaceLive
+      .makeVisitKey(false)
+      .then((k) => {
+        setKey(k)
+        setState(null)
+      })
+      .catch((e: unknown) => setState({ kind: 'error', text: errorMessage(e) }))
+  }, [])
+  const replace = async () => {
+    if (!confirm('Make a new link? The old one stops working, on her iPad too, and anyone visiting now is let out.')) return
+    setState({ kind: 'busy', text: 'Making a new link…' })
+    try {
+      setKey(await palaceLive.makeVisitKey(true))
+      setState({ kind: 'ok', text: 'New link made. Open it on her iPad and send it to the family again.' })
+    } catch (e) {
+      setState({ kind: 'error', text: errorMessage(e) })
+    }
+  }
+  const link = key ? visitLink(key) : ''
+  return (
+    <div className="me-visit-link">
+      <label className="me-field me-link">
+        <span>Link to the Memory Palace</span>
+        <input readOnly value={link} placeholder="…" onFocus={(e) => e.target.select()} />
+      </label>
+      <p className="me-hint">Family who open it can join her visits from anywhere and talk with her. Share it only with family.</p>
+      <div className="me-link-tools">
+        <button disabled={!key} onClick={() => void navigator.clipboard?.writeText(link).then(() => setState({ kind: 'ok', text: 'Link copied.' }))}>
+          Copy link
+        </button>
+        <button className="me-reset" disabled={!key || state?.kind === 'busy'} onClick={() => void replace()}>
+          Make a new link
+        </button>
+      </div>
+      {state && <p className={`me-status ${state.kind}`}>{state.text}</p>}
+    </div>
+  )
+}
+
+/**
+ * The caretaker's side of the Memory Palace (`#/palace/edit`): choose which pictures hang, put them in
  * order, and write a title and a few words for each one's label, with the museum itself as a live
- * preview. Saving stores it on the server, and the patient's museum (`#/museum`) shows exactly that.
+ * preview. Saving stores it on the server, and the patient's palace (`#/palace`) shows exactly that.
  */
 export function MuseumEditor() {
   const [visits, setVisits] = useState<Visit[] | null>(null)
@@ -48,6 +93,8 @@ export function MuseumEditor() {
   const [status, setStatus] = useState<{ kind: 'ok' | 'error' | 'busy'; text: string } | null>(null)
   const [selected, setSelected] = useState(-1)
   const [adding, setAdding] = useState(false)
+  // Folded: the panel slides away and the caretaker walks the palace exactly as she will.
+  const [folded, setFolded] = useState(false)
   const dragFrom = useRef(-1)
 
   const load = useCallback(async () => {
@@ -99,20 +146,16 @@ export function MuseumEditor() {
     () => (draft && visits ? arrangedExhibition(toArrangement(draft) as Arrangement, visits) : null),
     [draft, visits],
   )
-  const plan = useMemo(() => planMuseum(Math.max(1, exhibition?.items.length ?? 1)), [exhibition?.items.length])
-  const walker = useRef<WalkerHandle>(null)
-  const dive = useRef<Dive | null>(null)
-  const [focus, setFocus] = useState(-1)
-  const show = useCallback(
-    (i: number) => {
-      setSelected(i)
-      const slot = plan.slots[i]
-      if (!slot) return
-      setFocus(i)
-      walker.current?.walkTo(slot.view, slot.center)
-    },
-    [plan],
-  )
+  const palace = useRef<MuseumHandle>(null)
+  /** Walking up to a picture in the palace picks its row in the list. */
+  const onPalaceFocus = useCallback((i: number) => {
+    if (i >= 0) setSelected(i)
+  }, [])
+  /** A row picked in the list: walk to its picture. */
+  const show = useCallback((i: number) => {
+    setSelected(i)
+    palace.current?.goTo(i)
+  }, [])
 
   async function save() {
     if (!draft) return
@@ -122,45 +165,50 @@ export function MuseumEditor() {
       setSavedJson(JSON.stringify(toArrangement(draft)))
       setCustom(true)
       const at = saved.updatedAt ? new Date(saved.updatedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : ''
-      setStatus({ kind: 'ok', text: STATIC ? `Saved in this browser ${at}` : `Saved ${at}. Her museum shows it now.` })
+      setStatus({ kind: 'ok', text: STATIC ? `Saved in this browser ${at}` : `Saved ${at}. It's live now.` })
     } catch (e) {
       setStatus({ kind: 'error', text: (e as Error).message })
     }
   }
 
   async function reset() {
-    if (!window.confirm('Go back to the automatic museum (every visit, oldest first)? Your titles, captions and order are cleared.')) return
+    if (!window.confirm('Start over with every visit, oldest first? Your titles, captions and order are cleared.')) return
     try {
       await resetArrangement()
       await load()
       setSelected(-1)
-      setStatus({ kind: 'ok', text: 'Back to the automatic museum.' })
+      setStatus({ kind: 'ok', text: 'Started over with every visit.' })
     } catch (e) {
       setStatus({ kind: 'error', text: (e as Error).message })
     }
   }
 
-  const patientLink = `${location.origin}${location.pathname}#/museum`
+  const patientLink = `${location.origin}${location.pathname}#/palace`
 
   if (status?.kind === 'error' && !draft) return <div className="museum-message">{status.text}</div>
-  if (!draft || !visits || !exhibition) return <div className="museum-message">Opening the museum…</div>
+  if (!draft || !visits || !exhibition) return <div className="museum-message">Opening the Memory Palace…</div>
 
   return (
-    <div className="museum museum-editor">
+    <div className={`museum museum-editor${folded ? ' folded' : ''}`}>
       <aside className="me-panel">
         <header className="me-head">
-          <a className="me-back" href="#/">
-            ← Front page
-          </a>
-          <h1>Set up her museum</h1>
-          <p>Choose the pictures she'll see, put them in order, and write a few words for each label. She sees exactly this.</p>
+          <div className="me-head-row">
+            <a className="me-back" href="#/">
+              ← Front page
+            </a>
+            <button className="me-fold" onClick={() => setFolded(true)} title="Hide this panel and walk through the palace as she will">
+              Hide panel ⟩
+            </button>
+          </div>
+          <h1>Set up the Memory Palace</h1>
+          <p>Choose the memories to show, put them in order, and add a few words to each. This is exactly what they'll see.</p>
           {STATIC && <p className="me-note">This public demo has no server, so saving keeps it in this browser only.</p>}
         </header>
 
         <section className="me-section">
           <label className="me-field">
-            <span>Museum title</span>
-            <input value={draft.title} maxLength={TITLE_MAX} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Our visits" />
+            <span>Palace title</span>
+            <input value={draft.title} maxLength={TITLE_MAX} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Memory Palace" />
           </label>
           <label className="me-field">
             <span>Under the title</span>
@@ -168,7 +216,7 @@ export function MuseumEditor() {
               value={draft.subtitle}
               maxLength={TITLE_MAX}
               onChange={(e) => setDraft({ ...draft, subtitle: e.target.value })}
-              placeholder="Every visit the family filmed, oldest first"
+              placeholder="Moments with your family"
             />
           </label>
         </section>
@@ -179,7 +227,7 @@ export function MuseumEditor() {
               On the walls <span>{rows.length}</span>
             </h2>
             <button className="me-add-toggle" onClick={() => setAdding(!adding)} aria-expanded={adding}>
-              {adding ? 'Done adding' : '+ Add pictures'}
+              {adding ? 'Done adding' : '+ Add memories'}
             </button>
           </div>
 
@@ -206,7 +254,7 @@ export function MuseumEditor() {
             </div>
           )}
 
-          {rows.length === 0 && <p className="me-empty">Nothing hangs yet. Press “+ Add pictures”.</p>}
+          {rows.length === 0 && <p className="me-empty">Nothing hangs yet. Press “+ Add memories”.</p>}
           <ol className="me-rows">
             {rows.map((row, i) => {
               const v = byId.get(row.capture)
@@ -239,7 +287,7 @@ export function MuseumEditor() {
                       value={row.caption}
                       maxLength={CAPTION_MAX}
                       rows={2}
-                      placeholder="A few words for her (optional)"
+                      placeholder="A few words (optional)"
                       onChange={(e) => change(i, { caption: e.target.value })}
                       onFocus={() => show(i)}
                       aria-label={`Caption of picture ${i + 1}`}
@@ -272,36 +320,36 @@ export function MuseumEditor() {
             <button className="me-save" onClick={() => void save()} disabled={!dirty || status?.kind === 'busy'}>
               {dirty ? 'Save' : 'Saved'}
             </button>
-            <a className="me-open" href="#/museum">
-              Open her museum →
-            </a>
+            <button className="me-open" onClick={() => setFolded(true)}>
+              Walk through it →
+            </button>
           </div>
           {status && <p className={`me-status ${status.kind}`}>{status.text}</p>}
-          <label className="me-field me-link">
-            <span>Her link (for the iPad)</span>
-            <input readOnly value={patientLink} onFocus={(e) => e.target.select()} />
-          </label>
+          {STATIC ? (
+            <label className="me-field me-link">
+              <span>Link to the Memory Palace</span>
+              <input readOnly value={patientLink} onFocus={(e) => e.target.select()} />
+            </label>
+          ) : (
+            <VisitLink />
+          )}
           {custom && (
             <button className="me-reset" onClick={() => void reset()}>
-              Go back to the automatic museum
+              Start over with every visit
             </button>
           )}
         </footer>
       </aside>
 
       <div className="me-preview">
-        <MuseumScene
-          exhibition={exhibition}
-          plan={plan}
-          focus={focus}
-          onSelect={show}
-          onArrive={() => {}}
-          onLook={() => {}}
-          walker={walker}
-          dive={dive}
-          onMeasure={() => {}}
-        />
-        <p className="me-preview-label">Live preview · drag to look around, click a picture to find it in the list</p>
+        <MuseumPage preview={exhibition} onFocus={onPalaceFocus} ref={palace} />
+        {folded ? (
+          <button className="me-unfold" onClick={() => setFolded(false)}>
+            ✎ Edit
+          </button>
+        ) : (
+          <p className="me-preview-label">Live preview · tap a picture to walk to it, again to step in</p>
+        )}
       </div>
     </div>
   )

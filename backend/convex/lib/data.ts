@@ -10,6 +10,7 @@ type Ctx = QueryCtx | MutationCtx
 export const notFound = (message: string) => new ConvexError({ code: 'not_found', message })
 export const invalid = (message: string) => new ConvexError({ code: 'invalid', message })
 export const conflict = (message: string) => new ConvexError({ code: 'conflict', message })
+export const forbidden = (message: string) => new ConvexError({ code: 'forbidden', message })
 
 export async function getCapture(ctx: Ctx, captureId: string): Promise<Doc<'captures'> | null> {
   const doc = await ctx.db.query('captures').withIndex('by_captureId', (q) => q.eq('captureId', captureId.toLowerCase())).unique()

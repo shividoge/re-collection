@@ -9,6 +9,8 @@ import {
   derived,
   jobKind,
   momentFields,
+  palaceRole,
+  palaceViewFields,
   person,
   progress,
   roomState,
@@ -136,6 +138,33 @@ export default defineSchema({
   })
     .index('by_code', ['code', 'lastSeen'])
     .index('by_client', ['code', 'client']),
+
+  /** One row: the live visit's secret key (docs/architecture-v3.md §6.6 "Live visit"). */
+  palace: defineTable({ key: v.string(), createdAt: v.number() }),
+
+  /** Screens in the live visit; gone 10 s after their last heartbeat. */
+  palaceMembers: defineTable({
+    role: palaceRole,
+    name: v.string(),
+    /** The screen's secret for its own calls; the row id is the public id others see. */
+    token: v.string(),
+    lastSeen: v.number(),
+  })
+    .index('by_lastSeen', ['lastSeen'])
+    .index('by_token', ['token']),
+
+  /** One row while a patient is in the visit: where she is (sent by her screen). */
+  palaceView: defineTable({ ...palaceViewFields, member: v.id('palaceMembers'), rev: v.number(), updatedAt: v.string() }),
+
+  /** WebRTC call setup for one member, deleted once read. */
+  palaceSignals: defineTable({ to: v.id('palaceMembers'), from: v.id('palaceMembers'), data: v.string(), createdAt: v.number() })
+    .index('by_to', ['to'])
+    .index('by_createdAt', ['createdAt']),
+
+  /** Relayed voice (μ-law), kept 10 s. */
+  palaceAudio: defineTable({ seq: v.number(), from: v.id('palaceMembers'), data: v.bytes(), createdAt: v.number() })
+    .index('by_seq', ['seq'])
+    .index('by_createdAt', ['createdAt']),
 
   /** One row: the caretaker's museum arrangement. */
   museumArrangement: defineTable({

@@ -7,8 +7,8 @@
 
 const MUSIC_URL = `${import.meta.env.BASE_URL}museum/audio/gymnopedie-1.mp3`
 const PREF_KEY = 'relive.museum.music'
-/** The music's normal level: background, below a voice. */
-const MUSIC_LEVEL = 0.32
+/** The music's normal level: clearly heard, still below a voice. */
+const MUSIC_LEVEL = 0.85
 
 export class MuseumSound {
   private ctx: AudioContext | null = null
@@ -17,6 +17,8 @@ export class MuseumSound {
   private fx: GainNode | null = null
   private warps: Promise<{ forward: AudioBuffer; backward: AudioBuffer }> | null = null
   private enabled: boolean
+  /** The music's level now, 0–1 of the normal level (lower while others talk in a live visit). */
+  private base = 1
 
   constructor() {
     let saved: string | null = null
@@ -30,6 +32,11 @@ export class MuseumSound {
 
   get musicOn() {
     return this.enabled
+  }
+
+  /** The level the music comes back to (0–1 of normal). */
+  get level() {
+    return this.base
   }
 
   /** Call from a click or tap: starts the audio engine and fades the music in. */
@@ -51,8 +58,14 @@ export class MuseumSound {
     void this.ctx.resume()
     if (this.enabled && this.music?.paused) {
       void this.music.play().catch(() => {})
-      this.fadeMusic(MUSIC_LEVEL, 4)
+      this.fadeMusic(MUSIC_LEVEL * this.base, 4)
     }
+  }
+
+  /** Sets the level the music comes back to (0–1 of normal); fades to it now unless `quietNow`. */
+  setBase(level: number, quietNow = false) {
+    this.base = level
+    if (!quietNow) this.musicTo(level, 1.5)
   }
 
   setMusic(on: boolean) {
@@ -65,7 +78,7 @@ export class MuseumSound {
     if (!this.ctx || !this.music) return
     if (on) {
       void this.music.play().catch(() => {})
-      this.fadeMusic(MUSIC_LEVEL, 2)
+      this.fadeMusic(MUSIC_LEVEL * this.base, 2)
     } else {
       this.fadeMusic(0, 1.2)
       const m = this.music

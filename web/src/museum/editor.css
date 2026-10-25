@@ -2,7 +2,7 @@
 
 .museum-editor {
   display: grid;
-  grid-template-columns: minmax(340px, 440px) 1fr;
+  grid-template-columns: 1fr minmax(340px, 440px);
   user-select: auto;
   touch-action: auto;
 }
@@ -11,13 +11,62 @@
   user-select: text;
 }
 
+.museum-editor.folded {
+  grid-template-columns: 1fr;
+}
+.museum-editor.folded .me-panel {
+  display: none;
+}
+.me-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.me-fold {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--m-line);
+  background: transparent;
+  color: var(--m-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.me-fold:hover {
+  color: var(--m-ink);
+  border-color: #ffb35c;
+}
+/* Back to editing, over the palace while the panel is folded away. */
+.me-unfold {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 15;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 0;
+  background: linear-gradient(90deg, #ffb35c, #ff7a8a);
+  color: #2a1418;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+.museum.inside ~ .me-unfold {
+  display: none;
+}
+/* The panel sits on the right, where "Edit" brings it back from. */
 .me-panel {
+  order: 2;
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
   background: #1a1118;
-  border-right: 1px solid var(--m-line);
+  border-left: 1px solid var(--m-line);
 }
 .me-head {
   padding: 20px 22px 8px;
@@ -276,6 +325,9 @@
   cursor: default;
 }
 .me-open {
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
   padding: 10px 16px;
   border-radius: 999px;
   border: 1px solid var(--m-line);
@@ -302,6 +354,31 @@
 .me-link {
   margin: 8px 0 4px;
 }
+.me-visit-link .me-hint {
+  margin: 0 0 6px;
+  color: var(--m-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.me-link-tools {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.me-link-tools button:first-child {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--m-line);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.me-link-tools button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .me-reset {
   padding: 0;
   border: 0;
@@ -317,16 +394,16 @@
 }
 .me-preview-label {
   position: absolute;
-  left: 50%;
-  bottom: 16px;
-  transform: translateX(-50%);
+  right: 14px;
+  top: 16px;
+  max-width: calc(100% - 300px);
+  text-align: right;
   margin: 0;
   padding: 6px 12px;
   border-radius: 999px;
   background: var(--m-glass);
   color: var(--m-muted);
   font-size: 12px;
-  white-space: nowrap;
   pointer-events: none;
 }
 
@@ -351,8 +428,19 @@
   .me-panel {
     display: block;
     overflow: visible;
-    border-right: 0;
+    border-left: 0;
   }
+  .me-preview-label {
+    display: none;
+  }
+  /* Folded on a phone or tablet: the palace takes the whole screen. */
+  .museum-editor.folded .me-preview {
+    flex: 1 0 100%;
+    height: 100%;
+  }
+}
+/* Not enough room beside the palace's own buttons on a narrow preview. */
+@media (max-width: 1100px) {
   .me-preview-label {
     display: none;
   }
