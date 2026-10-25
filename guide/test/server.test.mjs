@@ -4,7 +4,7 @@ import { after, before, describe, test } from 'node:test';
 
 import { createApp } from '../src/server.mjs';
 import { parseRange } from '../src/http.mjs';
-import { CAPTURE_ID, tempDataDir, tinyCapture } from './helpers.mjs';
+import { addSplat, CAPTURE_ID, tempDataDir, tinyCapture } from './helpers.mjs';
 
 export async function startGuide(overrides = {}) {
   const dataDir = await tempDataDir();
@@ -108,6 +108,26 @@ describe('guide server', () => {
     assert.match((await res.json()).error, /depth\.bin is 3 bytes/);
     const detail = await (await fetch(`${guide.base}/api/captures/${id}`)).json();
     assert.equal(detail.status.upload, 'invalid');
+  });
+
+  test('a capture with a room splat completes and serves the splat with Range', async () => {
+    const id = 'cccccccc-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const { files, manifest } = tinyCapture({ id });
+    addSplat(files, manifest, { count: 3 });
+    files['manifest.json'] = Buffer.from(JSON.stringify(manifest));
+    for (const [name, data] of Object.entries(files)) {
+      assert.equal((await fetch(`${guide.base}/api/captures/${id}/files/${name}`, { method: 'PUT', body: data })).status, 200);
+    }
+    const done = await fetch(`${guide.base}/api/captures/${id}/complete`, { method: 'POST' });
+    assert.equal(done.status, 200, await done.clone().text());
+
+    const detail = await (await fetch(`${guide.base}/api/captures/${id}`)).json();
+    assert.equal(detail.manifest.room.splat.file, 'room.splat.ply');
+    assert.equal(detail.files['room.splat.ply'], `/files/${id}/room.splat.ply`);
+    const head = await fetch(`${guide.base}/files/${id}/room.splat.ply`, { headers: { Range: 'bytes=0-3' } });
+    assert.equal(head.status, 206);
+    assert.equal(head.headers.get('content-range'), `bytes 0-3/${files['room.splat.ply'].length}`);
+    assert.equal(Buffer.from(await head.arrayBuffer()).toString('latin1'), 'ply\n');
   });
 
   test('paths that try to leave the capture folder are rejected', async () => {
