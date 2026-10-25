@@ -126,7 +126,7 @@ What the visit adds to the room over time (`timeline.ts buildTimeline`) plus the
 
 ### 4.5 Splat (`raw/room.spz`)
 
-The GPU worker writes the trained splat as **SPZ** (Niantic's compressed Gaussian format, which Spark loads natively), declared in the manifest as `"room": { ..., "splat": { "file": "room.spz", "format": "spz", "count": N, "shDegree": 0|1|2|3, "source": "trained-from-video" } }`. `3dgs-ply` remains accepted for older captures. Same world coordinates and rules as `capture-format.md` "room splat".
+The GPU worker writes the trained splat as **SPZ** (Niantic's compressed Gaussian format, which Spark loads natively; **version 3**, one gzip stream, smallest-three rotations, RUB coordinates = our world, no axis flip; writer `tools/video2capture/spz.py`, checked against Spark 2.4's decoder), declared in the manifest as `"room": { ..., "splat": { "file": "room.spz", "format": "spz", "count": N, "shDegree": 0|1|2|3, "source": "trained-from-video" } }`. `3dgs-ply` remains accepted for older captures. Same world coordinates and rules as `capture-format.md` "room splat".
 
 ## 5. Capture status (one object in Convex, shown live in the web)
 
@@ -257,7 +257,7 @@ Worker functions take `token` (env `WORKER_TOKEN` in Convex; workers read it fro
 
 - A cron every 30 s re-queues jobs whose lease expired (`attempts += 1`; at 3 → `failed` with "The worker stopped responding three times.").
 - On worker startup, nothing special: expired leases come back on their own.
-- Routing: `convert`/`splat` jobs set `needs.frames` from the video duration (the converter's own frame-count formula). The Fedora worker advertises `maxFrames` ≈ 67 (16 GB), the GX10 ≈ 240. A job no live worker can take stays queued and the web says so ("Waiting for a GPU worker that can handle a 4-minute video").
+- Routing: `convert` jobs set `needs.frames` from the video duration (the converter's own frame-count formula: `min(240, max(16, floor(durationSec × 10) + 1))`, `tools/video2capture/convert.py frames_needed`); `splat` jobs need no frames (training uses at most 240 views). The Fedora worker advertises `maxFrames` ≈ 67 (16 GB), the GX10 ≈ 240. A job no live worker can take stays queued and the web says so ("Waiting for a GPU worker that can handle a 4-minute video").
 - The `workers` table records `{ workerId, kinds, gpu, maxFrames, lastSeen }` from claims/heartbeats so the web can show which workers are online.
 
 ## 8. Static site export
