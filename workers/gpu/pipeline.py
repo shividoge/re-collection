@@ -20,6 +20,12 @@ from pathlib import Path
 
 from .errors import Cancelled, PermanentError
 
+
+def estimate_patches(width: int, height: int) -> int:
+    from estimate import patches
+
+    return patches(width, height)
+
 TOOLS = Path(__file__).resolve().parents[2] / "tools" / "video2capture"
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
@@ -65,7 +71,17 @@ class GpuPipeline:
         from convert import Options
         from decode import ConvertError
 
-        window = min(self.max_frames, max(16, self.converter.depth_model.max_frames()))
+        import decode
+
+        try:
+            info = decode.probe(video)
+        except ConvertError as e:
+            raise PermanentError(str(e)) from e
+        # maxFrames is advertised for 16:9; other shapes (4:3 phone video) and less free memory
+        # than at startup give smaller windows.
+        fit = self.converter.depth_model.max_frames(info.width, info.height)
+        scale = estimate_patches(16, 9) / estimate_patches(info.width, info.height)
+        window = max(16, min(int(self.max_frames * scale), fit))
         opts = Options(**{"window": window, **options})  # type: ignore[arg-type]
         try:
             self.last = self.converter.convert(video, out, capture_id=capture_id, title=title, attendees=attendees,

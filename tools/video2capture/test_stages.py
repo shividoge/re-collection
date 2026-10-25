@@ -113,6 +113,12 @@ class Budget(unittest.TestCase):
         self.assertEqual(estimate.frames_that_fit(1.85 + 0.5 + 0.074 * 67 + 0.01), 67)
         self.assertEqual(estimate.frames_that_fit(100), estimate.MAX_PASS_FRAMES)
 
+    def test_patches_follow_da3_resize(self):
+        self.assertEqual(estimate.patches(1920, 1080), 36 * 20)   # 504x280
+        self.assertEqual(estimate.patches(1920, 1440), 36 * 27)   # 504x378: 4:3 costs 35% more per frame
+        self.assertEqual(estimate.patches(1080, 1920), 20 * 36)
+        self.assertLess(estimate.frames_that_fit(8.4, frame_patches=972), estimate.frames_that_fit(8.4))
+
     def test_frames_needed_for_routing(self):
         self.assertEqual(convert.frames_needed(3.1), 32)
         self.assertEqual(convert.frames_needed(1.0), 16)       # short clips still get 16 views

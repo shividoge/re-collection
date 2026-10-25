@@ -128,7 +128,7 @@ class Converter:
             lap("read")
 
             # ---- depth ----
-            window = opts.window or self.depth_model.max_frames()
+            window = opts.window or self.depth_model.max_frames(info.width, info.height)
             if window < 16:
                 raise RuntimeError(f"Only {window} frames fit in GPU memory right now; is something else using the GPU?")
             est = self.run_depth(images, window, opts, progress, checkpoint, log)
@@ -255,12 +255,15 @@ class Converter:
                                      median_depth=opts.median_depth)
 
         try:
-            est = run(window)
+            return_value: estimate.Estimate | None = run(window)
         except torch.OutOfMemoryError:
+            return_value = None  # retry outside this block: the exception's traceback pins the failed pass's tensors
+        if return_value is None:
             torch.cuda.empty_cache()
             smaller = max(16, window * 2 // 3)
             log(f"  out of GPU memory with {window} frames per pass; retrying with {smaller}")
-            est = run(smaller)
+            return_value = run(smaller)
+        est = return_value
         if len(est.windows) > 1:
             log("  window joins: median misfit " + ", ".join(f"{r * 100:.1f} cm" for r in est.align_residuals))
         return est

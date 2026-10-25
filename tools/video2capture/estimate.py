@@ -23,7 +23,7 @@ import align
 from decode import ConvertError
 
 FLIP = np.diag([1.0, -1.0, -1.0, 1.0])  # OpenCV <-> ARKit axes, for camera and world frames
-# Measured with workers/gpu/calibrate.py at DA3's 504 px processing size: above the resident
+# Measured with workers/gpu/calibrate.py on 16:9 video (DA3 works at 504x280 = 720 patches): above the resident
 # weights a pass peaks at 1.85 GiB + 0.070 GiB per frame on the RTX 5060 Ti (16-80 frames) and
 # 1.65 GiB + 0.074 GiB per frame on the GX10 (16-240 frames). The larger of each is used.
 GIB_PER_FRAME = 0.074
@@ -38,9 +38,21 @@ def to_capture_pose(w2c: np.ndarray) -> np.ndarray:
     return FLIP @ np.linalg.inv(m) @ FLIP
 
 
-def frames_that_fit(free_gib: float, margin_gib: float = 0.5) -> int:
-    """Model frames one pass can take with `free_gib` free after the models are loaded."""
-    return int(max(0, min(MAX_PASS_FRAMES, (free_gib - PASS_CONSTANT_GIB - margin_gib) / GIB_PER_FRAME)))
+CALIBRATION_PATCHES = 720
+
+
+def patches(width: int, height: int, res: int = 504) -> int:
+    """14x14 patches DA3 makes of one frame: long side scaled to `res`, each side rounded to a
+    multiple of 14 (its upper_bound_resize)."""
+    s = res / max(width, height)
+    return max(1, round(width * s / 14)) * max(1, round(height * s / 14))
+
+
+def frames_that_fit(free_gib: float, margin_gib: float = 0.5, frame_patches: int = CALIBRATION_PATCHES) -> int:
+    """Model frames one pass can take with `free_gib` free after the models are loaded. A frame's
+    cost grows with its patches: a 4:3 video (504x378) costs 35% more per frame than 16:9."""
+    per_frame = GIB_PER_FRAME * frame_patches / CALIBRATION_PATCHES
+    return int(max(0, min(MAX_PASS_FRAMES, (free_gib - PASS_CONSTANT_GIB - margin_gib) / per_frame)))
 
 
 @dataclass
@@ -65,12 +77,12 @@ class DepthModel:
         self.torch = torch
         self.model = DepthAnything3.from_pretrained(model).to(device=torch.device(device)).eval()
 
-    def max_frames(self) -> int:
-        """Frames one pass fits in right now, from the free GPU (or unified) memory."""
+    def max_frames(self, width: int = 16, height: int = 9) -> int:
+        """Frames of this aspect one pass fits in right now, from the free GPU (or unified) memory."""
         if self.device != "cuda":
             return 40
         free, _ = self.torch.cuda.mem_get_info()
-        return frames_that_fit(free / 2**30)
+        return frames_that_fit(free / 2**30, frame_patches=patches(width, height))
 
     def offload(self) -> None:
         """Move the weights to the CPU to free GPU memory (for splat training on a small card)."""
