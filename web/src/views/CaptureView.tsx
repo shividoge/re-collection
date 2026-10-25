@@ -1,4 +1,4 @@
-import { onlineWorkers, useCaptureAssets, useCaptureStatus, useHealth, useNow } from '../data'
+import { onlineWorkers, useCaptureAssets, useCaptureStatus, useHealth, useMoment, useNow } from '../data'
 import { SceneViewer } from '../scene'
 import { PublicSwitch } from './PublicSwitch'
 import { EstimatedBadge } from './EstimatedBadge'
@@ -11,6 +11,7 @@ import { VisitDock } from './VisitDock'
  */
 export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
   const state = useCaptureAssets(id)
+  const moment = useMoment(id)
   const status = useCaptureStatus(id)
   const health = useHealth()
   const now = useNow()
@@ -45,7 +46,7 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
           ← Captures
         </a>
         <div className="bar-title">
-          <strong>{manifest.title || 'Untitled visit'}</strong> <EstimatedBadge manifest={manifest} />
+          <strong>{manifest.title || (moment.status === 'ready' ? moment.data.moment?.moment.title : '') || 'Untitled visit'}</strong> <EstimatedBadge manifest={manifest} />
           {manifest && (
             <span className="meta">
               {new Date(manifest.createdAt).toLocaleString()} · {Math.round(manifest.video.durationSec)} s
