@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { STATIC, type Arrangement, type ArrangementItem } from '../api'
+import { guide, STATIC, UPLOAD_TYPES, uploadMuseumFile, type Arrangement, type ArrangementItem, type MuseumUpload } from '../api'
 import {
   arrangedExhibition,
   automaticArrangement,
   loadArrangement,
+  loadUploads,
   loadVisits,
   pieceArtwork,
   piecesOf,
   resetArrangement,
   saveArrangement,
+  uploadArtwork,
+  type Artwork,
   type Visit,
 } from './exhibitions'
 import { planMuseum } from './layout'
@@ -30,8 +33,13 @@ const toDraft = (a: Arrangement): Draft => ({ title: a.title, subtitle: a.subtit
 const toArrangement = (d: Draft): Omit<Arrangement, 'updatedAt'> => ({
   title: d.title.trim(),
   subtitle: d.subtitle.trim(),
-  items: d.rows.map(({ capture, piece, title, caption }) => ({ capture, piece, title: title.trim(), caption: caption.trim() })),
+  items: d.rows.map(({ capture, piece, upload, title, caption }) =>
+    upload ? { upload, title: title.trim(), caption: caption.trim() } : { capture, piece, title: title.trim(), caption: caption.trim() },
+  ),
 })
+
+/** A file on its way to the guide. */
+type Transfer = { key: number; name: string; progress: number; error?: string }
 
 /**
  * The caretaker's side of the museum (`#/museum/edit`): choose which pictures hang, put them in
@@ -46,11 +54,16 @@ export function MuseumEditor() {
   const [status, setStatus] = useState<{ kind: 'ok' | 'error' | 'busy'; text: string } | null>(null)
   const [selected, setSelected] = useState(-1)
   const [adding, setAdding] = useState(false)
+  const [uploads, setUploads] = useState<MuseumUpload[]>([])
+  const [transfers, setTransfers] = useState<Transfer[]>([])
+  const [dropping, setDropping] = useState(false)
   const dragFrom = useRef(-1)
+  const filePicker = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
-    const [all, saved] = await Promise.all([loadVisits(), loadArrangement()])
+    const [all, saved, ups] = await Promise.all([loadVisits(), loadArrangement(), loadUploads()])
     setVisits(all)
+    setUploads(ups)
     const start = saved && saved.items.length > 0 ? saved : automaticArrangement(all)
     const d = toDraft(start)
     setDraft(d)
@@ -70,6 +83,16 @@ export function MuseumEditor() {
   }, [dirty])
 
   const byId = useMemo(() => new Map((visits ?? []).map((v) => [v.id, v])), [visits])
+  const uploadsById = useMemo(() => new Map(uploads.map((u) => [u.id, u])), [uploads])
+  /** What a row shows: a piece of a visit, or an upload. */
+  const rowArt = (row: ArrangementItem): Artwork | null => {
+    if (row.upload) {
+      const u = uploadsById.get(row.upload)
+      return u ? uploadArtwork(u) : null
+    }
+    const v = row.capture ? byId.get(row.capture) : undefined
+    return v && row.piece ? pieceArtwork(v, row.piece) : null
+  }
   const rows = draft?.rows ?? []
   const setRows = (f: (rows: Row[]) => Row[]) => setDraft((d) => (d ? { ...d, rows: f(d.rows) } : d))
   const change = (i: number, patch: Partial<Row>) => setRows((r) => r.map((row, k) => (k === i ? { ...row, ...patch } : row)))
@@ -91,11 +114,49 @@ export function MuseumEditor() {
     setRows((r) => [...r, { capture: v.id, piece, title: '', caption: '', key: nextKey++ }])
     setSelected(rows.length)
   }
+  const hangUpload = (u: MuseumUpload) => {
+    setRows((r) => [...r, { upload: u.id, title: '', caption: '', key: nextKey++ }])
+  }
+
+  /** Sends the caretaker's own photos and videos to the guide, one at a time, and hangs each one. */
+  async function uploadFiles(files: File[]) {
+    for (const file of files) {
+      const key = nextKey++
+      const name = file.name || 'untitled'
+      if (!UPLOAD_TYPES.includes(file.type)) {
+        setTransfers((t) => [...t, { key, name, progress: 0, error: 'Only photos (JPEG, PNG, WebP, GIF) and videos (MP4, MOV, WebM).' }])
+        continue
+      }
+      setTransfers((t) => [...t, { key, name, progress: 0 }])
+      try {
+        const u = await uploadMuseumFile(file, (progress) => setTransfers((t) => t.map((x) => (x.key === key ? { ...x, progress } : x))))
+        setUploads((all) => [...all, u])
+        hangUpload(u)
+        setTransfers((t) => t.filter((x) => x.key !== key))
+      } catch (e) {
+        setTransfers((t) => t.map((x) => (x.key === key ? { ...x, error: (e as Error).message } : x)))
+      }
+    }
+  }
+
+  async function deleteUpload(u: MuseumUpload) {
+    if (rows.some((r) => r.upload === u.id)) {
+      setStatus({ kind: 'error', text: 'It still hangs on the walls. Take it down (✕ in the list) and save first.' })
+      return
+    }
+    if (!window.confirm(`Delete “${u.name}” from the guide?`)) return
+    try {
+      await guide.deleteMuseumUpload(u.id)
+      setUploads((all) => all.filter((x) => x.id !== u.id))
+    } catch (e) {
+      setStatus({ kind: 'error', text: (e as Error).message })
+    }
+  }
 
   // The live preview: the patient's museum, built from the draft.
   const exhibition = useMemo(
-    () => (draft && visits ? arrangedExhibition(toArrangement(draft) as Arrangement, visits) : null),
-    [draft, visits],
+    () => (draft && visits ? arrangedExhibition(toArrangement(draft) as Arrangement, visits, uploads) : null),
+    [draft, visits, uploads],
   )
   const plan = useMemo(() => planMuseum(Math.max(1, exhibition?.items.length ?? 1)), [exhibition?.items.length])
   const walker = useRef<WalkerHandle>(null)
@@ -145,7 +206,25 @@ export function MuseumEditor() {
 
   return (
     <div className="museum museum-editor">
-      <aside className="me-panel">
+      <aside
+        className={`me-panel${dropping ? ' dropping' : ''}`}
+        // Photos and videos dropped anywhere on the panel are uploaded (a row being dragged carries no files).
+        onDragOver={(e) => {
+          if (STATIC || ![...e.dataTransfer.items].some((i) => i.kind === 'file')) return
+          e.preventDefault()
+          setDropping(true)
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target) setDropping(false)
+        }}
+        onDrop={(e) => {
+          setDropping(false)
+          if (STATIC || e.dataTransfer.files.length === 0) return
+          e.preventDefault()
+          setAdding(true)
+          void uploadFiles([...e.dataTransfer.files])
+        }}
+      >
         <header className="me-head">
           <a className="me-back" href="#/">
             ← Front page
@@ -183,6 +262,62 @@ export function MuseumEditor() {
 
           {adding && (
             <div className="me-library">
+              {!STATIC && (
+                <div className="me-uploads">
+                  <div className="me-upload-head">
+                    <strong>Your own photos and videos</strong>
+                    <button className="me-upload-button" onClick={() => filePicker.current?.click()}>
+                      Upload from this device
+                    </button>
+                    <input
+                      ref={filePicker}
+                      type="file"
+                      hidden
+                      multiple
+                      // Listing exact types makes an iPhone send its HEIC photos as JPEG.
+                      accept={UPLOAD_TYPES.join(',')}
+                      onChange={(e) => {
+                        void uploadFiles([...(e.target.files ?? [])])
+                        e.target.value = ''
+                      }}
+                    />
+                  </div>
+                  <span className="me-upload-hint">Or drop them anywhere on this panel. Each one hangs at the end of the list; only the family sees them.</span>
+                  {transfers.map((t) => (
+                    <div key={t.key} className={`me-transfer${t.error ? ' failed' : ''}`}>
+                      <span>{t.name}</span>
+                      {t.error ? (
+                        <>
+                          <em>{t.error}</em>
+                          <button onClick={() => setTransfers((all) => all.filter((x) => x.key !== t.key))} aria-label="Dismiss">
+                            ✕
+                          </button>
+                        </>
+                      ) : (
+                        <progress value={t.progress} max={1} />
+                      )}
+                    </div>
+                  ))}
+                  {uploads.length > 0 && (
+                    <div className="me-pieces">
+                      {uploads.map((u) => {
+                        const art = uploadArtwork(u)
+                        return (
+                          <div key={u.id} className="me-piece-wrap">
+                            <button className="me-piece" onClick={() => hangUpload(u)} title={`Hang ${u.name}`}>
+                              {u.kind === 'video' ? <video src={`${art.src}#t=0.1`} muted preload="metadata" /> : <img src={art.src} alt="" loading="lazy" />}
+                              {u.kind === 'video' && <span className="me-badge">▶ video</span>}
+                            </button>
+                            <button className="me-piece-delete" onClick={() => void deleteUpload(u)} aria-label={`Delete ${u.name}`} title="Delete from the guide">
+                              ✕
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
               {visits.map((v) => (
                 <div key={v.id} className="me-visit">
                   <strong>{v.title}</strong>
@@ -207,8 +342,10 @@ export function MuseumEditor() {
           {rows.length === 0 && <p className="me-empty">Nothing hangs yet. Press “+ Add pictures”.</p>}
           <ol className="me-rows">
             {rows.map((row, i) => {
-              const v = byId.get(row.capture)
-              const art = v ? pieceArtwork(v, row.piece) : null
+              const v = row.capture ? byId.get(row.capture) : undefined
+              const u = row.upload ? uploadsById.get(row.upload) : undefined
+              const art = rowArt(row)
+              const video = row.piece === 'video' || u?.kind === 'video'
               return (
                 <li
                   key={row.key}
@@ -221,14 +358,20 @@ export function MuseumEditor() {
                 >
                   <span className="me-n">{i + 1}</span>
                   <div className="me-thumb">
-                    {art ? <img src={art.poster ?? art.src} alt="" loading="lazy" /> : <span>missing</span>}
-                    {row.piece === 'video' && <span className="me-badge">▶</span>}
+                    {!art ? (
+                      <span>missing</span>
+                    ) : u?.kind === 'video' ? (
+                      <video src={`${art.src}#t=0.1`} muted preload="metadata" />
+                    ) : (
+                      <img src={art.poster ?? art.src} alt="" loading="lazy" />
+                    )}
+                    {video && <span className="me-badge">▶</span>}
                   </div>
                   <div className="me-words">
                     <input
                       value={row.title}
                       maxLength={TITLE_MAX}
-                      placeholder={v?.title ?? 'Title'}
+                      placeholder={v?.title ?? (u ? `A title for the label (${u.name})` : 'Title')}
                       onChange={(e) => change(i, { title: e.target.value })}
                       onFocus={() => show(i)}
                       aria-label={`Title of picture ${i + 1}`}

@@ -244,8 +244,40 @@ export const publicGuide = {
       .catch(() => null),
 }
 
-/** One picture the caretaker hung: a piece of a capture ("video", "thumb" or a keyframe "k0012"). */
-export type ArrangementItem = { capture: string; piece: string; title: string; caption: string }
+/**
+ * One picture the caretaker hung: a piece of a capture (`capture` and `piece`: "video", "thumb" or
+ * a keyframe "k0012"), or one of their own uploads (`upload`).
+ */
+export type ArrangementItem = { capture?: string; piece?: string; upload?: string; title: string; caption: string }
+/** A photo or video the caretaker uploaded for the museum (docs/guide-api.md "Museum uploads"). */
+export type MuseumUpload = { id: string; kind: 'photo' | 'video'; type: string; name: string; bytes: number; createdAt: string; url: string }
+/** What the guide takes as an upload (anything else it refuses). */
+export const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/quicktime', 'video/webm']
+
+/**
+ * Sends one file to the guide as a museum upload, reporting progress (0–1). Uses XHR because
+ * fetch can't report upload progress, and a video can take a while.
+ */
+export function uploadMuseumFile(file: File, onProgress?: (done: number) => void): Promise<MuseumUpload> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${base}/api/museum/uploads?name=${encodeURIComponent(file.name)}`)
+    for (const [k, v] of Object.entries(headers({ 'Content-Type': file.type }))) xhr.setRequestHeader(k, v)
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total)
+    xhr.onload = () => {
+      let body: { upload?: MuseumUpload; error?: string } = {}
+      try {
+        body = JSON.parse(xhr.responseText)
+      } catch {
+        /* not JSON: reported below */
+      }
+      if (xhr.status === 200 && body.upload) resolve(body.upload)
+      else reject(new GuideError(xhr.status, body.error ?? `HTTP ${xhr.status}`))
+    }
+    xhr.onerror = () => reject(new GuideError(0, "Can't reach the guide server. Is it running (npm start in guide/)?"))
+    xhr.send(file)
+  })
+}
 /** The museum as the caretaker set it up (docs/guide-api.md "Museum arrangement"). */
 export type Arrangement = { title: string; subtitle: string; items: ArrangementItem[]; updatedAt?: string }
 
@@ -268,6 +300,8 @@ export const guide = {
       headers: { 'Content-Type': 'application/json' },
     }).then((r) => r.arrangement),
   resetArrangement: () => request<{ arrangement: null }>('/api/museum/arrangement', { method: 'DELETE' }),
+  museumUploads: () => request<{ uploads: MuseumUpload[] }>('/api/museum/uploads').then((r) => r.uploads),
+  deleteMuseumUpload: (id: string) => request<{ ok: true }>(`/api/museum/uploads/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   putFile: (id: string, name: string, data: Uint8Array) =>
     request<{ ok: true; bytes: number }>(`/api/captures/${id}/files/${name.split('/').map(encodeURIComponent).join('/')}`, {
       method: 'PUT',

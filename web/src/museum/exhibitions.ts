@@ -7,7 +7,7 @@
 //   are still there after a reload.
 // Nothing is invented: an exhibition only shows what was put into it.
 
-import { captureFileUrl, guide, publicGuide, STATIC, type Arrangement, type ArrangementItem, type Manifest } from '../api'
+import { captureFileUrl, fileUrl, guide, publicGuide, STATIC, type Arrangement, type ArrangementItem, type Manifest, type MuseumUpload } from '../api'
 
 export type ArtworkKind = 'photo' | 'video'
 
@@ -164,12 +164,28 @@ export async function resetArrangement(): Promise<void> {
   await guide.resetArrangement()
 }
 
+/** The caretaker's own photos and videos on the guide (none on the static site, which has no server). */
+export async function loadUploads(): Promise<MuseumUpload[]> {
+  if (STATIC) return []
+  return guide.museumUploads().catch(() => [])
+}
+
+/** One of the caretaker's uploads as a picture on the wall. It has no 3D room to step into. */
+export function uploadArtwork(u: MuseumUpload, title = '', caption = '', n = 0): Artwork {
+  return { id: `${u.id}-${n}`, kind: u.kind, src: fileUrl(u.url), title: title || undefined, caption: caption || undefined }
+}
+
 /** The museum built from an arrangement: its pictures, in its order, with its words. */
-export function arrangedExhibition(a: Arrangement, visits: Visit[]): Exhibition {
+export function arrangedExhibition(a: Arrangement, visits: Visit[], uploads: MuseumUpload[] = []): Exhibition {
   const byId = new Map(visits.map((v) => [v.id, v]))
+  const uploadsById = new Map(uploads.map((u) => [u.id, u]))
   const items = a.items.flatMap((item, n) => {
-    const v = byId.get(item.capture)
-    const art = v ? pieceArtwork(v, item.piece, item.title, item.caption, n) : null
+    if (item.upload) {
+      const u = uploadsById.get(item.upload)
+      return u ? [uploadArtwork(u, item.title, item.caption, n)] : []
+    }
+    const v = item.capture ? byId.get(item.capture) : undefined
+    const art = v && item.piece ? pieceArtwork(v, item.piece, item.title, item.caption, n) : null
     return art ? [art] : []
   })
   return { id: 'visits', title: a.title || 'Our visits', subtitle: a.subtitle || undefined, items, source: 'visits' }
@@ -201,9 +217,10 @@ export function automaticArrangement(visits: Visit[]): Arrangement {
 
 /** "Our visits": the caretaker's arrangement if there is one, otherwise the automatic museum. */
 export async function visits(): Promise<Exhibition | null> {
-  const [all, arrangement] = await Promise.all([loadVisits(), loadArrangement()])
+  const [all, arrangement, uploads] = await Promise.all([loadVisits(), loadArrangement(), loadUploads()])
+  if (arrangement && arrangement.items.length > 0) return arrangedExhibition(arrangement, all, uploads)
   if (all.length === 0) return null
-  return arrangedExhibition(arrangement && arrangement.items.length > 0 ? arrangement : automaticArrangement(all), all)
+  return arrangedExhibition(automaticArrangement(all), all, uploads)
 }
 
 // Files dropped onto the museum, kept in IndexedDB.

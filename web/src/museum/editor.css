@@ -155,11 +155,111 @@
   border-color: #ffb35c;
 }
 .me-piece img,
-.me-thumb img {
+.me-piece video,
+.me-thumb img,
+.me-thumb video {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+}
+/* The caretaker's own photos and videos: upload, progress, and the ones already sent. */
+.me-panel.dropping {
+  outline: 2px dashed #ffb35c;
+  outline-offset: -8px;
+}
+.me-uploads {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--m-line);
+  background: rgba(255, 179, 92, 0.06);
+}
+.me-upload-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.me-upload-head strong {
+  font-size: 14px;
+}
+.me-upload-button {
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 0;
+  background: linear-gradient(90deg, #ffb35c, #ff7a8a);
+  color: #2a1418;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.me-upload-hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--m-muted);
+  font-size: 12px;
+}
+.me-transfer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+.me-transfer span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.me-transfer progress {
+  width: 120px;
+  accent-color: #ffb35c;
+}
+.me-transfer.failed em {
+  grid-column: 1;
+  color: #ff8f8f;
+  font-style: normal;
+  font-size: 12px;
+}
+.me-transfer button {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  border: 0;
+  background: none;
+  color: var(--m-muted);
+  cursor: pointer;
+}
+.me-piece-wrap {
+  position: relative;
+}
+.me-piece-wrap .me-piece {
+  width: 100%;
+}
+.me-piece-delete {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.me-piece-wrap:hover .me-piece-delete,
+.me-piece-delete:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .me-piece-delete {
+    opacity: 1;
+  }
 }
 .me-badge {
   position: absolute;
