@@ -20,6 +20,8 @@ const FOV = 58
 const WALK = 0.62
 /** Seconds per picture when the tour plays by itself (for a smooth screen recording). */
 const TOUR_SECONDS_PER_STOP = 3.6
+/** Scroll kept after the dive, in picture-stretches: time inside the scan before the page moves on. */
+const HOLD = 1.2
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 const clamp01 = (t: number) => Math.min(1, Math.max(0, t))
@@ -140,11 +142,13 @@ function hallItems(captures: PublicCapture[]): Art[] {
  * that visit's real 3D scan. "Play the tour" scrolls it by itself at an even pace, so the walk
  * can be screen-recorded in one smooth take.
  */
-export default function MemoryLane({ captures }: { captures: PublicCapture[] }) {
-  const moments = useMemo(
-    () => captures.filter((c) => c.thumb).sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? ''))),
-    [captures],
-  )
+export default function MemoryLane({ captures, diveId }: { captures: PublicCapture[]; diveId?: string }) {
+  // Oldest first; the visit the page goes on to explain hangs last, so the walk ends by diving into it.
+  const moments = useMemo(() => {
+    const sorted = captures.filter((c) => c.thumb).sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')))
+    const k = sorted.findIndex((c) => c.id === diveId)
+    return k >= 0 ? [...sorted.slice(0, k), ...sorted.slice(k + 1), sorted[k]] : sorted
+  }, [captures, diveId])
   const items = useMemo(() => hallItems(moments), [moments])
   const plan = useMemo(() => planMuseum(items.length, 'classic'), [items.length])
   const look = LOOKS.classic
@@ -165,6 +169,8 @@ export default function MemoryLane({ captures }: { captures: PublicCapture[] }) 
   const [aspect, setAspect] = useState(16 / 9)
   const stops = useMemo(() => planStops(plan, items.length, sizes, aspect), [plan, items.length, sizes, aspect])
   const segments = stops.length - 1
+  const segmentsRef = useRef(segments)
+  segmentsRef.current = segments
 
   // Scroll position → progress through the hall.
   useEffect(() => {
@@ -177,7 +183,9 @@ export default function MemoryLane({ captures }: { captures: PublicCapture[] }) 
       if (!el) return
       const rect = el.getBoundingClientRect()
       const p = clamp01(-(rect.top - viewTop(scroller)) / Math.max(1, rect.height - viewHeight(scroller)))
-      progress.current = p
+      // The camera reaches the inside of the picture before the end; the rest is time inside the scan.
+      const n = Math.max(1, segmentsRef.current)
+      progress.current = clamp01((p * (n + HOLD)) / n)
       setShown(p)
       // Only draw while the hall is on screen (with a margin, so it's ready as it scrolls in).
       const top = viewTop(scroller)
@@ -214,6 +222,15 @@ export default function MemoryLane({ captures }: { captures: PublicCapture[] }) 
       const t = clamp01((now - start) / duration)
       scrollToY(scroller, top + span * t)
       if (t < 1) raf = requestAnimationFrame(step)
+      else raf = requestAnimationFrame(onward)
+    }
+    // Then carry on, gently, into "How it works", so one recording runs from the hall to the explanation.
+    const end = top + span
+    const onwardFrom = performance.now() + duration + 900
+    const onward = (now: number) => {
+      const t = clamp01((now - onwardFrom) / 2600)
+      scrollToY(scroller, end + viewHeight(scroller) * ease(t))
+      if (t < 1) raf = requestAnimationFrame(onward)
       else stop()
     }
     const stop = () => {
@@ -237,16 +254,17 @@ export default function MemoryLane({ captures }: { captures: PublicCapture[] }) 
   if (items.length === 0) return null
 
   // Which picture the visitor is standing at, and how far into the last push they are.
-  const x = shown * segments
+  const x = shown * (segments + HOLD)
   const at = Math.min(items.length - 1, Math.max(-1, Math.floor(x + (1 - WALK)) - 1))
   const arrived = at >= 0 && x - (at + 1) + 1 >= WALK - 0.05
   const push = clamp01(x - (segments - 1))
   const reveal = clamp01((push - 0.55) / 0.35)
+  const after = clamp01(x - segments) // 0 → 1 while staying inside the scan
   const last = moments[moments.length - 1]
   const current = at >= 0 ? moments[at] : null
 
   return (
-    <section id="lane" ref={sectionRef} className="lane" style={{ height: `${(segments + 1) * 85 + 40}vh` }}>
+    <section id="lane" ref={sectionRef} className="lane" style={{ height: `${(segments + HOLD + 1) * 85 + 40}vh` }}>
       <div className="lane-sticky">
         <Canvas
           className="lane-canvas"
@@ -298,13 +316,18 @@ export default function MemoryLane({ captures }: { captures: PublicCapture[] }) 
         {last && push > 0.4 && (
           <div className="lane-end" style={{ opacity: reveal, pointerEvents: reveal > 0.9 ? 'auto' : 'none' }}>
             {reveal > 0 && <HeroCloud id={last.id} />}
-            <div className="lane-end-copy">
-              <p className="eyebrow">Step inside</p>
+            <div className="lane-end-copy" style={{ opacity: clamp01(reveal * 2 - 1 + after), transform: `translateY(${(1 - Math.min(1, reveal + after)) * 16}px)` }}>
+              <p className="eyebrow">You just stepped inside</p>
               <h2>{last.title || 'A visit'}</h2>
-              <p className="muted">The picture was the doorway. This is the real room, rebuilt in 3D from the visit.</p>
-              <a className="cta" href={`#/p/${last.id}`}>
-                Walk into this moment
-              </a>
+              <p className="muted">That picture was a doorway. This is the real room it came from, rebuilt in 3D from one visit. Here's how it gets here.</p>
+              <div className="lane-end-actions">
+                <a className="cta" href="#how">
+                  How it works ↓
+                </a>
+                <a className="ghost" href={`#/p/${last.id}`}>
+                  Walk around in it
+                </a>
+              </div>
             </div>
           </div>
         )}

@@ -123,7 +123,7 @@ export function Showcase() {
 
       {entries && entries.length > 0 && (
         <Suspense fallback={null}>
-          <MemoryLane captures={entries.map((e) => e.capture)} />
+          <MemoryLane captures={entries.map((e) => e.capture)} diveId={scene?.capture.id} />
         </Suspense>
       )}
 
