@@ -21,6 +21,7 @@ export function MuseumScene({
   focus,
   onSelect,
   onArrive,
+  onLook,
   walker,
 }: {
   exhibition: Exhibition
@@ -28,6 +29,8 @@ export function MuseumScene({
   focus: number
   onSelect: (slot: number) => void
   onArrive: () => void
+  /** The piece the visitor is looking at while walking freely (−1: none). */
+  onLook: (slot: number) => void
   walker: Ref<WalkerHandle>
 }) {
   const look = LOOKS[plan.style]
@@ -89,7 +92,7 @@ export function MuseumScene({
         plan.slots[i] ? <Artwork key={art.id} art={art} slot={plan.slots[i]} look={look} focused={i === focus} onSelect={onSelect} /> : null,
       )}
 
-      <Walker plan={plan} onArrive={onArrive} ref={walker} guided={look.guided} />
+      <Walker plan={plan} onArrive={onArrive} onLook={onLook} hung={exhibition.items.length} ref={walker} guided={look.guided} />
 
       <EffectComposer multisampling={0} enableNormalPass={false}>
         <N8AO aoRadius={0.55} distanceFalloff={0.6} intensity={look.occlusion * (handheld ? 0.75 : 1)} quality={handheld ? 'performance' : 'medium'} halfRes={handheld} color={new THREE.Color('#1a1210')} />

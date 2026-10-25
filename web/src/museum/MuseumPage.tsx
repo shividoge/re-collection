@@ -79,6 +79,14 @@ export function MuseumPage({ id }: { id?: string }) {
     [exhibition, plan],
   )
 
+  const onArrive = useCallback(() => setArrived(true), [])
+  // Walking and looking around freely: the piece in view becomes the current one (its label shows,
+  // and Next / Previous carry on from it); looking away from every piece hides the label.
+  const onLook = useCallback((slot: number) => {
+    if (slot >= 0) setFocus(slot)
+    setArrived(slot >= 0)
+  }, [])
+
   const add = useCallback(
     async (files: File[]) => {
       if (!exhibition) return
@@ -125,7 +133,8 @@ export function MuseumPage({ id }: { id?: string }) {
   if (error) return <div className="museum-message">{error}</div>
   if (!exhibitions || !exhibition) return <div className="museum-message">Opening the museum…</div>
 
-  const current = focus >= 0 ? exhibition.items[focus] : null
+  // The label shows once the visitor has arrived at a piece or is looking at one.
+  const current = focus >= 0 && arrived ? exhibition.items[focus] : null
   const total = exhibition.items.length
 
   return (
@@ -147,7 +156,7 @@ export function MuseumPage({ id }: { id?: string }) {
       }}
     >
       {total > 0 || exhibition.id === MY_EXHIBITION ? (
-        <MuseumScene exhibition={exhibition} plan={plan} focus={focus} onSelect={goTo} onArrive={() => setArrived(true)} walker={walker} />
+        <MuseumScene exhibition={exhibition} plan={plan} focus={focus} onSelect={goTo} onArrive={onArrive} onLook={onLook} walker={walker} />
       ) : null}
 
       <header className="museum-top">
@@ -205,9 +214,10 @@ export function MuseumPage({ id }: { id?: string }) {
           <button className="museum-nav" onClick={() => goTo(focus <= 0 ? 0 : focus - 1)} disabled={focus <= 0} aria-label="Previous">
             ←
           </button>
-          <div className={`museum-caption${current && arrived ? ' shown' : ''}`}>
+          <div className="museum-caption">
+            {/* Keyed by piece, so each new label fades in instead of snapping. */}
             {current ? (
-              <>
+              <div key={current.id} className="museum-caption-body">
                 <strong>{current.title || 'Untitled'}</strong>
                 {current.date && <span className="museum-date">{current.date}</span>}
                 {current.caption && <p>{current.caption}</p>}
@@ -215,14 +225,14 @@ export function MuseumPage({ id }: { id?: string }) {
                   {current.captureId && <a href={`#/capture/${current.captureId}`}>Step into this visit in 3D</a>}
                   {current.local && <button onClick={() => void remove(current.id)}>Take down</button>}
                 </div>
-              </>
+              </div>
             ) : (
-              <>
+              <div key="title" className="museum-caption-body">
                 <strong>{exhibition.title}</strong>
                 <span className="museum-date">
-                  {total} {total === 1 ? 'piece' : 'pieces'} · press → to begin
+                  {total} {total === 1 ? 'piece' : 'pieces'} · press → to begin, or look at a picture
                 </span>
-              </>
+              </div>
             )}
           </div>
           <button className="museum-nav" onClick={() => goTo(focus + 1)} disabled={focus >= total - 1} aria-label="Next">

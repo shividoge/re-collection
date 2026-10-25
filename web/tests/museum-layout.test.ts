@@ -128,3 +128,24 @@ describe('facing a picture', () => {
     }
   })
 })
+
+describe('what the visitor is looking at', () => {
+  it('finds the picture straight ahead, and not one behind you', async () => {
+    const { facing } = await import('../src/museum/Walker')
+    const plan = planMuseum(12, 'classic')
+    for (const s of plan.slots) {
+      const dx = s.center[0] - s.view[0]
+      const dz = s.center[2] - s.view[1]
+      const yaw = Math.atan2(-dx, -dz)
+      expect(facing(plan, 12, s.view, yaw, 0.05)).toBe(s.index)
+      // Turned around: not this one (a picture across the room may face you instead).
+      expect(facing(plan, 12, s.view, yaw + Math.PI, 0)).not.toBe(s.index)
+      // Looking at the ceiling: nothing.
+      expect(facing(plan, 12, s.view, yaw, 1.2)).toBe(-1)
+    }
+    // Only hung pieces count.
+    const s = plan.slots[5]
+    const yaw = Math.atan2(-(s.center[0] - s.view[0]), -(s.center[2] - s.view[1]))
+    expect(facing(plan, 5, s.view, yaw, 0.05)).toBe(-1)
+  })
+})
