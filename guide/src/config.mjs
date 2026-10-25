@@ -15,6 +15,8 @@ export function loadConfig(env = process.env) {
     key: env.BRAINDANCE_KEY || '',
     mockClaude: env.MOCK_CLAUDE === '1',
     anthropicKey: env.ANTHROPIC_API_KEY || '',
+    // The live visit's call setup: a JSON array for RTCPeerConnection (a TURN server can go here).
+    iceServers: env.ICE_SERVERS || '',
     models: {
       offline: env.MODEL_OFFLINE || 'claude-opus-5-5',
       live: env.MODEL_LIVE || 'claude-sonnet-5-5',

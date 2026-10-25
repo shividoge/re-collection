@@ -11,6 +11,7 @@ import { ClaudeError, createClaude } from './claude.mjs';
 import { extractFacts } from './facts.mjs';
 import { createArrangement } from './arrangement.mjs';
 import { createUploads } from './uploads.mjs';
+import { createLive, iceServersFrom } from './live.mjs';
 import { createMuseumRooms } from './museum.mjs';
 import { createPublic } from './public.mjs';
 import { createSessions, SessionError } from './session.mjs';
@@ -48,6 +49,7 @@ export function createApp(config, { claude = createClaude(config), log = console
     dataDir: config.dataDir,
     inUse: async () => new Set(((await arrangement.read())?.items ?? []).map((i) => i.upload).filter(Boolean)),
   });
+  const live = createLive({ person: () => sessions.person(), iceServers: iceServersFrom(config.iceServers) });
   const arrangement = createArrangement({ store, dataDir: config.dataDir, uploadIds: () => uploads.ids() });
   const publicRoutes = createPublic({ store, sessions, arrangement });
   const museum = createMuseumRooms({ store, ...museumOptions });
@@ -73,6 +75,7 @@ export function createApp(config, { claude = createClaude(config), log = console
     ...museum.routes,
     ...arrangement.routes,
     ...uploads.routes,
+    ...live.routes,
     ['GET', /^\/files\/([^/]+)\/(.+)$/, getFile],
     ['HEAD', /^\/files\/([^/]+)\/(.+)$/, getFile],
   ];
