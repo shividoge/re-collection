@@ -25,10 +25,13 @@ export default defineConfig({
           groups: [
             // three.js and the react-three stack change rarely: one long-cached chunk, loaded only by
             // 3D routes. Postprocessing, Spark and MediaPipe stay with the screens that use them.
+            // Fiber's own dependencies (zustand, its-fine, ...) belong here too: left out, they land in
+            // a screen chunk that this chunk then imports, and the import cycle runs that screen's code
+            // before three's classes exist ("X is not a constructor").
             {
               name: 'three',
               includeDependenciesRecursively: false,
-              test: /node_modules[\\/](three|@react-three[\\/](fiber|drei)|three-stdlib|three-mesh-bvh|troika-[^\\/]+|maath|meshline|camera-controls|stats-gl|@monogrid)[\\/]/,
+              test: /node_modules[\\/](three|@react-three[\\/](fiber|drei)|three-stdlib|three-mesh-bvh|troika-[^\\/]+|maath|meshline|camera-controls|stats-gl|@monogrid|zustand|its-fine|suspend-react|react-use-measure|use-sync-external-store|@babel[\\/]runtime)[\\/]/,
             },
           ],
         },
