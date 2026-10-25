@@ -25,11 +25,13 @@ captures/<captureId>/raw/<name>        what the source uploaded, names exactly a
                                        (manifest.json, room.bin, frames.jsonl, video.mp4, depth.bin,
                                         confidence.bin (v1 only), depth.index.json (v2), thumb.jpg,
                                         transcript.json, keyframes/kNNNN.jpg, room.spz, ...)
-captures/<captureId>/derived/<name>    bake outputs (§4), immutable once registered
+captures/<captureId>/<raw|derived>/<jobId>.<attempt>/<name>
+                                       what one worker attempt wrote (bake outputs (§4), a converted
+                                       package, room.spz); each attempt has its own keys (§7)
 videos/<captureId>/source.<ext>        an old video uploaded for conversion (GPU job input)
 ```
 
-- Every object is immutable once registered in Convex. A re-upload of a raw file writes the same key and bumps that file's `rev` in Convex; derived files are re-baked under the same names and their `rev` bumps too. URLs carry `?v=<rev>` semantics through the signature (§6.4), so caches never serve stale bytes.
+- Every object is immutable once registered in Convex, and the `files` row holds its key (read keys from Convex, never build them). A re-upload of a raw file by a client writes the same key and bumps that file's `rev`; a re-bake writes new attempt keys, bumps the `rev` of the same names, and the replaced objects are deleted an hour later. URLs carry `?v=<rev>` semantics through the signature (§6.4), so caches never serve stale bytes.
 - Derived files are stored **gzip-compressed with `Content-Encoding: gzip`** (fetch decompresses transparently) except `depth.bin`, which is chunk-compressed itself and served by Range. Raw files are stored as uploaded.
 - `Cache-Control: public, max-age=31536000, immutable` on every object.
 
@@ -168,12 +170,12 @@ Function names are the contract (`backend/convex/<module>.ts`). Validators live 
 | `captures.begin` | mutation | `{ manifest }` (parsed manifest.json) | `{ captureId }`; idempotent per manifest `id`; also registers manifest as a file once its bytes are uploaded |
 | `uploads.start` | action | `{ captureId, name, bytes, contentType }` | `{ uploadId, key, partSize, parts: [{ partNumber, url }] }` or `{ uploadId, key, single: { url, headers } }` for files ≤ 8 MiB |
 | `uploads.resume` | action | `{ uploadId }` | same shape as start, listing only parts R2 doesn't have yet |
-| `uploads.finish` | action | `{ uploadId, parts?: [{ partNumber, etag }] }` | `{ ok, bytes }`; completes the multipart upload, HEADs the object, registers the file (→ stage triggers) |
+| `uploads.finish` | action | `{ uploadId, parts?: [{ partNumber, etag }] }` | `{ ok, bytes }`; completes the multipart upload, HEADs the object, registers the file (→ stage triggers). Idempotent: a repeat (e.g. after a lost answer) returns the same `{ ok, bytes }` and registers nothing twice |
 | `captures.complete` | mutation | `{ captureId }` | `{ ok: true }` or throws `ConvexError({ code: 'invalid', errors })` |
 | `captures.list` | query | `{}` | `CaptureSummary[]` newest first: `{ id, title, createdAt, durationSec, source, thumbUrl, status, public }` |
 | `captures.get` | query | `{ captureId }` | `{ id, manifest, status, public, files: { [name]: { url, bytes, rev } }, derived: Derived | null, derivedFiles: { [name]: { url, bytes, rev } } }` |
 | `captures.setPublic` | mutation | `{ captureId, public }` | `{ ok, public }` |
-| `captures.remove` | mutation | `{ captureId }` | `{ ok }` (deletes rows; a scheduled action deletes the R2 objects) |
+| `captures.remove` | mutation | `{ captureId }` | `{ ok }` (deletes rows and leaves a tombstone; a scheduled action deletes the R2 objects, then the tombstone. Until then `captures.begin` for that id throws `ConvexError({ code: 'conflict' })`) |
 | `videos.create` | mutation | `{ title, attendees, fileName, bytes }` | `{ captureId }`; then upload the video with `uploads.start({ captureId, name: 'source.<ext>' ... })`, which routes to `videos/<id>/` and queues `convert` on finish |
 
 URLs in query results are presigned GETs (§6.4). Signing is pure HMAC-SHA256 over the day-floored date, so it's deterministic and can run inside a query. **Decision (backend):** queries sign directly with a synchronous pure-JS SHA-256/HMAC (`backend/convex/lib/r2.ts`, checked against AWS's SigV4 test vectors); `crypto.subtle` also works in Convex queries (checked on the dev deployment) but isn't needed. There is no `files.urls` action: `captures.get`, `captures.list` and `public.*` return the URLs.
@@ -248,12 +250,14 @@ Worker functions take `token` (env `WORKER_TOKEN` in Convex; workers read it fro
 | Function | Kind | Args | Returns |
 |---|---|---|---|
 | `worker.claim` | mutation | `{ token, workerId, kinds: string[], gpu: boolean, maxFrames?: number }` | `{ jobId, kind, captureId, attempt } \| null`; oldest queued job this worker can run (`needs.gpu` ⇒ worker has gpu; `needs.frames ≤ maxFrames`), leased for 120 s |
-| `worker.heartbeat` | mutation | `{ token, jobId, progress? }` | `{ ok, cancelled }`; extends the lease 120 s; `cancelled` = stop now (job was re-queued or the capture deleted) |
-| `worker.inputs` | action | `{ token, jobId }` | `{ files: { [name]: { url, bytes } } }`: presigned GETs for the capture's raw files (and the source video for convert) |
-| `worker.outputUrls` | action | `{ token, jobId, files: [{ name, bytes, contentType, contentEncoding?, area: 'raw' \| 'derived' }] }` | upload targets in the same shape as `uploads.start` per file |
-| `worker.finishOutput` | action | `{ token, jobId, name, area, uploadId, parts? }` | `{ ok, bytes }` |
-| `worker.complete` | mutation | `{ token, jobId, result }` | `{ ok }`; `result` per kind: bake → `{ derived }`; convert → `{ manifest }` (registers the raw package, runs the same triggers as a phone upload, queues splat); splat → `{ splat }` |
-| `worker.fail` | mutation | `{ token, jobId, error, retryable }` | `{ ok }`; retryable and attempts < 3 → re-queued, else `failed` |
+| `worker.heartbeat` | mutation | `{ token, jobId, attempt, progress? }` | `{ ok, cancelled }`; extends the lease 120 s; `cancelled` = stop now (this attempt lost the lease: re-queued, superseded or the capture deleted) |
+| `worker.inputs` | action | `{ token, jobId, attempt }` | `{ manifestJson, files: [{ name, area, url, bytes }] }`: presigned GETs for the capture's raw files (and the source video for convert) |
+| `worker.outputUrls` | action | `{ token, jobId, attempt, files: [{ name, bytes, contentType, contentEncoding?, area: 'raw' \| 'derived' }] }` | `[{ name, target }]`, targets in the same shape as `uploads.start`, under this attempt's own keys |
+| `worker.finishOutput` | action | `{ token, jobId, attempt, uploadId, parts? }` | `{ ok, bytes }`; completes the upload and **stages** the file (not visible yet); a repeat returns the same answer |
+| `worker.complete` | mutation | `{ token, jobId, attempt, result }` | `{ ok }`; **publishes** every file this attempt staged, then per kind: bake → `{ kind: 'bake', derived }` (each `derived.files` name must be staged by this attempt); convert → `{ kind: 'convert', manifestJson }` (runs the same triggers as a phone upload, queues splat); splat → `{ kind: 'splat', splat }` (`splat.file` staged by this attempt, area `raw`). A repeat by the attempt that completed it returns `{ ok }` again |
+| `worker.fail` | mutation | `{ token, jobId, attempt, error, retryable }` | `{ ok }`; retryable and attempts < 3 → re-queued, else `failed` |
+
+**Attempts and ownership.** `attempt` (from `claim`) is required on every call after claim. Only the attempt holding the job's current lease may read inputs, get output URLs, finish outputs, complete or fail; every other call is refused with `ConvexError({ code: 'cancelled' })` (heartbeat answers `cancelled: true` instead), checked inside the mutation that would change anything. A worker that gets `cancelled` stops the job and reports nothing. Each attempt writes under `captures/<id>/<area>/<jobId>.<attempt>/<name>`, so a stale attempt's late PUT can never touch a published object, and its staged files are never published. The cron deletes the uploads and objects of attempts that lost their lease (again an hour later, after their PUT URLs expired, in case a late PUT recreated one).
 
 - A cron every 30 s re-queues jobs whose lease expired (`attempts += 1`; at 3 → `failed` with "The worker stopped responding three times.").
 - On worker startup, nothing special: expired leases come back on their own.
