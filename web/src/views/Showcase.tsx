@@ -283,9 +283,9 @@ function useActiveStep(ids: string[]) {
 /* ----------------------------------------------------- steps 1 to 3: scene */
 
 const SCENES: { id: string; layers: Layers; label: string }[] = [
-  { id: 'step-scan', layers: { room: true, path: false, people: false, video: false }, label: 'The room, as the phone measured it' },
-  { id: 'step-film', layers: { room: true, path: true, people: false, video: true }, label: "The visit: the phone's path, and what it filmed" },
-  { id: 'step-people', layers: { room: true, path: false, people: true, video: true }, label: 'Everything that moved, lifted into 3D from depth' },
+  { id: 'step-scan', layers: { room: true, recorder: false, people: false, video: false }, label: 'The room, as the phone measured it' },
+  { id: 'step-film', layers: { room: true, recorder: true, people: false, video: true }, label: "The visit: where the recorder stood, and what they filmed" },
+  { id: 'step-people', layers: { room: true, recorder: false, people: true, video: true }, label: 'Everything that moved, lifted into 3D from depth' },
 ];
 
 function Walkthrough({ entries, scene, setSceneId }: { entries: Entry[]; scene: Entry; setSceneId: (id: string) => void }) {

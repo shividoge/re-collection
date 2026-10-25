@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useCaptureAssets } from '../data'
 import type { CaptureAssets } from '../data/assets'
-import { CameraPath } from '../scene/CameraPath'
+import { RecorderAvatar } from '../scene/RecorderAvatar'
 import { PlaybackDriver, SceneReplay, SceneRoom, useCaptureScene, usePlayback, usePlaybackState } from '../scene'
 
 /**
@@ -66,7 +66,7 @@ export function HeroCloud({ assets }: { assets: CaptureAssets }) {
   )
 }
 
-export type Layers = { room: boolean; path: boolean; people: boolean; video: boolean }
+export type Layers = { room: boolean; recorder: boolean; people: boolean; video: boolean }
 
 /**
  * A compact scene for the page: which layers show is decided by the story next to it. Zoom is
@@ -84,7 +84,7 @@ export function MiniViewer({ assets, layers, label }: { assets: CaptureAssets; l
   const { playing } = usePlaybackState(playback)
 
   // The clip plays whenever a layer needs it and the scene is on screen, muted and looping.
-  const needsVideo = (layers.video || layers.people) && onScreen
+  const needsVideo = (layers.video || layers.people || layers.recorder) && onScreen
   useEffect(() => {
     if (!videoEl) return
     if (needsVideo) playback.play()
@@ -111,7 +111,7 @@ export function MiniViewer({ assets, layers, label }: { assets: CaptureAssets; l
             <color attach="background" args={['#07080a']} />
             <PlaybackDriver playback={playback} />
             {layers.room && <SceneRoom scene={scene} view="points" dim={layers.people && playing ? 0.5 : 1} />}
-            {layers.path && scene.moment.length > 0 && <CameraPath frames={scene.moment} timeRef={playback.timeRef} color="#ff7a57" />}
+            {layers.recorder && scene.moment.length > 0 && <RecorderAvatar frames={scene.moment} points={scene.points?.status === 'ready' ? scene.points.data : null} timeRef={playback.timeRef} />}
             {layers.people && videoEl && <SceneReplay scene={scene} video={videoEl} timeRef={playback.timeRef} masked={false} />}
             <OrbitControls makeDefault target={scene.bounds.center} enableZoom={false} enabled={explore} enableDamping />
           </Canvas>
