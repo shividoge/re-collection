@@ -84,25 +84,17 @@ async function visits(): Promise<Exhibition | null> {
       const { manifest } = await guide.capture(c.id)
       const title = c.title || manifest.title || 'A visit'
       const date = formatDate(c.createdAt)
-      if (manifest.video?.file) {
-        const poster = c.thumb ? captureFileUrl(c.id, 'thumb.jpg') : undefined
-        items.push({ id: `${c.id}-video`, kind: 'video', src: captureFileUrl(c.id, manifest.video.file), poster, title, date, captureId: c.id, t: 0 })
-      }
+      // One frame per visit, so every picture on the wall is a different memory: the visit's
+      // video (its thumbnail until it plays), or a single still when there's no video.
+      const poster = c.thumb ? captureFileUrl(c.id, 'thumb.jpg') : undefined
       const kf = manifest.keyframes
-      if (kf && kf.count > 0) {
-        for (const s of [Math.floor(kf.count * 0.3), Math.floor(kf.count * 0.7)]) {
-          items.push({
-            id: `${c.id}-k${s}`,
-            kind: 'photo',
-            src: captureFileUrl(c.id, `${kf.dir}/k${String(s).padStart(4, '0')}.jpg`),
-            title,
-            date,
-            captureId: c.id,
-            t: s * kf.everySec,
-          })
-        }
-      } else if (c.thumb) {
-        items.push({ id: `${c.id}-thumb`, kind: 'photo', src: captureFileUrl(c.id, 'thumb.jpg'), title, date, captureId: c.id, t: 0 })
+      if (manifest.video?.file) {
+        items.push({ id: `${c.id}-video`, kind: 'video', src: captureFileUrl(c.id, manifest.video.file), poster, title, date, captureId: c.id, t: 0 })
+      } else if (kf && kf.count > 0) {
+        const s = Math.floor(kf.count * 0.5)
+        items.push({ id: `${c.id}-k${s}`, kind: 'photo', src: captureFileUrl(c.id, `${kf.dir}/k${String(s).padStart(4, '0')}.jpg`), title, date, captureId: c.id, t: s * kf.everySec })
+      } else if (poster) {
+        items.push({ id: `${c.id}-thumb`, kind: 'photo', src: poster, title, date, captureId: c.id, t: 0 })
       }
     } catch {
       // A capture whose manifest can't be read is left out, not guessed at.
