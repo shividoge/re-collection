@@ -221,6 +221,39 @@ class TorchParts(unittest.TestCase):
         self.assertAlmostEqual(float(pts[0, 0]), 0.0025, places=6)
         self.assertEqual(sorted(w.tolist()), [1.0, 4.0])
 
+    def test_transfer_detail_takes_shape_from_coarse_and_detail_from_fine(self):
+        import torch.nn.functional as F
+
+        import fusion
+
+        # Truth: a wall at 3 m with a 20 cm deep box in front of it, and a 1 cm groove too thin
+        # for the coarse grid. The fine depth has the box and groove but a wrong scale (x1.5).
+        H, W, h, w = 96, 128, 24, 32
+        truth = torch.full((H, W), 3.0)
+        truth[30:60, 40:80] = 2.8
+        truth[:, 100:102] = 3.01
+        fine = truth * 1.5
+        coarse = F.interpolate(truth.clone()[None, None], size=(h, w), mode="nearest")[0, 0]
+        coarse[:, 25] = 3.0  # the groove is lost at the coarse resolution
+        out = fusion.transfer_detail(coarse, coarse > 0, fine)
+        err = (out - truth).abs()
+        self.assertLess(float(err[:, :96].median()), 1e-3)
+        self.assertLess(float(err[35:55, 45:75].max()), 0.01)  # the box keeps its own depth
+        self.assertLess(float(err[5:25, 5:35].max()), 0.01)    # the wall isn't pulled towards the box
+        self.assertAlmostEqual(float(out[48, 100] - out[48, 96]), 0.01, delta=0.003)  # the groove survives
+
+    def test_transfer_detail_thin_things_take_their_surroundings_correction(self):
+        import fusion
+
+        H, W, h, w = 96, 128, 24, 32
+        truth = torch.full((H, W), 3.0)
+        truth[:, 60:62] = 2.5  # a lamp arm thinner than one coarse pixel
+        fine = truth * 0.8
+        coarse = torch.full((h, w), 3.0)
+        out = fusion.transfer_detail(coarse, coarse > 0, fine)
+        self.assertAlmostEqual(float(out[48, 60]), 2.5, delta=0.02)
+        self.assertEqual(float(fusion.transfer_detail(coarse, torch.zeros_like(coarse, dtype=torch.bool), fine).abs().max()), 0.0)
+
     def test_voxel_keys_handle_negative_coordinates(self):
         import fusion
 

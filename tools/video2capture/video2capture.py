@@ -83,8 +83,10 @@ def main() -> int | None:
                     help="only for models without metric depth: scale so the typical depth is this many meters")
     ap.add_argument("--model", default=MODEL)
     ap.add_argument("--device", default=None, help="mps, cuda or cpu (default: best available)")
-    ap.add_argument("--voxel", type=float, default=0.015, help="room.bin point spacing in meters")
-    ap.add_argument("--max-points", type=int, default=2_000_000, help="most room.bin points (bigger scenes get coarser voxels)")
+    ap.add_argument("--voxel", type=float, default=0.005, help="room.bin point spacing in meters")
+    ap.add_argument("--max-points", type=int, default=6_000_000, help="most room.bin points (bigger scenes get coarser voxels)")
+    ap.add_argument("--detail-res", type=int, default=1008,
+                    help="long side of the single-frame depth pass that adds fine detail (0 = multi-view depth only)")
     ap.add_argument("--splat", choices=["train", "none"], default="train", help="train a Gaussian splat of the room, or none")
     ap.add_argument("--splat-passes", type=float, default=30, help="training passes over the frames")
     ap.add_argument("--splat-batch", type=int, default=4, help="frames per training step")
@@ -117,7 +119,7 @@ def main() -> int | None:
     cid = str(uuid.uuid4())
     out = (args.out / f"capture-{cid}").resolve()
     holdout_frames = json.loads(args.holdout_frames.read_text())["frames"] if args.holdout_frames else None
-    opts = Options(sample_fps=args.sample_fps, voxel=args.voxel, max_points=args.max_points,
+    opts = Options(sample_fps=args.sample_fps, voxel=args.voxel, max_points=args.max_points, detail_res=args.detail_res,
                    depth_encoding="v2" if v3 else "v1", write_ply=not v3, window=args.max_frames, overlap=args.overlap,
                    median_depth=args.median_depth, holdout=args.holdout, holdout_frames=holdout_frames)
 

@@ -36,8 +36,9 @@ Progress = Callable[[str, float | None, str], None]
 @dataclass
 class Options:
     sample_fps: float = 10.0       # model frames per second of video
-    voxel: float = 0.015           # room.bin spacing (m); estimated depth doesn't support finer
-    max_points: int = 2_000_000    # bigger scenes get coarser voxels
+    voxel: float = 0.005           # room.bin spacing (m)
+    max_points: int = 6_000_000    # bigger scenes get coarser voxels
+    detail_res: int = 1008         # single-frame depth at this long side for fine detail (0 = multi-view depth only)
     depth_encoding: str = "v2"     # "v2" (architecture v3) or "v1" (depth.bin + confidence.bin, for the guide)
     write_ply: bool = False        # room.ply as well (v1 packages)
     window: int | None = None      # frames per model pass (default: what fits in memory now)
@@ -123,7 +124,8 @@ class Converter:
                 holdout = [k for k in range(n) if opts.holdout and k % opts.holdout == opts.holdout // 2]
             usable = [k for k in range(n) if k not in set(holdout)]
             log(f"  {info.duration:.1f} s, {info.frame_count} frames; {n} model frames ({n / info.duration:.1f} per second)")
-            dec = decode.decode(info, sample_frames, opts.work_long_side, out / "keyframes", checkpoint=checkpoint)
+            dec = decode.decode(info, sample_frames, max(opts.work_long_side, opts.detail_res), out / "keyframes",
+                                checkpoint=checkpoint)
             images = [dec.frames[i] for i in sample_frames]
             lap("read")
 
@@ -138,6 +140,9 @@ class Converter:
             if level_warning:
                 log(f"  {level_warning}")
             poses_np = [level @ T for T in poses_np]
+            if opts.detail_res:
+                est = self.add_detail(est, images, opts.detail_res, progress, checkpoint)
+                lap("detail")
             _, h, w = est.depth.shape
 
             # ---- people and pets ----
@@ -244,6 +249,35 @@ class Converter:
         log(f"  {len(points_np):,} room points, {n} depth frames, {info.frame_count} video frames; " +
             ", ".join(f"{k} {v:.1f} s" for k, v in timings.items()))
         return Result(manifest, sample_frames, [sample_frames[k] for k in holdout], timings)
+
+    def add_detail(self, est: estimate.Estimate, images: list[np.ndarray], res: int, progress: Progress,
+                   checkpoint: Callable[[], None]) -> estimate.Estimate:
+        """The multi-view estimate at the single-frame pass's resolution: each frame's sharp
+        single-frame depth, shaped like the multi-view depth (fusion.transfer_detail). Confidence
+        and sky are carried over (nearest), intrinsics rescaled."""
+        import torch
+        import torch.nn.functional as F
+
+        import fusion
+
+        n, h, w = est.depth.shape
+        depth, H, W = [], 0, 0
+        for k in range(n):
+            checkpoint()
+            if k % 10 == 0:
+                progress("detail", k / n, f"Sharpening depth, frame {k + 1} of {n}")
+            fine = torch.from_numpy(self.depth_model.infer_fine(images[k], res)).to(self.dev)
+            H, W = fine.shape
+            coarse = torch.from_numpy(est.depth[k]).to(self.dev)
+            depth.append(fusion.transfer_detail(coarse, coarse > 0, fine).cpu().numpy())
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
+        def up(x: np.ndarray) -> np.ndarray:
+            return F.interpolate(torch.from_numpy(x.astype(np.float32))[:, None], size=(H, W), mode="nearest")[:, 0].numpy()
+        Ks = [fusion.scale_K(torch.from_numpy(K).float(), W / w, H / h).double().numpy() for K in est.Ks]
+        return estimate.Estimate(depth=np.stack(depth), conf=up(est.conf), poses=est.poses, Ks=Ks,
+                                 sky=None if est.sky is None else up(est.sky) > 0.5, metric=est.metric,
+                                 windows=est.windows, align_residuals=est.align_residuals)
 
     def run_depth(self, images: list[np.ndarray], window: int, opts: Options, progress: Progress,
                   checkpoint: Callable[[], None], log: Callable[[str], None]) -> estimate.Estimate:
