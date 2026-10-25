@@ -11,6 +11,23 @@ export interface DepthIndex {
   framesPerChunk: number
   /** [byteOffset, byteLength] of each chunk in depth.bin. */
   chunks: [number, number][]
+  /** Applied to the pixels before compression; absent = none. */
+  filter?: DepthFilter
+}
+
+/**
+ * `row-delta`: in every row, each pixel after the first is stored as its difference from the
+ * pixel to its left, mod 65536. Neighboring depth is close, so this compresses ~40% smaller.
+ */
+export type DepthFilter = 'row-delta'
+
+/** Applies (or with `undo`, reverses) the row-delta filter in place on rows of `width` pixels. */
+export function rowDelta(pixels: Uint16Array, width: number, undo = false): Uint16Array {
+  for (let row = 0; row < pixels.length; row += width) {
+    if (undo) for (let i = row + 1; i < row + width; i++) pixels[i] = (pixels[i] + pixels[i - 1]) & 0xffff
+    else for (let i = row + width - 1; i > row; i--) pixels[i] = (pixels[i] - pixels[i - 1]) & 0xffff
+  }
+  return pixels
 }
 
 export type Deflate = (raw: Uint8Array) => Uint8Array | Promise<Uint8Array>
@@ -64,7 +81,7 @@ export function framesOfChunk(index: DepthIndex, c: number): { first: number; n:
 /** Packed frames (count × width × height) → depth.bin bytes + index. */
 export async function encodeDepthV2(
   packed: Uint16Array,
-  o: { width: number; height: number; count: number; framesPerChunk?: number },
+  o: { width: number; height: number; count: number; framesPerChunk?: number; filter?: DepthFilter },
   deflate: Deflate,
 ): Promise<{ bin: Uint8Array; index: DepthIndex }> {
   const px = o.width * o.height
@@ -75,8 +92,9 @@ export async function encodeDepthV2(
   let offset = 0
   for (let first = 0; first < o.count; first += fpc) {
     const n = Math.min(fpc, o.count - first)
-    const raw = new Uint8Array(packed.buffer, packed.byteOffset + first * px * 2, n * px * 2)
-    const c = await deflate(raw)
+    let pixels = packed.subarray(first * px, (first + n) * px)
+    if (o.filter === 'row-delta') pixels = rowDelta(pixels.slice(), o.width)
+    const c = await deflate(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength))
     parts.push(c)
     chunks.push([offset, c.byteLength])
     offset += c.byteLength
@@ -87,7 +105,9 @@ export async function encodeDepthV2(
     bin.set(p, at)
     at += p.byteLength
   }
-  return { bin, index: { format: 'braindance.depth', version: 2, width: o.width, height: o.height, count: o.count, framesPerChunk: fpc, chunks } }
+  const index: DepthIndex = { format: 'braindance.depth', version: 2, width: o.width, height: o.height, count: o.count, framesPerChunk: fpc, chunks }
+  if (o.filter) index.filter = o.filter
+  return { bin, index }
 }
 
 /** One chunk's compressed bytes → its packed frames. */
@@ -97,13 +117,15 @@ export async function decodeChunk(index: DepthIndex, c: number, compressed: Uint
   const expected = n * index.width * index.height * 2
   if (raw.byteLength !== expected) throw new Error(`Depth chunk ${c} decompressed to ${raw.byteLength} bytes, expected ${expected}.`)
   const aligned = raw.byteOffset % 2 === 0 ? raw : raw.slice()
-  return new Uint16Array(aligned.buffer, aligned.byteOffset, expected / 2)
+  const pixels = new Uint16Array(aligned.buffer, aligned.byteOffset, expected / 2)
+  return index.filter === 'row-delta' ? rowDelta(pixels, index.width, true) : pixels
 }
 
 export function parseDepthIndex(json: string): DepthIndex {
   const x = JSON.parse(json) as DepthIndex
   if (x.format !== 'braindance.depth' || x.version !== 2) throw new Error('depth.index.json is not a braindance depth v2 index.')
   if (!Array.isArray(x.chunks) || x.chunks.length !== Math.ceil(x.count / x.framesPerChunk)) throw new Error('depth.index.json has the wrong number of chunks.')
+  if (x.filter !== undefined && x.filter !== 'row-delta') throw new Error(`depth.index.json has an unknown filter "${String(x.filter)}".`)
   return x
 }
 

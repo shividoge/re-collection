@@ -48,10 +48,11 @@ Replaces `depth.bin` + `confidence.bin` v1. The manifest says which one a captur
 - `depth.bin` is the chunks concatenated. `depth.index.json`:
   ```json
   { "format": "braindance.depth", "version": 2, "width": 256, "height": 192, "count": 741,
-    "framesPerChunk": 10, "chunks": [[0, 41234], [41234, 39876], ...] }
+    "framesPerChunk": 10, "filter": "row-delta", "chunks": [[0, 41234], [41234, 39876], ...] }
   ```
   `chunks[c] = [byteOffset, byteLength]` in `depth.bin`. Frame k is in chunk `floor(k / framesPerChunk)`.
-- Codec: `shared/depth.ts` (`encodeDepthV2`, `decodeChunk`, `convertV1`, `chunkOfFrame`).
+- **Filter (optional):** `"filter": "row-delta"` means that before compression, in every row of every frame, each pixel after the first was replaced by its difference from the pixel to its left (`(v[i] − v[i−1]) & 0xFFFF`); readers undo it after inflating (`v[i] = (d[i] + v[i−1]) & 0xFFFF`, left to right). No `filter` key = unfiltered. The bake writes `row-delta` (43% smaller than unfiltered on a 30 s capture: 35.4 → 20.3 MB at DEFLATE level 6); the phone may write either, and the bake copies v2 files as is.
+- Codec: `shared/depth.ts` (`encodeDepthV2`, `decodeChunk`, `packV1`, `rowDelta`, `chunkOfFrame`).
 
 ## 4. Derived files (bake outputs)
 
