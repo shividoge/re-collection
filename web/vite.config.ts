@@ -23,8 +23,13 @@ export default defineConfig({
       output: {
         codeSplitting: {
           groups: [
-            // three.js and the react-three stack change rarely: one long-cached chunk, loaded only by 3D routes.
-            { name: 'three', test: /node_modules[\\/](three|@react-three|three-stdlib|three-mesh-bvh|troika-[^\\/]+|maath|meshline|camera-controls|stats-gl|@monogrid|postprocessing)[\\/]/ },
+            // three.js and the react-three stack change rarely: one long-cached chunk, loaded only by
+            // 3D routes. Postprocessing, Spark and MediaPipe stay with the screens that use them.
+            {
+              name: 'three',
+              includeDependenciesRecursively: false,
+              test: /node_modules[\\/](three|@react-three[\\/](fiber|drei)|three-stdlib|three-mesh-bvh|troika-[^\\/]+|maath|meshline|camera-controls|stats-gl|@monogrid)[\\/]/,
+            },
           ],
         },
       },
