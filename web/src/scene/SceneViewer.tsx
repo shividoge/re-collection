@@ -10,8 +10,11 @@ import type { FrameRecord } from './formats'
 import type { LoadedCapture } from './loadCapture'
 import { CameraTween, FlyControls, PickHandler, PivotMarker, type CameraGoal, type NavMode } from './Navigation'
 import { dominantQuarterTurns, type Vec3 } from './pose'
+import { useSelectionTint } from './selectionTint'
 import { StaticCloud } from './StaticCloud'
+import { RoomSurfaceMesh } from './RoomSurfaceMesh'
 import { usePlayback } from './usePlayback'
+import { useRoomSurface } from './useRoomSurface'
 import { useSplatSizes } from './useSplatSizes'
 import { useVirtualCursor } from './useVirtualCursor'
 import { selectAlongRay, useRoomIndex, type Selection } from './useRoomIndex'
@@ -72,6 +75,8 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
     setVideoEl(el)
   }, [])
   const [showPath, setShowPath] = useState(true)
+  // The room as one connected surface (fused from the scan's depth frames), or as raw points.
+  const [showSurface, setShowSurface] = useState(true)
   // The video plays all the time (sound, people replay); this only hides or shows its panel.
   const [videoOpen, setVideoOpen] = useState(false)
   const cameraRef = useRef<THREE.Camera | null>(null)
@@ -120,8 +125,13 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
   const canFollow = moment.length > 0
   const indexState = useRoomIndex(interactive ? cloud : null)
   const sizes = useSplatSizes(cloud)
+  const { surface: surfaceState, timeline: timelineState } = useRoomSurface(capture)
+  const surface = surfaceState.status === 'ready' ? surfaceState.surface : null
+  const timeline = timelineState.status === 'ready' ? timelineState.timeline : timelineState.status === 'building' ? 'building' : null
   const selectionSizes = useMemo(() => (sizes && selection ? Float32Array.from(selection.points, (i) => sizes[i]) : null), [sizes, selection])
   const room = indexState.status === 'ready' ? indexState.room : null
+  // The selected object, tinted on the connected surface and in the video replay.
+  const selectionTint = useSelectionTint(room?.index ?? null, selection?.voxels ?? null)
 
   const startCam = bounds
     ? ([bounds.center.x + bounds.radius * 0.6, bounds.center.y + bounds.radius * 1.3, bounds.center.z + bounds.radius * 1.0] as const)
@@ -161,10 +171,11 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
       const sel = selectAlongRay(room, cloud, moment, videoW, videoH, origin, dir)
       setSelection(sel)
       setPickMiss(!sel)
-      // In orbit, whatever you click becomes the point you circle around.
-      if (sel && mode === 'orbit') faceTowards(pivotOf(sel))
+      // In orbit, whatever you click becomes the point you circle around; clicking empty space
+      // deselects, and the pivot goes back to the room center like Esc.
+      if (mode === 'orbit') faceTowards(sel ? pivotOf(sel) : roomCenter)
     },
-    [room, cloud, moment, videoW, videoH, mode, faceTowards],
+    [room, cloud, moment, videoW, videoH, mode, faceTowards, roomCenter],
   )
 
   const goToSelection = useCallback(() => {
@@ -220,16 +231,30 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
             >
               <color attach="background" args={['#07080a']} />
               <HoleFill />
-              <StaticCloud cloud={cloud} sizes={sizes} dim={selection ? 0.45 : canReplayPeople && playback.playing ? 0.55 : 1} />
+              {surface && showSurface ? (
+                <RoomSurfaceMesh surface={surface} selection={selectionTint} />
+              ) : (
+                <StaticCloud cloud={cloud} sizes={sizes} />
+              )}
               {selection && (
                 <>
-                  <StaticCloud cloud={selection.cloud} sizes={selectionSizes} pointSize={1.2} tint={ACCENT} tintMix={0.35} renderOrder={1} />
+                  {!(surface && showSurface) && (
+                    <StaticCloud cloud={selection.cloud} sizes={selectionSizes} pointSize={1.2} tint={ACCENT} tintMix={0.35} renderOrder={1} />
+                  )}
                   <SelectionBox selection={selection} />
                 </>
               )}
               {canFollow && showPath && <CameraPath frames={moment} timeRef={playback.timeRef} />}
               {canReplayPeople && capture.id && manifest && videoEl && (
-                <DepthReplay captureId={capture.id} manifest={manifest} frames={moment} video={videoEl} timeRef={playback.timeRef} />
+                <DepthReplay
+                  captureId={capture.id}
+                  manifest={manifest}
+                  frames={moment}
+                  video={videoEl}
+                  timeRef={playback.timeRef}
+                  selection={selectionTint}
+                  timeline={surface && showSurface ? timeline : null}
+                />
               )}
               {mode === 'follow' && canFollow && <FollowCamera frames={moment} timeRef={playback.timeRef} videoW={videoW} videoH={videoH} />}
               {mode === 'orbit' && (
@@ -285,6 +310,10 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
             {interactive && indexState.status === 'building' && <span>Indexing room for selection…</span>}
             {indexState.status === 'failed' && <span className="err">Selection unavailable: {indexState.message}</span>}
             {pickMiss && <span>Nothing scanned there</span>}
+            {surfaceState.status === 'building' && <span>Building the room's surface…</span>}
+            {surfaceState.status === 'failed' && <span className="err">Surface unavailable: {surfaceState.message}</span>}
+            {surface && timelineState.status === 'building' && <span>Building the visit's timeline…</span>}
+            {timelineState.status === 'failed' && <span className="err">Timeline unavailable: {timelineState.message}</span>}
             {interactive && (
               <span className="help">{HELP[mode]}</span>
             )}
@@ -318,6 +347,7 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
           {fmt(playback.time)} / {fmt(duration)}
         </span>
         <div className="layers">
+          <Layer label="Surface" on={showSurface} disabled={!surface} set={setShowSurface} />
           <Layer label="Path" on={showPath} disabled={!canFollow} set={setShowPath} />
         </div>
         {showVideo && (

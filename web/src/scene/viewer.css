@@ -18,6 +18,8 @@
   flex: 1;
   min-width: 0;
   background: #07080a;
+  /* The hidden video panel waits just below; without this the page could scroll to it. */
+  overflow: hidden;
 }
 .viewer-side {
   width: min(34%, 440px);
