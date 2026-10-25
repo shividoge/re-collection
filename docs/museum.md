@@ -16,20 +16,27 @@ piece framed on a wall, lit, and labelled. Not XR yet; it runs in any browser (l
 ## Stepping into a picture, and the music
 
 Tap the picture you're standing at, or press **Step in** on its label (Enter on a keyboard; from
-elsewhere it walks you there first). The museum recedes into a dimmed, rounded card while the
-picture lifts out of its frame, Apple-style. A piece from a visit grows to fill the screen and
-dissolves into that visit's 3D room, seen from the phone's own view at that moment of the
-visit, where the person can look around, replay it and talk about it. Any other photo or video
-settles large over a soft blur of its own colours (a video plays with its sound).
-**‹ Museum** (or Escape) runs it all backwards: the picture comes back over the room and
-shrinks into its frame.
+elsewhere it walks you there first). The visitor goes into the picture, as if the frame were a
+window onto a real place: the view leans toward it, then rushes in, the museum smearing into a
+radial "warp" blur with the colours parting, light streaking past like stars at speed and a glow
+gathering in the middle (`web/src/museum/warp.ts`, `DiveCamera.tsx`, `Streaks.tsx`). On the far
+side the picture's own world comes out of the blur (`StepIn.tsx`):
+- a piece from a visit opens onto that visit's 3D room, seen from where the phone was at that
+  moment, so the picture and the room line up; the person can look around, replay the visit and
+  talk about it there;
+- any other photo fills the view and drifts slowly; a video plays, its own sound rising gently.
+
+**‹ Museum** (or Escape) runs the same journey backwards: the world smears away into the warp,
+and the view pulls back out of the frame to where the visitor stood.
 
 Quiet music plays while walking: Erik Satie's *Gymnopédie No. 1*, a public domain recording by
 Robin Alciatore for Musopen (`web/public/museum/audio/`, credits there). It starts softly on the
-first click (browsers allow no sound before one), dips when you step into a picture (out of the
-way entirely for a video's own sound), and rises again slowly when you come back. **♪ Music**
-turns it off and on (remembered on the device). The step-in and step-out sounds, rising and
-falling air with a soft chime, are synthesized in the browser (`web/src/museum/sound.ts`).
+first click (browsers allow no sound before one), fades away completely when you step into a
+picture (each picture has its own sound), and rises again slowly when you come back. **♪ Music**
+turns it off and on (remembered on the device). The sound of going through is made in the
+browser once, offline (`web/src/museum/sound.ts`): rushing air climbing with the speed, a deep
+rumble, a soft shimmer rising an octave, and the air parting in a sweep at the crossing, in a
+wide hall. Stepping out plays it backwards. Nothing rings on at the end.
 
 ## Rooms
 

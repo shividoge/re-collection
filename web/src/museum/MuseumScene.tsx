@@ -2,15 +2,17 @@ import { Environment, Lightformer } from '@react-three/drei'
 import { Canvas, type ThreeEvent } from '@react-three/fiber'
 import { EffectComposer, N8AO, SMAA, ToneMapping, Vignette } from '@react-three/postprocessing'
 import { ToneMappingMode } from 'postprocessing'
-import { useMemo, type Ref } from 'react'
+import { useMemo, type Ref, type RefObject } from 'react'
 import * as THREE from 'three'
 import { Artwork } from './Artwork'
 import { Furniture, Sconces, Window } from './Classic'
+import { DiveCamera } from './DiveCamera'
 import type { Exhibition } from './exhibitions'
 import { walkable, type MuseumPlan } from './layout'
 import { LOOKS } from './looks'
 import { Rooms } from './Rooms'
 import { EYE, Walker, type WalkerHandle } from './Walker'
+import type { Dive } from './warp'
 
 /** Lighter settings on phones and tablets: smaller reflections, half-resolution shading. */
 const handheld = typeof navigator !== 'undefined' && /iPad|iPhone|Android|Mobile/i.test(navigator.userAgent + (navigator.maxTouchPoints > 1 ? ' iPad' : ''))
@@ -26,6 +28,7 @@ export function MuseumScene({
   walker,
   frozen = false,
   paused = false,
+  dive,
 }: {
   exhibition: Exhibition
   plan: MuseumPlan
@@ -40,6 +43,8 @@ export function MuseumScene({
   frozen?: boolean
   /** While the visitor is inside a visit's 3D room, hidden behind it: the museum stops drawing. */
   paused?: boolean
+  /** Diving into a picture (or back out): flies the camera and blurs the view. */
+  dive: RefObject<Dive | null>
 }) {
   const look = LOOKS[plan.style]
   const walk = (walker as { current: WalkerHandle | null }) ?? null
@@ -108,6 +113,7 @@ export function MuseumScene({
         <SMAA />
         <Vignette offset={0.32} darkness={look.vignette ? 0.42 : 0} />
         <ToneMapping mode={ToneMappingMode.NEUTRAL} />
+        <DiveCamera dive={dive} />
       </EffectComposer>
     </Canvas>
   )

@@ -3,199 +3,189 @@ import { SceneViewer } from '../scene/SceneViewer'
 import { loadGuideCapture, type LoadedCapture } from '../scene/loadCapture'
 import { VisitDock } from '../views/VisitDock'
 import type { Artwork } from './exhibitions'
+import { ARRIVE_MS, LEAVE_MS } from './warp'
 
-export interface Box {
-  left: number
-  top: number
-  width: number
-  height: number
-}
+/** Where the visitor is with a picture: diving toward it, inside it, or on the way back out. */
+export type Stage = 'diving' | 'here' | 'leaving'
 
-/** Apple's own easing for zoom transitions: quick to start, a long soft settle. */
-const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)'
-export const STEP_MS = 950
-/** After the room appears behind the picture, how long before the picture dissolves into it (ms). */
-const ROOM_SETTLE_MS = 1100
-const DISSOLVE_MS = 900
+/** A visit's room draws for this long behind its picture before the picture gives way to it (ms),
+ * counted from the arrival or from when it loaded, whichever is later. */
+const ROOM_SETTLE_MS = 900
 
 const reducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
-/** A picture without a 3D room settles as large as fits, above the caption, keeping its shape. */
-function settled(aspect: number): Box {
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  const maxW = vw * 0.88
-  const maxH = vh * 0.74
-  let width = maxW
-  let height = width / aspect
-  if (height > maxH) {
-    height = maxH
-    width = height * aspect
-  }
-  return { left: (vw - width) / 2, top: Math.max(24, (vh - height) / 2 - vh * 0.05), width, height }
-}
+// Coming out of the warp: from a bright, swollen smear to the world, sharp and still.
+const ARRIVE: Keyframe[] = [
+  { opacity: 0, transform: 'scale(1.45)', filter: 'blur(28px) brightness(2.4) saturate(1.5)' },
+  { opacity: 1, transform: 'scale(1.26)', filter: 'blur(16px) brightness(1.7) saturate(1.3)', offset: 0.18 },
+  { opacity: 1, transform: 'scale(1)', filter: 'blur(0px) brightness(1) saturate(1)' },
+]
+// And back into it, the same way reversed.
+const LEAVE: Keyframe[] = [
+  { opacity: 1, transform: 'scale(1)', filter: 'blur(0px) brightness(1) saturate(1)' },
+  { opacity: 1, transform: 'scale(1.26)', filter: 'blur(16px) brightness(1.7) saturate(1.3)', offset: 0.82 },
+  { opacity: 0, transform: 'scale(1.45)', filter: 'blur(28px) brightness(2.4) saturate(1.5)' },
+]
 
-/** A visit's picture grows to cover the whole screen, keeping its shape (the edges overflow). */
-function covering(aspect: number): Box {
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  let width = vw
-  let height = vw / aspect
-  if (height < vh) {
-    height = vh
-    width = vh * aspect
+/** Fades a video's own sound to `to` (0–1) over `ms`, then calls `done`. */
+function fadeVolume(v: HTMLVideoElement, to: number, ms: number, done?: () => void): () => void {
+  const from = v.volume
+  const start = performance.now()
+  let frame = 0
+  const step = (now: number) => {
+    const t = Math.min(1, (now - start) / ms)
+    // Equal-power feel: quick to be heard, gentle to arrive.
+    v.volume = Math.max(0, Math.min(1, from + (to - from) * Math.sin((t * Math.PI) / 2)))
+    if (t < 1) frame = requestAnimationFrame(step)
+    else done?.()
   }
-  return { left: (vw - width) / 2, top: (vh - height) / 2, width, height }
+  frame = requestAnimationFrame(step)
+  return () => cancelAnimationFrame(frame)
 }
 
 /**
- * Stepping into a picture: it lifts out of its frame (from `from`, its box on screen) while the
- * museum behind recedes (the page dims and shrinks it).
- * - A visit's picture grows to fill the screen; its 3D room loads behind it, starting from the
- *   phone's own view at the moment the picture was taken, and the picture dissolves into it: the
- *   visitor steps through the photo into the place, and can look around, walk and talk there.
- * - A photo or video with no 3D room settles large over a soft blur of its own colours; a video
- *   plays with its sound.
- * `leaving` runs it all backwards, into the frame again, then calls `onClosed`.
+ * The world inside a picture, which the visitor reaches by diving into its frame (the museum
+ * does the dive; this is the far side).
+ * - A visit's picture opens onto the visit's own 3D room, seen from where the phone was at that
+ *   moment, so the picture and the room line up; the visitor can look around, replay the visit
+ *   and talk about it there. The room loads during the dive; until it's ready the picture
+ *   itself stands in for it.
+ * - Any other photo fills the view and drifts slowly; a video plays, its own sound rising
+ *   gently as the visitor arrives.
+ * It's mounted hidden while the visitor dives toward it, emerges from the warp at `here`, and
+ * smears back into it at `leaving`, calling `onGone` at the moment of crossing back.
+ * `onCovered` says when it fills the screen (so the museum behind can stop drawing).
  */
 export function StepIn({
   art,
-  from,
-  leaving,
+  stage,
   onBack,
-  onRoom,
-  onClosed,
+  onCovered,
+  onGone,
 }: {
   art: Artwork
-  from: Box
-  leaving: boolean
+  stage: Stage
   onBack: () => void
-  /** True once the visitor is in the visit's 3D room (it covers the museum), false on the way out. */
-  onRoom?: (inRoom: boolean) => void
-  onClosed: () => void
+  onCovered?: (covered: boolean) => void
+  onGone: () => void
 }) {
-  const media = useRef<HTMLDivElement>(null)
-  const backdrop = useRef<HTMLDivElement>(null)
+  const world = useRef<HTMLDivElement>(null)
+  const cover = useRef<HTMLDivElement>(null)
   const video = useRef<HTMLVideoElement>(null)
-  const dissolve = useRef<Animation | null>(null)
   const hasRoom = Boolean(art.captureId)
-  const aspect = from.width / Math.max(1, from.height)
-  const [to] = useState(() => (hasRoom ? covering(aspect) : settled(aspect)))
-  const [lifted, setLifted] = useState(false)
   const [capture, setCapture] = useState<LoadedCapture | null>(null)
+  const [roomSince, setRoomSince] = useState(0)
   const [roomError, setRoomError] = useState<string | null>(null)
-  const [inRoom, setInRoom] = useState(false)
-  const image = art.kind === 'photo' ? art.src : (art.poster ?? '')
-  const radius = hasRoom ? '0px' : '22px'
+  const [roomLive, setRoomLive] = useState(false)
+  const [settled, setSettled] = useState(false)
+  const still = art.kind === 'photo' ? art.src : (art.poster ?? '')
 
-  // Start loading the room right away, while the picture is still lifting.
+  // Load the room as soon as the dive begins, so it's there on the far side.
   useEffect(() => {
     if (!art.captureId) return
     let cancelled = false
     loadGuideCapture(art.captureId)
-      .then((c) => !cancelled && setCapture(c))
+      .then((c) => {
+        if (cancelled) return
+        setCapture(c)
+        setRoomSince(performance.now())
+      })
       .catch((e: Error) => !cancelled && setRoomError(e.message))
     return () => {
       cancelled = true
     }
   }, [art.captureId])
 
-  // Once the picture fills the screen and the room is there, give the room a moment to draw, then
-  // dissolve the picture into it.
-  useEffect(() => {
-    if (!lifted || !capture || leaving || inRoom) return
-    const t = setTimeout(() => {
-      const a = media.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: DISSOLVE_MS, easing: 'ease-in-out', fill: 'both' })
-      if (!a) return
-      dissolve.current = a
-      a.onfinish = () => setInRoom(true)
-    }, ROOM_SETTLE_MS)
-    return () => clearTimeout(t)
-  }, [lifted, capture, leaving, inRoom])
-
-  // The transform that puts the settled box exactly over the frame.
-  const inFrame = () => {
-    const s = from.width / to.width
-    return `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${s})`
-  }
-
+  // Arriving and leaving.
   useLayoutEffect(() => {
-    const el = media.current
-    const bg = backdrop.current
-    if (!el || !bg) return
-    const ms = reducedMotion() ? 250 : STEP_MS
-    const open = { transform: 'none', borderRadius: radius, boxShadow: '0 40px 120px rgba(0,0,0,0.55)' }
-    const shut = { transform: inFrame(), borderRadius: '3px', boxShadow: '0 0 0 rgba(0,0,0,0)' }
-    if (!leaving) {
-      el.animate(reducedMotion() ? [{ opacity: 0 }, { opacity: 1 }] : [shut, open], { duration: ms, easing: EASE, fill: 'both' }).onfinish = () => setLifted(true)
-      bg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms * 0.8, easing: 'ease-out', fill: 'both' })
+    const el = world.current
+    if (!el || stage === 'diving') return
+    const v = video.current
+    if (stage === 'here') {
+      const a = el.animate(reducedMotion() ? [{ opacity: 0 }, { opacity: 1 }] : ARRIVE, { duration: reducedMotion() ? 300 : ARRIVE_MS, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'both' })
+      a.onfinish = () => {
+        setSettled(true)
+        onCovered?.(true)
+      }
+      if (v && !hasRoom) {
+        v.volume = 0
+        void v.play().catch(() => {})
+        return fadeVolume(v, 1, 2800)
+      }
       return
     }
-    video.current?.pause()
-    const shrink = () => {
-      el.animate(reducedMotion() ? [{ opacity: 1 }, { opacity: 0 }] : [open, shut], { duration: ms, easing: EASE, fill: 'both' }).onfinish = onClosed
-      bg.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms * 0.7, easing: 'ease-in', fill: 'both' })
-    }
-    // Out of the room (or while dissolving into it): the picture comes back over it first, then
-    // shrinks into its frame.
-    if (dissolve.current) {
-      const opacity = Number(getComputedStyle(el).opacity)
-      dissolve.current.onfinish = null
-      dissolve.current = null
-      el.getAnimations().forEach((a) => a.cancel())
-      el.style.transform = 'none'
-      el.style.borderRadius = radius
-      el.animate([{ opacity }, { opacity: 1 }], { duration: 450, easing: 'ease-out', fill: 'both' }).onfinish = () => {
-        setInRoom(false)
-        setCapture(null)
-        shrink()
-      }
-    } else shrink()
-    // Runs once when stepping in and once when leaving.
+    setSettled(false)
+    onCovered?.(false)
+    el.getAnimations().forEach((a) => a.cancel())
+    el.animate(reducedMotion() ? [{ opacity: 1 }, { opacity: 0 }] : LEAVE, { duration: reducedMotion() ? 300 : LEAVE_MS, easing: 'cubic-bezier(0.64, 0, 0.78, 0)', fill: 'both' }).onfinish = onGone
+    // The room hands back to its picture on the way out, so the far side of the crossing matches.
+    if (cover.current && roomLive) cover.current.animate([{ opacity: 0 }, { opacity: 1 }], { duration: LEAVE_MS * 0.45, easing: 'ease-out', fill: 'both' })
+    if (v && !hasRoom) return fadeVolume(v, 0, 900, () => v.pause())
+    // Only when the stage changes.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [leaving])
+  }, [stage])
 
-  useEffect(() => onRoom?.(inRoom), [inRoom, onRoom])
+  // On the far side, once the room has drawn for a moment, the picture gives way to it.
+  useEffect(() => {
+    if (stage !== 'here' || !capture || roomLive) return
+    const wait = Math.max(ARRIVE_MS * 0.5, roomSince + ROOM_SETTLE_MS - performance.now())
+    const t = setTimeout(() => {
+      const a = cover.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 900, easing: 'ease-in-out', fill: 'both' })
+      if (a) a.onfinish = () => setRoomLive(true)
+    }, wait)
+    return () => clearTimeout(t)
+  }, [stage, capture, roomSince, roomLive])
 
   // Escape steps back out.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === 'Escape' && !leaving) onBack()
+      if (e.code === 'Escape' && stage === 'here') onBack()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [leaving, onBack])
+  }, [stage, onBack])
 
-  const showUi = (hasRoom ? inRoom || Boolean(roomError) : lifted) && !leaving
+  const showUi = stage === 'here' && settled && (!hasRoom || roomLive || Boolean(roomError))
   return (
-    <div className={`stepin${hasRoom ? ' stepin-room' : ''}`} role="dialog" aria-label={art.title || 'Picture'}>
-      <div ref={backdrop} className="stepin-backdrop" style={image ? { backgroundImage: `url("${image}")` } : undefined} />
-      {/* The visit's room, behind the picture until the picture dissolves into it. */}
-      {hasRoom && capture && lifted && (
-        <div className={`stepin-3d${inRoom ? ' live' : ''}`}>
-          <SceneViewer
-            capture={capture}
-            initialMode="follow"
-            startAt={art.t ?? 0}
-            showVideo={false}
-            overlay={(controls) => <VisitDock captureId={art.captureId!} controls={controls} />}
-          />
-        </div>
-      )}
-      <div ref={media} className={`stepin-media${inRoom ? ' gone' : ''}`} style={{ left: to.left, top: to.top, width: to.width, height: to.height }}>
-        {art.kind === 'photo' ? (
-          <img src={art.src} alt={art.title ?? ''} draggable={false} />
+    <div className={`stepin${hasRoom ? ' stepin-room' : ''}${stage === 'diving' ? ' waiting' : ''}`} role="dialog" aria-label={art.title || 'Picture'}>
+      <div ref={world} className="stepin-world">
+        {hasRoom ? (
+          <>
+            {/* Drawn from the arrival on, so the dive itself stays smooth. */}
+            {capture && stage !== 'diving' && (
+              <div className={`stepin-3d${roomLive ? ' live' : ''}`}>
+                <SceneViewer
+                  capture={capture}
+                  initialMode="follow"
+                  startAt={art.t ?? 0}
+                  showVideo={false}
+                  overlay={(controls) => <VisitDock captureId={art.captureId!} controls={controls} />}
+                />
+              </div>
+            )}
+            {/* The picture itself, standing in for the room until the room is ready. */}
+            <div ref={cover} className={`stepin-cover${roomLive ? ' gone' : ''}`}>
+              {still && <img src={still} alt="" draggable={false} />}
+            </div>
+          </>
         ) : (
-          <video
-            ref={video}
-            src={art.src}
-            poster={art.poster}
-            autoPlay={!hasRoom}
-            muted={hasRoom}
-            playsInline
-            loop
-            onClick={(e) => (e.currentTarget.paused ? void e.currentTarget.play() : e.currentTarget.pause())}
-          />
+          <>
+            <div className="stepin-backdrop" style={still ? { backgroundImage: `url("${still}")` } : undefined} />
+            {art.kind === 'photo' ? (
+              <img className="stepin-full drift" src={art.src} alt={art.title ?? ''} draggable={false} />
+            ) : (
+              <video
+                ref={video}
+                className="stepin-full"
+                src={art.src}
+                poster={art.poster}
+                playsInline
+                loop
+                preload="auto"
+                onClick={(e) => (e.currentTarget.paused ? void e.currentTarget.play() : e.currentTarget.pause())}
+              />
+            )}
+          </>
         )}
       </div>
       <div className={`stepin-ui${showUi ? ' shown' : ''}`}>

@@ -24,8 +24,6 @@ export interface WalkerHandle {
   walkTo: (to: [number, number], look?: [number, number, number]) => void
   /** Where the visitor stands now (x, z). */
   position: () => [number, number]
-  /** The on-screen box (page pixels) around these world points, as the camera sees them now. */
-  screenBox: (points: [number, number, number][]) => { left: number; top: number; width: number; height: number }
 }
 
 /** Shortest signed angle from a to b. */
@@ -107,19 +105,6 @@ export function Walker({
       } else lookGoal.current = null
     },
     position: () => [pos.current[0], pos.current[1]],
-    screenBox(points) {
-      const r = gl.domElement.getBoundingClientRect()
-      const xs: number[] = []
-      const ys: number[] = []
-      for (const p of points) {
-        const v = new THREE.Vector3(...p).project(camera)
-        xs.push(r.left + ((v.x + 1) / 2) * r.width)
-        ys.push(r.top + ((1 - v.y) / 2) * r.height)
-      }
-      const left = Math.min(...xs)
-      const top = Math.min(...ys)
-      return { left, top, width: Math.max(...xs) - left, height: Math.max(...ys) - top }
-    },
   }))
 
   // Drag to look.
@@ -179,6 +164,8 @@ export function Walker({
   }, [guided])
 
   useFrame((_, dt) => {
+    // Stepped into a picture: the dive has the camera.
+    if (frozenRef.current) return
     const step = Math.min(dt, 0.05)
     const k = keys.current
     const fwd = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0)

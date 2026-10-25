@@ -107,7 +107,9 @@ export function Artwork({
   const { picture, video } = usePicture(art)
   const aspect = picture?.aspect ?? 4 / 3
   const { w, h } = fitPicture(slot, aspect)
-  useEffect(() => onMeasure?.(slot.index, w, h), [onMeasure, slot.index, w, h])
+  useEffect(() => {
+    onMeasure?.(slot.index, w, h)
+  }, [onMeasure, slot.index, w, h])
   const { border, depth } = look.frame
   const mat = look.mat
   const outerW = w + mat * 2 + border * 2
