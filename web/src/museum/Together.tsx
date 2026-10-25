@@ -110,12 +110,20 @@ export function HelperTogether({ room, join, openTitle }: { room: MuseumRoom; jo
           Visiting together · <strong>{room.code}</strong>
         </span>
         {problem && <span className="together-problem">{problem}</span>}
+        {room.sendFailed && (
+          <span className="together-problem">
+            That didn't reach the iPad.{' '}
+            <button className="together-retry" onClick={room.retry}>
+              Try again
+            </button>
+          </span>
+        )}
       </div>
       {room.state?.window && (
         <div className="together-open" role="status">
           <p>Open on the iPad now</p>
           <strong>{openTitle ?? 'A moment'}</strong>
-          <button className="together-button" onClick={() => void room.leave()}>
+          <button className="together-button" onClick={room.leave}>
             Back to the museum
           </button>
         </div>

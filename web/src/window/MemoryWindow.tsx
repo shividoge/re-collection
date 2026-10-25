@@ -28,7 +28,9 @@ const canTilt = typeof window !== 'undefined' && 'DeviceOrientationEvent' in win
 export function MemoryWindow({ id, from }: { id: string; from?: string }) {
   const [capture, setCapture] = useState<LoadedCapture | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const room = useFollowRoom(id, from === 'museum')
+  // Visit together: opened from the museum, the window stays in the iPad's room, so the helper
+  // pressing "Back to the museum" (or stepping into another moment) on their phone moves it too.
+  const room = useMuseumRoom('patient', { enabled: from === 'museum' })
 
   useEffect(() => {
     let cancelled = false
@@ -57,21 +59,6 @@ export function MemoryWindow({ id, from }: { id: string; from?: string }) {
   if (!capture) return <div className="window-message">Opening the window…</div>
   if (!capture.cloud) return <div className="window-message">This visit has no room scan to look into.</div>
   return <WindowStage id={id} capture={capture} back={from === 'museum' ? '#/museum' : `#/capture/${id}`} room={room} />
-}
-
-/**
- * Visit together: opened from the museum, the window stays in the iPad's room, so a helper
- * pressing "Back to the museum" (or stepping into another moment) on their phone moves it too.
- */
-function useFollowRoom(id: string, fromMuseum: boolean): MuseumRoom {
-  const room = useMuseumRoom('patient', { enabled: fromMuseum })
-  const { fresh, followed } = room
-  useEffect(() => {
-    if (!fresh || fresh.window === id) return
-    followed(fresh.rev)
-    location.hash = fresh.window ? `#/window/${fresh.window}?from=museum` : '#/museum'
-  }, [fresh, followed, id])
-  return room
 }
 
 /** Drag distance, as a fraction of the screen's shorter side, for a full head movement. */
@@ -228,20 +215,8 @@ function WindowStage({ id, capture, back, room }: { id: string; capture: LoadedC
       )}
 
       <header className="window-top">
-        <a
-          href={back}
-          className="window-exit"
-          onClick={(e) => {
-            if (!room.code) return
-            // Tell the helper's phone first, so the museum doesn't open this moment again.
-            e.preventDefault()
-            const here = location.hash
-            void room.leave().then(() => {
-              // Unless the helper already moved the iPad somewhere else while we waited.
-              if (location.hash === here) location.hash = back
-            })
-          }}
-        >
+        {/* Tell the helper's phone too (the link then goes back as usual). */}
+        <a href={back} className="window-exit" onClick={room.leave}>
           {back === '#/museum' ? '← Back to the museum' : '← Back'}
         </a>
         <div className="window-title">

@@ -151,3 +151,13 @@
 .together-problem {
   color: #ffb38a;
 }
+.together-retry {
+  font: inherit;
+  min-height: 44px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: 1px solid #ffb38a;
+  background: transparent;
+  color: #ffb38a;
+  cursor: pointer;
+}

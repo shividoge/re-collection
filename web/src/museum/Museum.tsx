@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
 import { fileUrl, guide, type CaptureSummary } from '../api'
+import { roomHash } from './roomSync'
 import { HelperTogether, PatientTogether } from './Together'
 import { useMuseumRoom } from './useMuseumRoom'
 import './museum.css'
@@ -68,21 +69,10 @@ export function Museum({ join }: { join?: string } = {}) {
     if (followAt !== null) setAt(followAt)
   }, [followAt])
 
-  // On the iPad, the helper stepping into a moment opens it here.
-  const fresh = room.fresh
-  const { followed } = room
-  useEffect(() => {
-    if (!fresh?.window) return
-    followed(fresh.rev)
-    location.hash = `#/window/${fresh.window}?from=museum`
-  }, [fresh, followed])
-
-  const enter = async (m: Moment) => {
-    const i = moments?.findIndex((x) => x.id === m.id) ?? -1
-    if (helper) return void room.enter(m.id, i)
-    await room.enter(m.id, i)
-    // Unless the helper already moved the iPad somewhere else while we waited.
-    if (/^#\/museum$/i.test(location.hash)) location.hash = `#/window/${m.id}?from=museum`
+  // Stepping in: the iPad opens the window itself; when the helper does it, useMuseumRoom moves the iPad.
+  const enter = (m: Moment) => {
+    room.enter(m.id, moments?.findIndex((x) => x.id === m.id) ?? -1)
+    if (!helper) location.hash = roomHash(m.id)
   }
 
   if (error) return <div className="museum-message">{error}</div>
@@ -104,7 +94,7 @@ export function Museum({ join }: { join?: string } = {}) {
         <fog attach="fog" args={['#1b1512', 8, 26]} />
         <Hall length={(moments.length + 1.5) * SPACING} />
         {moments.map((m, i) => (
-          <Frame key={m.id} moment={m} index={i} active={i === at} onTap={() => (i === at ? void enter(m) : go(i))} />
+          <Frame key={m.id} moment={m} index={i} active={i === at} onTap={() => (i === at ? enter(m) : go(i))} />
         ))}
         <Walker moments={moments} at={at} />
       </Canvas>
@@ -131,7 +121,7 @@ export function Museum({ join }: { join?: string } = {}) {
                 {current.createdAt ? new Date(current.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : ''}
                 {current.source === 'video' && <span className="estimated-badge">Estimated from a video</span>}
               </span>
-              <button className="museum-enter" onClick={() => void enter(current)}>
+              <button className="museum-enter" onClick={() => enter(current)}>
                 Step into this moment
               </button>
             </>
