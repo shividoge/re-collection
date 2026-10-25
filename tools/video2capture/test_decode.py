@@ -25,9 +25,11 @@ def has_x264() -> bool:
 @unittest.skipUnless(has_x264(), "needs an ffmpeg with libx264")
 class Decode(unittest.TestCase):
     def make(self, folder: Path, rotation: int) -> Path:
+        """A 2 s clip whose frames are unevenly spaced (like a phone's variable frame rate)."""
         src = folder / "plain.mp4"
         subprocess.run([decode.FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30:duration=2",
-                        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(src)], check=True)
+                        "-vf", "settb=1/600,setpts='(N/30+0.011*mod(N\\,3))/TB'", "-fps_mode", "passthrough", "-enc_time_base:v", "1/600",
+                        "-video_track_timescale", "600", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(src)], check=True)
         if rotation == 0:
             return src
         out = folder / f"rot{rotation}.mp4"
@@ -41,6 +43,7 @@ class Decode(unittest.TestCase):
                 d = Path(tmp)
                 info = decode.probe(self.make(d, rotation))
                 self.assertEqual(info.frame_count, 60)
+                self.assertAlmostEqual(float(info.times[1]), 1 / 30 + 0.011, places=2)  # uneven spacing survived
                 self.assertEqual((info.width, info.height), (180, 320) if rotation % 180 else (320, 180))
                 t = decode.Transcode(info, d / "video.mp4")
                 wanted = [0, 17, 59]
@@ -52,7 +55,8 @@ class Decode(unittest.TestCase):
                     self.assertEqual(a.shape, b.shape)
                     self.assertLess(np.abs(a - b).mean(), 6, f"frame {i} differs from video.mp4")
                     self.assertGreater(np.abs(a - np.rot90(b, 2)).mean(), 20)  # a wrong turn would show
-                self.assertEqual(sorted(p.name for p in (d / "keyframes").iterdir()), ["k0000.jpg", "k0001.jpg"])
+                names = sorted(p.name for p in (d / "keyframes").iterdir())
+                self.assertEqual(names, [f"k{s:04d}.jpg" for s in range(int(info.duration - 1e-3) + 1)])
 
 
 if __name__ == "__main__":

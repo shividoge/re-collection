@@ -193,6 +193,9 @@ class Transcode:
         self.info, self.dst = info, dst
         cmd = [FFMPEG, "-v", "error", "-y", "-i", str(info.path), "-map", "0:v:0", "-map", "0:a:0?",
                "-vf", f"scale={info.width}:{info.height}", "-fps_mode", "passthrough",
+               # Keep every frame's own timestamp: without a fine time base ffmpeg rounds them to
+               # 1/frame rate (ffmpeg 6 then drifts by 0.1% on a 29.98 fps phone video).
+               "-enc_time_base:v", "1/90000", "-video_track_timescale", "90000",
                "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
         cmd += ["-c:a", "aac", "-b:a", "128k", "-ac", "1"] if info.has_audio else ["-an"]
         self.proc = subprocess.Popen(cmd + [str(dst)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)

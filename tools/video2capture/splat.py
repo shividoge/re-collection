@@ -158,7 +158,7 @@ def train_steps(n: int, batch: int, passes: float) -> int:
 def train(points: torch.Tensor, colors: torch.Tensor, images: torch.Tensor, masks: torch.Tensor,
           poses: torch.Tensor, Ks: torch.Tensor, depths: torch.Tensor, passes: float = 30, batch: int = 4,
           sh_degree: int = 1, cap: int = 800_000, depth_weight: float = 0.2, empty_weight: float = 0.1,
-          log=print, checkpoint=lambda: None) -> dict[str, torch.Tensor]:
+          log=print, checkpoint=lambda: None, progress=lambda fraction: None) -> dict[str, torch.Tensor]:
     """Optimise Gaussians so they reproduce the training frames, `batch` frames per step.
     points (P, 3), colors (P, 3) 0..255: the fused room cloud (initial Gaussians).
     images (N, H, W, 3) uint8, masks (N, H, W) bool (True = moving thing, ignored by the loss),
@@ -221,6 +221,7 @@ def train(points: torch.Tensor, colors: torch.Tensor, images: torch.Tensor, mask
     for step in range(steps):
         if step % 50 == 0:
             checkpoint()
+            progress(step / steps)
         idx = order[step]
         degree = min(sh_degree, step // sh_at) if sh_at else sh_degree
         colors_sh = torch.cat([params["sh0"], params["shN"]], 1)
@@ -290,7 +291,7 @@ def prune(g: dict[str, torch.Tensor], contrib: torch.Tensor, keep_max: int, min_
 def train_from_package(capture: Path, masks_model, device: str, holdout_frames: list[int] | None = None,
                        passes: float = 30, batch: int = 4, width: int = 1280, cap: int = 800_000,
                        keep_max: int = 500_000, sh_degree: int = 1, log=print, checkpoint=lambda: None,
-                       timings: dict | None = None) -> dict[str, np.ndarray]:
+                       progress=lambda fraction: None, timings: dict | None = None) -> dict[str, np.ndarray]:
     """Train the room splat from a capture package on disk (video.mp4, frames.jsonl, depth,
     room.bin): the model frames (lines with `d`) minus `holdout_frames`. Same inputs whether it
     runs right after the conversion or as the GPU worker's separate splat job."""
@@ -333,7 +334,7 @@ def train_from_package(capture: Path, masks_model, device: str, holdout_frames: 
     t0 = time.perf_counter()
     log(f"    training on {len(lines)} frames at {W}x{H}, starting from {len(pts):,} points")
     g = train(torch.from_numpy(pts).to(dev), torch.from_numpy(cols).to(dev), images, masks, poses_t, Ks_t, depths,
-              passes=passes, batch=batch, sh_degree=sh_degree, cap=cap, log=log, checkpoint=checkpoint)
+              passes=passes, batch=batch, sh_degree=sh_degree, cap=cap, log=log, checkpoint=checkpoint, progress=progress)
     if device == "cuda":
         torch.cuda.synchronize()
     timings["splat train"] = round(time.perf_counter() - t0, 2)
