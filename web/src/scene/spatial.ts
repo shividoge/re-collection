@@ -31,6 +31,11 @@ export interface VoxelIndex {
 }
 
 const packKey = (ix: number, iy: number, iz: number) => (ix * AXIS + iy) * AXIS + iz
+function unpackKey(key: number): [number, number, number] {
+  const iz = key % AXIS
+  const iy = ((key - iz) / AXIS) % AXIS
+  return [(key - iz - iy * AXIS) / AXIS / AXIS, iy, iz]
+}
 
 export function buildVoxelIndex(positions: Float32Array, size = 0.03): VoxelIndex {
   const n = positions.length / 3
@@ -51,6 +56,7 @@ export function buildVoxelIndex(positions: Float32Array, size = 0.03): VoxelInde
   const hash = createVoxelHash(1024)
   const voxOf = new Uint32Array(n)
   const coordList: number[] = []
+  const keyList: number[] = []
   for (let i = 0; i < n; i++) {
     const ix = Math.floor((positions[i * 3] - origin[0]) / size)
     const iy = Math.floor((positions[i * 3 + 1] - origin[1]) / size)
@@ -60,17 +66,29 @@ export function buildVoxelIndex(positions: Float32Array, size = 0.03): VoxelInde
       id = hash.size
       hashSet(hash, ix, iy, iz, id)
       coordList.push(ix, iy, iz)
+      keyList.push(packKey(ix, iy, iz))
     }
     voxOf[i] = id
   }
   const voxelCount = hash.size
+  // Canonical ids: voxels sorted by grid coordinates, so the same points in any order (the bake
+  // shuffles points.pack) index, classify and select the same way.
+  const keys = Float64Array.from(keyList).sort()
+  const coords = new Int32Array(voxelCount * 3)
+  keys.forEach((key, id) => {
+    const [ix, iy, iz] = unpackKey(key)
+    coords.set([ix, iy, iz], id * 3)
+    hashSet(hash, ix, iy, iz, id)
+  })
+  const rank = Uint32Array.from({ length: voxelCount }, (_, v) => hashGet(hash, coordList[v * 3], coordList[v * 3 + 1], coordList[v * 3 + 2]))
+  for (let i = 0; i < n; i++) voxOf[i] = rank[voxOf[i]]
   const start = new Uint32Array(voxelCount + 1)
   for (let i = 0; i < n; i++) start[voxOf[i] + 1]++
   for (let v = 0; v < voxelCount; v++) start[v + 1] += start[v]
   const fill = start.slice(0, voxelCount)
   const points = new Uint32Array(n)
   for (let i = 0; i < n; i++) points[fill[voxOf[i]]++] = i
-  return { size, origin, dims, hash, coords: Int32Array.from(coordList), start, points, voxelCount }
+  return { size, origin, dims, hash, coords, start, points, voxelCount }
 }
 
 export function voxelId(idx: VoxelIndex, ix: number, iy: number, iz: number): number {
@@ -116,9 +134,7 @@ export function hashSet(h: VoxelHash, ix: number, iy: number, iz: number, id: nu
     for (let s = 0; s < old.ids.length; s++) {
       if (old.ids[s] < 0) continue
       const key = old.keys[s]
-      const iz2 = key % AXIS
-      const iy2 = ((key - iz2) / AXIS) % AXIS
-      const ix2 = (key - iz2 - iy2 * AXIS) / AXIS / AXIS
+      const [ix2, iy2, iz2] = unpackKey(key)
       let t = slotOf(ix2, iy2, iz2, mask)
       while (h.ids[t] >= 0) t = (t + 1) & mask
       h.keys[t] = key
@@ -192,39 +208,42 @@ export function raycastVoxels(idx: VoxelIndex, origin: Vec3, direction: Vec3, ma
   return null
 }
 
-/** Heights of large horizontal surfaces, from a histogram of point heights. */
+/**
+ * Heights of large horizontal surfaces, from a histogram of every point's height. Bin means sum
+ * whole micrometers, which is exact, so the result doesn't depend on the order of the points.
+ */
 export function estimateLevels(positions: Float32Array, bin = 0.02): { floorY: number | null; ceilingY: number | null } {
   const n = positions.length / 3
   if (n === 0) return { floorY: null, ceilingY: null }
-  const stride = Math.max(1, Math.floor(n / 500_000))
   let lo = Infinity
   let hi = -Infinity
-  for (let i = 0; i < n; i += stride) {
+  for (let i = 0; i < n; i++) {
     const y = positions[i * 3 + 1]
     if (y < lo) lo = y
     if (y > hi) hi = y
   }
   const bins = Math.max(1, Math.ceil((hi - lo) / bin) + 1)
   const count = new Float64Array(bins)
-  const sum = new Float64Array(bins)
-  for (let i = 0; i < n; i += stride) {
+  const sumUm = new Float64Array(bins)
+  for (let i = 0; i < n; i++) {
     const y = positions[i * 3 + 1]
     const b = Math.floor((y - lo) / bin)
     count[b]++
-    sum[b] += y
+    sumUm[b] += Math.round(y * 1e6)
   }
+  const mean = (b: number) => sumUm[b] / count[b] / 1e6
   let peak = 0
   for (let b = 0; b < bins; b++) peak = Math.max(peak, count[b])
   const dense = (b: number) => count[b] >= 0.3 * peak
   let floorBin = -1
   for (let b = 0; b < bins && floorBin < 0; b++) if (dense(b)) floorBin = b
   if (floorBin < 0) return { floorY: null, ceilingY: null }
-  const floorY = sum[floorBin] / count[floorBin]
+  const floorY = mean(floorBin)
   let ceilingY: number | null = null
   for (let b = bins - 1; b > floorBin; b--) {
     if (lo + b * bin < floorY + 1.8) break
     if (dense(b)) {
-      ceilingY = sum[b] / count[b]
+      ceilingY = mean(b)
       break
     }
   }
