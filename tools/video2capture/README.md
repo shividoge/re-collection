@@ -15,7 +15,10 @@ the same code, and the worker keeps the models loaded between jobs.
 
 1. Reads the video once (PyAV): frame timestamps from the container, the model's frames and the
    keyframes (1 per second) in one decode pass. `video.mp4` (H.264) is transcoded by one ffmpeg
-   process at the same time, keeping every frame's own timestamp (checked afterwards).
+   process at the same time, keeping every frame's own timestamp (checked afterwards). Both turn
+   frames upright the same way from the video's display matrix (quarter-turns and mirrors; any
+   other matrix is refused), and video.mp4 starts at the first video frame (t 0 in frames.jsonl),
+   cutting audio recorded before it.
 2. Runs Depth Anything 3 on 10 frames per second of video: depth, poses, intrinsics, metric scale.
    When the frames don't fit in GPU memory in one pass, it runs overlapping windows and chains
    them with a rigid fit on the frames they share (`align.py`); big windows are needed for that
