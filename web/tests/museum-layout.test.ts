@@ -37,6 +37,18 @@ describe('museum layout', () => {
     }
   })
 
+  it('orders pictures as a snake: each row starts on the side the last one ended on', () => {
+    for (const style of STYLE_NAMES) {
+      const plan = planMuseum(20, style)
+      for (let i = 1; i + 1 < plan.slots.length; i++) {
+        const [a, b, c] = [plan.slots[i - 1], plan.slots[i], plan.slots[i + 1]]
+        if (a.room !== b.room || b.room !== c.room || a.normal[0] === 0 || c.normal[0] === 0) continue
+        // Across, then along the same wall: never two crossings in a row.
+        if (a.normal[0] !== b.normal[0]) expect(c.normal[0]).toBe(b.normal[0])
+      }
+    }
+  })
+
   it('spreads the pictures on a wall evenly along it, centered', () => {
     // 12 pieces in the classic gallery: the second room has two on each side wall.
     const plan = planMuseum(12, 'classic')

@@ -186,13 +186,18 @@ export function planMuseum(count: number, style: RoomStyle): MuseumPlan {
     const last = room.index === rooms - 1
     const sideSpacing = spec.depth / spec.perSide
     const sideW = Math.min(spec.maxW, sideSpacing * 0.7)
+    // A snake, not a zigzag: each row starts on the side the last one ended on (left then right,
+    // then right then left, ...), so the visitor crosses the room once per row, not twice.
+    let onRight = false
     for (let k = 0; k < spec.perSide && left > 0; k++) {
       const z = room.zFront - sideSpacing * (k + 0.5)
-      add(room, [room.x0, spec.hang, z], [1, 0], sideW, spec.maxH)
-      left--
-      if (left <= 0) break
-      add(room, [room.x1, spec.hang, z], [-1, 0], sideW, spec.maxH)
-      left--
+      const sides = k % 2 === 0 ? [false, true] : [true, false]
+      for (const right of sides) {
+        if (left <= 0) break
+        add(room, [right ? room.x1 : room.x0, spec.hang, z], right ? [-1, 0] : [1, 0], sideW, spec.maxH)
+        onRight = right
+        left--
+      }
     }
     if (left <= 0) break
     if (last && style === 'classic') {
@@ -202,14 +207,14 @@ export function planMuseum(count: number, style: RoomStyle): MuseumPlan {
       add(room, [0, spec.hang, room.zBack], [0, 1], Math.min(spec.width * 0.4, spec.maxW * 1.2), spec.maxH * 1.15)
       left--
     } else {
-      // Either side of the doorway.
+      // Either side of the doorway, starting on the side the visitor is already on.
       const sideOfDoor = (half - spec.doorW / 2) / 2 + spec.doorW / 2
       const w = Math.min(spec.maxW, (half - spec.doorW / 2) * 0.7)
-      add(room, [-sideOfDoor, spec.hang, room.zBack], [0, 1], w, spec.maxH)
-      left--
-      if (left <= 0) break
-      add(room, [sideOfDoor, spec.hang, room.zBack], [0, 1], w, spec.maxH)
-      left--
+      for (const x of onRight ? [sideOfDoor, -sideOfDoor] : [-sideOfDoor, sideOfDoor]) {
+        if (left <= 0) break
+        add(room, [x, spec.hang, room.zBack], [0, 1], w, spec.maxH)
+        left--
+      }
     }
   }
 
