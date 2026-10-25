@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { guide } from '../api'
+import { guide, STATIC } from '../api'
 import type { EndReason, Fact, Moment, Reply } from '../api'
 import type { ViewerControls } from '../scene/SceneViewer'
 import type { Selection } from '../scene/useRoomIndex'
@@ -17,7 +17,12 @@ type Tour = 'off' | 'running' | 'paused'
  * the person can pause at any moment to look around, point at things and ask about them. Every
  * reply comes from the guide's grounded companion; ending the visit scores it for the dashboard.
  */
-export function VisitDock({ captureId, controls }: { captureId: string; controls: ViewerControls }) {
+/** The published (static) site has no guide server to talk to, so it has no visit to run. */
+export function VisitDock(props: { captureId: string; controls: ViewerControls }) {
+  return STATIC ? null : <LiveVisitDock {...props} />
+}
+
+function LiveVisitDock({ captureId, controls }: { captureId: string; controls: ViewerControls }) {
   const ctl = useRef(controls)
   ctl.current = controls
 
