@@ -127,6 +127,7 @@ class FakeConvex:
         self.claim_errors: list[Exception] = []
         self.cancel_on_stage: str | None = None
         self.lease_lost_on_stage: str | None = None
+        self.cancelled_calls: set[str] = set()  # these worker:* calls answer ConvexError cancelled
         self._n = 0
 
     def add_job(self, kind: str, *, files: dict[str, tuple[str, bytes]], frames: int | None = 30,
@@ -159,12 +160,16 @@ class FakeConvex:
         rest = {k: v for k, v in args.items() if k != "token"}
         with self.lock:
             self.calls.append((name, rest))
+        if name in self.cancelled_calls:
+            raise ConvexError("This job attempt no longer holds the lease.", {"code": "cancelled"})
         return getattr(self, "_" + name.split(":")[1])(rest)
 
     def _claim(self, a: dict[str, object]) -> object:
         self.claim_times.append(self.clock())
         if self.claim_errors:
             raise self.claim_errors.pop(0)
+        if a.get("protocol") != 2:  # like the backend: an outdated worker takes no jobs
+            raise ConvexError("This worker speaks an old job protocol.", {"code": "invalid"})
         max_frames = a.get("maxFrames")
         for job_id, j in self.jobs.items():
             frames = j["frames"]
@@ -383,7 +388,7 @@ def test_convert_happy_path(harness: Harness) -> None:
     by_name = {u["name"]: u["contentType"] for u in harness.convex.uploads.values()}
     assert by_name["manifest.json"] == "application/json" and by_name["frames.jsonl"] == "application/x-ndjson"
     claim_args = harness.convex.calls[0][1]
-    assert claim_args == {"workerId": "test-gpu", "kinds": ["convert", "splat"], "gpu": True, "maxFrames": 67}
+    assert claim_args == {"workerId": "test-gpu", "kinds": ["convert", "splat"], "gpu": True, "maxFrames": 67, "protocol": 2}
     assert any(p["stage"] == "depth" for p in j["progress"])  # type: ignore[union-attr]
     assert harness.job_dir_gone(job)
 
@@ -414,6 +419,17 @@ def test_cancel_mid_job(server: tuple[str, Store], tmp_path: Path, how: str) -> 
     assert "worker:complete" not in h.convex.names() and "worker:fail" not in h.convex.names()
     assert "worker:outputUrls" not in h.convex.names()
     assert h.job_dir_gone(job)
+
+
+@pytest.mark.parametrize("call", ["worker:inputs", "worker:outputUrls", "worker:finishOutput", "worker:complete"])
+def test_cancelled_answer_from_any_call_stops_silently(harness: Harness, call: str) -> None:
+    harness.convex.cancelled_calls = {call}
+    job = harness.convert_job()
+    harness.worker.run(once=True)
+
+    assert "worker:fail" not in harness.convex.names()  # the backend said stop: report nothing
+    assert harness.convex.jobs[job]["error"] is None
+    assert harness.job_dir_gone(job)
 
 
 def test_sigterm_mid_job_requeues_and_exits(server: tuple[str, Store], tmp_path: Path) -> None:

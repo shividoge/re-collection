@@ -122,15 +122,16 @@ class _Job:
         except Exception as exc:
             if is_lease_lost(exc):
                 log.warning("job %s is no longer leased to this worker; stopping it", self.id)
-                self._cancel()
+                self.lose_lease()
             else:
                 log.warning("heartbeat for job %s failed (keeps going): %s", self.id, redact(str(exc)))
             return
         if reply.get("cancelled") or not reply.get("ok", True):
             log.info("Convex cancelled job %s; stopping it", self.id)
-            self._cancel()
+            self.lose_lease()
 
-    def _cancel(self) -> None:
+    def lose_lease(self) -> None:
+        """Convex says stop: the job was cancelled or this attempt doesn't hold it any more."""
         self.cancelled = True
         self.stop.set()
 
@@ -232,6 +233,10 @@ class Worker:
             else:
                 log.info("job %s cancelled", job.id)
         except Exception as exc:
+            if is_lease_lost(exc):  # e.g. inputs/outputUrls/complete answered `cancelled`
+                job.lose_lease()
+                log.info("job %s is no longer this attempt's (%s); not reporting anything", job.id, redact(str(exc)))
+                return
             message, retryable = classify(exc)
             log.error("job %s failed (%s): %s\n%s", job.id, "will retry" if retryable else "permanent",
                       message, redact(traceback.format_exc()))

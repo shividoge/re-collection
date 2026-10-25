@@ -17,6 +17,9 @@ PyPI client holds the GIL while it waits on the network, which froze the pipelin
 transfers (`transfer.py`), failure rules (`errors.py`), the pipeline adapter (`pipeline.py`), a
 local mode (`run.py`) and a memory calibration (`calibrate.py`).
 
+Job protocol 2: `claim` sends `protocol: 2`, and every later call carries the claim's `attempt`
+(the backend refuses older workers and writes each attempt's outputs to keys of its own).
+
 ## Routing
 
 - A convert job's `needs.frames` is the number of Depth Anything 3 frames it wants in one pass:
@@ -48,7 +51,8 @@ local mode (`run.py`) and a memory calibration (`calibrate.py`).
 size mismatches, CUDA out of memory (after the pipeline retried in-process with windows a third
 smaller; the worker then stops claiming for 60 s, since on a shared GPU it's usually contention).
 Not retryable: bad input (no video, undecodable, model output not finite), deliberate `ConvexError`s,
-code bugs. SIGTERM/SIGINT stop the job and hand it straight back (`fail(retryable: true)`); a killed
+code bugs. If Convex answers `cancelled` to any call (this attempt lost the job's lease), the worker stops
+and reports nothing. SIGTERM/SIGINT stop the job and hand it straight back (`fail(retryable: true)`); a killed
 worker's job comes back when its 120 s lease expires. Transfers check for a stop before every try,
 during backoff waits and between 1 MiB chunks, and a failed file stops the other transfers, so a
 stop takes seconds (at most one 30 s socket timeout), well inside `TimeoutStopSec=60`.
@@ -135,7 +139,11 @@ uv run --project workers/gpu --group dev pytest workers/gpu/tests -q      # loop
 cd tools/video2capture && <venv>/bin/python -m unittest test_stages test_video2capture test_depthv2 test_spz test_decode
 ```
 
-`test_depthv2` decodes the Python depth v2 with `shared/depth.ts` (needs `bun`); `test_decode` needs
+`test_contract.py` checks every Convex call the worker makes (and every reply of the fake backend)
+against the backend's real validators in `tests/worker_contract.json`, which
+`tests/worker_contract.ts` prints from `backend/convex/worker.ts`; with `bun` and the backend's
+packages installed (`cd backend && bun install`) it also fails when that file is stale. Regenerate
+it whenever `worker.ts` changes (command in the script's header). `test_depthv2` decodes the Python depth v2 with `shared/depth.ts` (needs `bun`); `test_decode` needs
 an ffmpeg with libx264; `workers/gpu/tests/spark_spz_check.mjs` checks SPZ files with Spark's own
 decoder (instructions in its header); `test_s3_upload.py` runs against a local S3 server when
 `BD_TEST_S3_ENDPOINT` is set.
