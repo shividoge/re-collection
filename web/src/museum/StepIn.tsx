@@ -64,12 +64,15 @@ export function StepIn({
   onBack,
   onCovered,
   onGone,
+  canLeave = true,
 }: {
   art: Artwork
   stage: Stage
   onBack: () => void
   onCovered?: (covered: boolean) => void
   onGone: () => void
+  /** False for family following someone in a live visit: they come back out when that person does. */
+  canLeave?: boolean
 }) {
   const world = useRef<HTMLDivElement>(null)
   const cover = useRef<HTMLDivElement>(null)
@@ -154,11 +157,11 @@ export function StepIn({
   // Escape steps back out.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === 'Escape' && stage === 'here') onBack()
+      if (e.code === 'Escape' && stage === 'here' && canLeave) onBack()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [stage, onBack])
+  }, [stage, onBack, canLeave])
 
   const onPaintSettled = useCallback(() => setUnpainted(!paint), [paint])
   // Nothing to paint (no picture, or it didn't load): there's nothing to wait for either.
@@ -219,9 +222,11 @@ export function StepIn({
         )}
       </div>
       <div className={`stepin-ui${showUi ? ' shown' : ''}`}>
-        <button className="stepin-back" onClick={onBack} aria-label="Back to the Memory Palace">
-          <span aria-hidden="true">‹</span> Palace
-        </button>
+        {canLeave && (
+          <button className="stepin-back" onClick={onBack} aria-label="Back to the Memory Palace">
+            <span aria-hidden="true">‹</span> Palace
+          </button>
+        )}
         {hasRoom ? (
           roomError && <div className="stepin-caption">Couldn't open this room: {roomError}</div>
         ) : (

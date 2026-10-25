@@ -43,6 +43,28 @@ browser once, offline (`web/src/museum/sound.ts`): rushing air climbing with the
 rumble, a soft shimmer rising an octave, and the air parting in a sweep at the crossing, in a
 wide hall. Stepping out plays it backwards. Nothing rings on at the end.
 
+## Live visit: family join and talk
+
+The palace link (`#/palace`) asks "Who's visiting?" every time it opens: one big **Enter the
+Memory Palace** for the person it's for, and a smaller way in for family, who give their name.
+Nothing is remembered on the device.
+
+- **The patient leads.** They walk, step into memories and turn the music on or off as always.
+  While family are there, a quiet note at the top says "Sam is here with you", and the music
+  steps back so voices come through.
+- **Family follow.** Their view glides after the patient's, steps into the same memory with the
+  same dive, and comes back out when the patient does; their own controls are off and the note
+  says "Following Grandma". Before the patient arrives (or after they leave), family can look
+  around on their own.
+- **Everyone talks**, microphones on, no buttons. Each pair of screens tries a direct WebRTC call
+  first; where a network blocks that (venue Wi-Fi, phones on mobile data), voice goes through the
+  guide instead, about a second behind. A name glows while that person speaks.
+
+It's all in memory on the guide (`guide/src/live.mjs`, contract in `docs/guide-api.md` "Live
+visit"); screens poll it about 5 times a second, because the cloudflared tunnel holds back event
+streams. A TURN server in `ICE_SERVERS` (guide `.env`) makes more calls direct; nothing else
+changes. Not yet followed: looking around inside a visit's 3D room (family see its start).
+
 ## Rooms
 
 One style: a classic picture gallery at a modest scale. Rose-red fabric walls, raised-panel

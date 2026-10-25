@@ -408,3 +408,49 @@ export const museumRooms = {
     return `${base}/api/museum/rooms/${encodeURIComponent(code)}/events?${query}`
   },
 }
+
+/** The live visit: family join the Memory Palace and talk (docs/guide-api.md "Live visit"). */
+export type LiveRole = 'patient' | 'family'
+export type LiveMember = { id: string; role: LiveRole; name: string }
+export type LiveView = {
+  x: number
+  z: number
+  yaw: number
+  pitch: number
+  inside: { index: number; stage: 'diving' | 'here' | 'leaving' } | null
+  music: boolean
+}
+export type Live = { version: number; members: LiveMember[]; view: (LiveView & { rev: number; updatedAt: string }) | null }
+export type LivePoll = Live & { signals: { from: string; data: unknown }[]; audio: { seq: number; from: string; data: string }[]; audioSeq: number }
+
+export const palaceLive = {
+  join: (role: LiveRole, name?: string) =>
+    request<{ me: { id: string }; iceServers: RTCIceServer[]; live: Live }>('/api/palace/live/join', post({ role, name })),
+  /** `keepalive` lets it finish while the page closes. */
+  leave: (id: string, keepalive = false) => request<{ ok: true }>('/api/palace/live/leave', { ...post({ id }), keepalive }),
+  /** Resolves null when nothing changed (the guide answers 204). A 404 means: join again. */
+  poll: async (id: string, since: number | null, audioAfter: number | null, signal?: AbortSignal): Promise<LivePoll | null> => {
+    const query = new URLSearchParams({ id })
+    if (since !== null) query.set('since', String(since))
+    if (audioAfter !== null) query.set('audioAfter', String(audioAfter))
+    let response: Response
+    try {
+      response = await fetch(url(`/api/palace/live?${query}`), { headers: headers(), signal })
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') throw e
+      throw new GuideError(0, "Can't reach the guide server.")
+    }
+    if (response.status === 204) return null
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) throw new GuideError(response.status, body.error ?? `HTTP ${response.status}`)
+    return body as LivePoll
+  },
+  view: (id: string, view: LiveView) => request<{ ok: true; rev: number }>('/api/palace/live/view', post({ id, view })),
+  signal: (id: string, to: string, data: unknown) => request<{ ok: true }>('/api/palace/live/signal', post({ id, to, data })),
+  audio: (id: string, bytes: Uint8Array) =>
+    request<{ ok: true; seq: number }>(`/api/palace/live/audio?id=${encodeURIComponent(id)}`, {
+      method: 'POST',
+      body: bytes as BodyInit,
+      headers: { 'Content-Type': 'application/octet-stream' },
+    }),
+}

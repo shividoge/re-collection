@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react'
+import { STATIC } from '../api'
 import { visits, type Exhibition } from './exhibitions'
 import { planMuseum } from './layout'
 import { MuseumScene } from './MuseumScene'
 import { MuseumSound } from './sound'
 import { StepIn, type Stage } from './StepIn'
 import { Streaks } from './Streaks'
-import type { WalkerHandle } from './Walker'
+import { Presence, useLive, WhoIsVisiting } from './live/LiveUi'
+import type { Pose, WalkerHandle } from './Walker'
 import { IN_MS, LEAVE_MS, OUT_MS, type Dive } from './warp'
 import './museum.css'
 
@@ -46,6 +48,23 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
   const sizes = useRef(new Map<number, { w: number; h: number }>())
   const sound = useMemo(() => new MuseumSound(), [])
   const [musicOn, setMusicOn] = useState(sound.musicOn)
+  const musicOnRef = useRef(musicOn)
+  useEffect(() => {
+    musicOnRef.current = musicOn
+  }, [musicOn])
+
+  // The live visit (her palace only: not the editor's preview, nor the static site, which has no
+  // server). Each time the palace opens it asks who's visiting; the patient leads, family follow.
+  const liveable = !preview && !STATIC
+  const { session, snapshot, join } = useLive()
+  const [chosen, setChosen] = useState(!liveable)
+  const family = session !== null && snapshot.role === 'family'
+  // Family follow while the patient is in the visit (their view is there); otherwise they look around.
+  const led = family && snapshot.view !== null
+  const follow = useRef<Pose | null>(null)
+  const othersHere = session !== null && snapshot.members.some((m) => m.id !== snapshot.me)
+  // With family here, the music steps back so voices come through.
+  const musicLevel = useRef(1)
 
   useEffect(() => {
     if (preview) return
@@ -75,15 +94,18 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
     sizes.current.set(slot, { w, h })
   }, [])
 
-  /** Steps into piece `i`: from where the visitor stands if they're at it, else after walking there. */
+  /**
+   * Steps into piece `i`: from where the visitor stands if they're at it, else after walking there.
+   * `now` dives in from wherever they are (family following the patient in).
+   */
   const stepIn = useCallback(
-    (i: number) => {
+    (i: number, now = false) => {
       if (!exhibition || inside) return
       const slot = plan.slots[i]
       const size = sizes.current.get(i)
       const at = walker.current?.position()
       if (!slot || !size || !at) return
-      if (Math.hypot(at[0] - slot.view[0], at[1] - slot.view[1]) > 0.35) {
+      if (!now && Math.hypot(at[0] - slot.view[0], at[1] - slot.view[1]) > 0.35) {
         // Walk up to it first, then step in on arrival.
         pendingStep.current = i
         setFocus(i)
@@ -94,18 +116,18 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
       // Dive into the frame. The museum's music fades right away (every picture has its own
       // sound), the rush builds as the view picks up speed, and at the crossing the picture's
       // own world takes over.
-      const now = performance.now()
+      const t = performance.now()
       dive.current = {
         dir: 'in',
         target: { center: slot.center, normal: slot.normal, w: size.w, h: size.h },
-        start: now,
+        start: t,
         ms: IN_MS,
         done: () => setInside((s) => (s && s.stage === 'diving' ? { ...s, stage: 'here' } : s)),
       }
       sound.wake()
       sound.musicTo(0, 1.6)
       sound.warp('in', IN_MS / 1000)
-      setWarp({ dir: 'in', cross: now + IN_MS })
+      setWarp({ dir: 'in', cross: t + IN_MS })
       setInside({ index: i, stage: 'diving' })
     },
     [exhibition, inside, plan, sound],
@@ -134,7 +156,7 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
       }
     }
     // The music comes back slowly once the museum is in view again.
-    setTimeout(() => sound.musicTo(1, 4), LEAVE_MS + 300)
+    setTimeout(() => sound.musicTo(musicLevel.current, 4), LEAVE_MS + 300)
   }, [sound])
 
   const onArrive = useCallback(() => {
@@ -150,11 +172,49 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
   /** A tap on a picture: walk to it, or step into it if already there. */
   const select = useCallback(
     (i: number) => {
+      // Family following the patient go where the patient goes.
+      if (led) return
       if (i === focus && arrived) stepIn(i)
       else goTo(i)
     },
-    [focus, arrived, stepIn, goTo],
+    [focus, arrived, stepIn, goTo, led],
   )
+
+  // The patient's screen tells the visit where they are, a few times a second.
+  useEffect(() => {
+    if (!session || snapshot.role !== 'patient') return
+    const t = setInterval(() => {
+      const pose = walker.current?.pose()
+      if (!pose) return
+      const ins = insideRef.current
+      session.visit.sendView({ ...pose, inside: ins && ins.stage !== 'surfacing' ? { index: ins.index, stage: ins.stage } : null, music: musicOnRef.current })
+    }, 200)
+    return () => clearInterval(t)
+  }, [session, snapshot.role])
+
+  // Family: follow the patient's walk, step in and out with them, and hear the music they chose.
+  const view = snapshot.view
+  useEffect(() => {
+    follow.current = led && view ? { x: view.x, z: view.z, yaw: view.yaw, pitch: view.pitch } : null
+  }, [led, view])
+  const theirs = view?.inside ?? null
+  useEffect(() => {
+    if (!led) return
+    const mine = insideRef.current
+    if (theirs && theirs.stage !== 'leaving' && !mine) stepIn(theirs.index, true)
+    else if ((!theirs || theirs.stage === 'leaving') && mine?.stage === 'here') stepOut()
+    // Only when their step or ours changes, not on every view.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [led, theirs?.index, theirs?.stage, inside?.stage, stepIn, stepOut])
+  useEffect(() => {
+    if (!led || !view || view.music === musicOnRef.current) return
+    sound.setMusic(view.music)
+    setMusicOn(view.music)
+  }, [led, view, sound])
+  useEffect(() => {
+    musicLevel.current = othersHere ? 0.4 : 1
+    if (!insideRef.current) sound.musicTo(musicLevel.current, 1.5)
+  }, [othersHere, sound])
   // Walking and looking around freely: the piece in view becomes the current one (its label shows,
   // and Next / Previous carry on from it); looking away from every piece hides the label.
   const onLook = useCallback((slot: number) => {
@@ -171,7 +231,7 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
       const t = e.target as HTMLElement | null
       // Not while typing (in the editor's labels, say).
       if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
-      if (inside) return
+      if (inside || led) return
       if (e.code === 'KeyN' || e.code === 'PageDown') goTo(focus + 1)
       if (e.code === 'KeyP' || e.code === 'PageUp') goTo(Math.max(0, focus - 1))
       if (e.code === 'Enter' && focus >= 0 && arrived) stepIn(focus)
@@ -179,7 +239,7 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [focus, arrived, inside, goTo, stepIn])
+  }, [focus, arrived, inside, goTo, stepIn, led])
 
   if (error) return <div className="museum-message">{error}</div>
   if (exhibition === undefined) return <div className="museum-message">Opening your Memory Palace…</div>
@@ -209,6 +269,7 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
             frozen={Boolean(inside)}
             paused={covered}
             dive={dive}
+            follow={follow}
           />
         ) : null}
       </div>
@@ -221,6 +282,7 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
           onBack={stepOut}
           onCovered={setCovered}
           onGone={() => setInside((s) => (s ? { ...s, stage: 'surfacing' } : s))}
+          canLeave={!led}
         />
       )}
       {warp && <Streaks key={`${warp.dir}${warp.cross}`} dir={warp.dir} cross={warp.cross} />}
@@ -228,6 +290,7 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
       <header className="museum-top">
         <button
           className={`museum-chip${musicOn ? ' on' : ''}`}
+          disabled={led}
           onClick={() => {
             sound.wake()
             sound.setMusic(!musicOn)
@@ -250,7 +313,7 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
 
       {total > 0 && (
         <footer className="museum-bottom">
-          <button className="museum-nav" onClick={() => goTo(focus <= 0 ? 0 : focus - 1)} disabled={focus <= 0} aria-label="Previous">
+          <button className="museum-nav" onClick={() => goTo(focus <= 0 ? 0 : focus - 1)} disabled={focus <= 0 || led} aria-label="Previous">
             ←
           </button>
           <div className="museum-caption">
@@ -260,11 +323,13 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
                 <strong>{current.title || 'Untitled'}</strong>
                 {current.date && <span className="museum-date">{current.date}</span>}
                 {current.caption && <p>{current.caption}</p>}
-                <div className="museum-actions">
-                  <button className="museum-stepin" onClick={() => stepIn(focus)}>
-                    Step in
-                  </button>
-                </div>
+                {!led && (
+                  <div className="museum-actions">
+                    <button className="museum-stepin" onClick={() => stepIn(focus)}>
+                      Step in
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div key="title" className="museum-caption-body">
@@ -275,12 +340,23 @@ export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: E
               </div>
             )}
           </div>
-          <button className="museum-nav" onClick={() => goTo(focus + 1)} disabled={focus >= total - 1} aria-label="Next">
+          <button className="museum-nav" onClick={() => goTo(focus + 1)} disabled={focus >= total - 1 || led} aria-label="Next">
             →
           </button>
         </footer>
       )}
 
+      {session && <Presence session={session} snapshot={snapshot} />}
+      {!chosen && (
+        <WhoIsVisiting
+          title={exhibition.title}
+          onChoose={(role, name) => {
+            setChosen(true)
+            sound.wake()
+            void join(role, name)
+          }}
+        />
+      )}
     </div>
   )
 }

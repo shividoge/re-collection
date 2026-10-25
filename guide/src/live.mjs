@@ -111,8 +111,9 @@ export function createLive({ person = async () => ({}), iceServers = DEFAULT_ICE
     const url = new URL(req.url, 'http://guide.local');
     const me = member(url.searchParams.get('id'));
     if (!me) return sendError(res, 404, 'Not in the visit (left, or the guide restarted). Join again.');
-    const since = Number(url.searchParams.get('since'));
-    const after = Number(url.searchParams.get('audioAfter'));
+    // Missing means "none": Number(null) would be 0 and replay the last 10 s of voice.
+    const since = url.searchParams.has('since') ? Number(url.searchParams.get('since')) : NaN;
+    const after = url.searchParams.has('audioAfter') ? Number(url.searchParams.get('audioAfter')) : NaN;
     const signals = mail.get(me.id) ?? [];
     mail.delete(me.id);
     const voice = Number.isFinite(after) ? audio.filter((a) => a.seq > after && a.from !== me.id).map(({ seq, from, data }) => ({ seq, from, data })) : [];

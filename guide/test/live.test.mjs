@@ -91,6 +91,8 @@ describe('live visit routes', () => {
     assert.equal(later.audio.length, 1);
     const own = await (await poll(a.me.id, undefined, 0)).json();
     assert.equal(own.audio.length, 0);
+    // A screen that hasn't asked for voice yet (just joined) gets none of the backlog.
+    assert.deepEqual((await (await poll(b.me.id)).json()).audio, []);
     assert.equal((await send(a.me.id, [])).status, 400);
   });
 });
