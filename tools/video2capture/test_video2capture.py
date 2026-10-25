@@ -10,6 +10,7 @@ import torch
 
 import fusion
 import splat
+from decode import ConvertError
 from estimate import to_capture_pose
 from geometry import level_world
 
@@ -97,6 +98,25 @@ class Filters(unittest.TestCase):
         pts, cols = fusion.voxel_downsample(p, c, 0.01)
         self.assertEqual(len(pts), 2)
         self.assertIn(50, cols[:, 0].tolist())
+
+    def test_fuse_room_ignores_zero_confidence_pixels(self):
+        # A wall 2 m in front of the camera; the right half has confidence 0 (or NaN), as the
+        # model gives pixels without usable depth. Those must not become black points at the origin.
+        poses = torch.tensor(look([0, 0, 0]), dtype=torch.float32)[None]
+        depth = torch.full((1, 48, 64), 2.0)
+        conf = torch.ones(1, 48, 64)
+        conf[0, :, 32:] = 0
+        conf[0, :4, 32:] = float("nan")
+        keep = torch.ones_like(depth, dtype=torch.bool)
+        rgb = lambda k: torch.full((48, 64, 3), 200.0)  # noqa: E731
+        pts, cols, w = fusion.fuse_room(depth, keep, K[None], poses, rgb, [0], 0.05, weights=conf)
+        self.assertGreater(len(pts), 0)
+        self.assertTrue(torch.isfinite(pts).all() and (w > 0).all())
+        self.assertGreater(float(pts.norm(dim=1).min()), 1.9)  # nothing at (0, 0, 0)
+        self.assertTrue((cols == 200).all())
+        self.assertTrue((pts[:, 0] < 0.1).all())  # only the confident (left) half
+        with self.assertRaisesRegex(ConvertError, "no room"):
+            fusion.fuse_room(depth, keep, K[None], poses, rgb, [0], 0.05, weights=torch.zeros_like(conf))
 
 
 class Splats(unittest.TestCase):
