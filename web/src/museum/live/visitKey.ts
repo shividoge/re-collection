@@ -33,5 +33,5 @@ export function forgetVisitKey() {
 
 /** Her palace's link with the visit key: the same for her iPad and for family. */
 export function visitLink(key: string): string {
-  return `${location.origin}${location.pathname}#/museum?visit=${key}`
+  return `${location.origin}${location.pathname}#/palace?visit=${key}`
 }
