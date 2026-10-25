@@ -7,6 +7,7 @@ import type { Layers } from '../showcase/Scenes';
 // page's first download stays small.
 const HeroCloud = lazy(() => import('../showcase/Scenes').then((m) => ({ default: m.HeroCloud })));
 const MiniViewer = lazy(() => import('../showcase/Scenes').then((m) => ({ default: m.MiniViewer })));
+const WithCaptureAssets = lazy(() => import('../showcase/Scenes').then((m) => ({ default: m.WithCaptureAssets })));
 const STATIC = dataMode === 'static';
 import '../showcase/showcase.css';
 
@@ -87,7 +88,7 @@ export function Showcase() {
       </nav>
 
       <header className="hero">
-        {lead && <Suspense fallback={null}><HeroCloud id={lead.capture.id} /></Suspense>}
+        {lead && <Suspense fallback={null}><WithCaptureAssets id={lead.capture.id}>{(assets) => <HeroCloud assets={assets} />}</WithCaptureAssets></Suspense>}
         <div className="hero-fade" />
         <div className="hero-copy">
           <p className="eyebrow">For families of people living with Alzheimer's</p>
@@ -337,7 +338,7 @@ function Walkthrough({ entries, scene, setSceneId }: { entries: Entry[]; scene: 
         </div>
 
         <div className="walk-stage">
-          <Suspense fallback={<div className="mini-viewer note">Loading the scene…</div>}><MiniViewer id={scene.capture.id} layers={current.layers} label={current.label} /></Suspense>
+          <Suspense fallback={<div className="mini-viewer note">Loading the scene…</div>}><WithCaptureAssets id={scene.capture.id}>{(assets) => <MiniViewer assets={assets} layers={current.layers} label={current.label} />}</WithCaptureAssets></Suspense>
           {entries.length > 1 && (
             <div className="scene-pills" role="group" aria-label="Choose a scan">
               {entries.map((e) => (

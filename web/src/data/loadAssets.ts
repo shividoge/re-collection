@@ -18,14 +18,6 @@ export class MissingCaptureError extends Error {
   }
 }
 
-/** The newest assets per capture id, for code that only knows an id (data/legacy.ts). */
-const known = new Map<string, CaptureAssets>()
-export const knownAssets = (id: string): CaptureAssets | undefined => known.get(id)
-
-function remember(assets: CaptureAssets): CaptureAssets {
-  known.set(assets.id, assets)
-  return assets
-}
 
 async function staticSource(id: string): Promise<AssetsSource | null> {
   const found = await readStaticJson<PublicCaptureDetail>(staticPaths.capture(id))
@@ -42,7 +34,7 @@ async function liveSource(id: string, opts: Opts): Promise<AssetsSource | null> 
 export async function loadCaptureAssets(id: string, opts: Opts = {}): Promise<CaptureAssets> {
   const source = dataMode === 'static' ? await staticSource(id) : await liveSource(id, opts)
   if (!source) throw new MissingCaptureError()
-  return remember(toCaptureAssets(source))
+  return toCaptureAssets(source)
 }
 
 /** A new CaptureAssets only when its content changes (see assetsKey), never per status tick. */
@@ -52,7 +44,7 @@ function useStableAssets(source: AssetsSource | null | undefined): AssetsState |
     if (source === undefined) return null
     if (source === null) return { status: 'missing' }
     try {
-      return { status: 'ready', assets: remember(toCaptureAssets(source)) }
+      return { status: 'ready', assets: toCaptureAssets(source) }
     } catch (e) {
       return { status: 'error', message: errorMessage(e) }
     }

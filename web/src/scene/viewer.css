@@ -320,3 +320,41 @@ html.bd-virtual-cursor * {
     left: 12px;
   }
 }
+/* Until the bake is done: the capture's own status, never a stand-in room. */
+.viewer-processing {
+  display: grid;
+  gap: 10px;
+  max-width: 460px;
+  text-align: left;
+  font-size: 14px;
+}
+.viewer-processing ol {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 4px;
+}
+.viewer-processing em {
+  font-style: normal;
+  color: var(--bd-muted, #8b9099);
+}
+.viewer-processing li.running em,
+.viewer-processing li.queued em {
+  color: var(--bd-accent, #ff5c3a);
+}
+.viewer-processing .err,
+.viewer-empty.err {
+  color: #ff8a7a;
+}
+.viewer-progress .bar {
+  height: 4px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.viewer-progress .bar span {
+  display: block;
+  height: 100%;
+  background: var(--bd-accent, #ff5c3a);
+}

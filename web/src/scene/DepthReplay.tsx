@@ -1,31 +1,16 @@
-import { useFrame } from '@react-three/fiber'
-import { useEffect, useMemo, useRef, type MutableRefObject } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import * as THREE from 'three'
-
-import { fetchCaptureRange as fetchRange, v1ConfidenceFile } from '../data/legacy'
-import type { Manifest } from '../api'
 import type { FrameRecord } from './formats'
-import { depthMeshIndices, movingPixels } from './gaps'
+import { DepthSource } from './depthSource'
+import type { DepthPose } from './depthMesh'
 import { depthFrameIndices, nearestDepthFrame } from './pose'
+import type { TimelineData } from './packs'
 import { SELECTION_GLSL, applySelection, selectionUniforms, type SelectionTint } from './selectionTint'
-import type { VisitTimeline } from './useRoomSurface'
-
-type DepthFrame = { data: Float32Array }
-
-/** Combines one UInt16-millimeter depth frame and its confidence frame into RG floats (meters, 0–2). */
-function decodeDepthFrame(depth: ArrayBuffer, confidence: ArrayBuffer, count: number): DepthFrame {
-  const mm = new Uint16Array(depth) // little-endian on every platform browsers run on
-  const conf = new Uint8Array(confidence)
-  const data = new Float32Array(count * 2)
-  for (let k = 0; k < count; k++) {
-    data[k * 2] = mm[k] / 1000
-    data[k * 2 + 1] = conf[k]
-  }
-  return { data }
-}
+import type { DepthSourceInfo } from './useCaptureScene'
 
 /** The voxels the replay skips, as a 3D texture the shaders test world positions against. */
-function roomTexture(t: VisitTimeline): THREE.Data3DTexture {
+function roomTexture(t: TimelineData): THREE.Data3DTexture {
   const { nx, ny, nz } = t.grid
   const texture = new THREE.Data3DTexture(t.skip, nx, ny, nz)
   texture.format = THREE.RedFormat
@@ -40,61 +25,79 @@ function roomTexture(t: VisitTimeline): THREE.Data3DTexture {
 /** Diameter of a remembered voxel's splat, in meters (voxels are 2 cm; this closes the gaps). */
 const MEMORY_SPLAT = 0.03
 
-/**
- * The Braindance effect: the visit replayed in 3D, in place, in sync with sound, on top of the
- * stable room surface.
- *
- * - Live: each depth frame becomes a 256×192 grid, unprojected with that frame's own camera
- *   pose and colored from the video. Only solid blobs in space the room scan saw are kept
- *   (gaps.ts movingPixels): people and things brought in or moved. The room itself is drawn
- *   once, from the scan, so it never flickers, and walls the scan missed aren't redrawn from
- *   each noisy frame. Neighboring depth pixels on the same surface are joined into triangles
- *   (gaps.ts depthMeshIndices); the jump from a person to the wall behind is never bridged.
- * - Remembered: what the video added, from when it was first seen until later frames saw
- *   through that spot (timeline.ts), colored from the keyframes. It stays while the camera
- *   looks elsewhere, so the scene at any moment shows everything seen so far from every angle.
- *   Where the live frame sees the same spot, the live (exact video color) one is shown.
- *
- * Same math as pose.ts unprojectDepthPixel and docs/capture-format.md: scale K to the depth grid,
- * x = (u − cx')·d/fx', y = (v − cy')·d/fy', z = d, flip to ARKit camera space (x, −y, −z), then T.
- */
-export function DepthReplay({
-  captureId,
-  manifest,
-  frames,
-  video,
-  timeRef,
-  show = true,
-  selection = null,
-  timeline = null,
-  minConfidence = 1,
-}: {
-  captureId: string
-  manifest: Manifest
+/** GLSL: a packed depth v2 pixel (14-bit mm, 2-bit confidence) from the integer texture. */
+const DEPTH_GLSL = /* glsl */ `
+  uniform highp usampler2D uDepth;
+  float depthMeters(uint s) { return float(s & 0x3FFFu) / 1000.0; }
+  uint depthConfidence(uint s) { return s >> 14u; }
+`
+
+interface Props {
+  depth: DepthSourceInfo
+  /** The visit's frames (frames.jsonl moment phase). */
   frames: FrameRecord[]
+  videoW: number
+  videoH: number
+  /** Depth frames per second (manifest depth.rateHz). */
+  rateHz: number
   video: HTMLVideoElement
-  timeRef: MutableRefObject<number>
+  timeRef: RefObject<number>
   /** Hide without unloading (keeps depth frames and textures ready). */
   show?: boolean
   /** The selected object, tinted here too so it stays visible under the replay. */
   selection?: SelectionTint | null
   /**
-   * What the video adds to the room, and when; null while it's being built (then nothing live
-   * is drawn, so the replay never fights the room) or when it can't be (then the whole frame is).
+   * What the video adds to the room, and when; 'loading' while timeline.pack loads (then nothing
+   * live is drawn, so the replay never fights the room), null when there is none or the room is
+   * shown as points (then the whole frame is).
    */
-  timeline?: VisitTimeline | null | 'building'
+  timeline?: TimelineData | null | 'loading'
   minConfidence?: number
-}) {
-  const { width, height } = manifest.depth
-  const cache = useRef(new Map<number, DepthFrame | 'loading'>())
-  const shown = useRef(-1)
+}
+
+/**
+ * The Braindance effect: the visit replayed in 3D, in place, in sync with sound, on top of the
+ * stable room.
+ *
+ * - Live: each depth frame becomes a 256×192 grid, unprojected with that frame's own camera
+ *   pose and colored from the video. Only solid blobs in space the room scan saw are kept
+ *   (gaps.ts movingPixels, worked out in depthWorker.ts): people and things brought in or moved.
+ *   Neighboring depth pixels on the same surface are joined into triangles; the jump from a
+ *   person to the wall behind is never bridged.
+ * - Remembered: what the video added, from when it was first seen until later frames saw
+ *   through that spot (timeline.pack), colored from the keyframes. Where the live frame sees the
+ *   same spot, the live (exact video color) one is shown.
+ *
+ * The depth frame is uploaded as packed UInt16 to an integer texture and unpacked in the shader.
+ * Same math as pose.ts unprojectDepthPixel and docs/capture-format.md: scale K to the depth grid,
+ * x = (u − cx')·d/fx', y = (v − cy')·d/fy', z = d, flip to ARKit camera space (x, −y, −z), then T.
+ */
+export function DepthReplay({ depth, frames, videoW, videoH, rateHz, video, timeRef, show = true, selection = null, timeline = null, minConfidence = 1 }: Props) {
+  const { width, height } = depth.index
+  const invalidate = useThree((s) => s.invalidate)
   const withDepth = useMemo(() => depthFrameIndices(frames), [frames])
   // Show a depth frame up to one depth interval away (0.1 s on a phone); past that, a gap shows nothing.
-  const maxGap = manifest.depth.rateHz > 0 ? 1 / manifest.depth.rateHz : Infinity
+  const maxGap = rateHz > 0 ? 1 / rateHz : Infinity
+  const ready = timeline !== null && timeline !== 'loading' ? timeline : null
+
+  // One source per depth file and room mask; it meshes in a worker with the mask it was made with.
+  // Made in an effect (it owns a worker), so it is always disposed.
+  const [source, setSource] = useState<DepthSource | null>(null)
+  useEffect(() => {
+    if (timeline === 'loading') {
+      setSource(null)
+      return
+    }
+    const poses: DepthPose[] = frames.filter((f) => f.d !== null).map((f) => ({ k: f.d as number, T: f.T, K: f.K }))
+    const s = new DepthSource(depth.url, depth.index, { poses, videoW, videoH, minConfidence, room: ready ? { grid: ready.grid, skip: ready.skip } : null })
+    s.onLoad = () => invalidate()
+    setSource(s)
+    return () => s.dispose()
+  }, [depth, frames, videoW, videoH, minConfidence, timeline, ready, invalidate])
 
   const videoTexture = useMemo(() => {
     const texture = new THREE.VideoTexture(video)
-    // Pass the video's sRGB bytes straight through, like the room cloud's colors.
+    // Pass the video's sRGB bytes straight through, like the room's colors.
     texture.colorSpace = THREE.NoColorSpace
     // Rows stay top-first, matching the depth grid, so (u, v) index both the same way.
     texture.flipY = false
@@ -102,9 +105,12 @@ export function DepthReplay({
   }, [video])
 
   const depthTexture = useMemo(() => {
-    const texture = new THREE.DataTexture(new Float32Array(width * height * 2), width, height, THREE.RGFormat, THREE.FloatType)
+    const texture = new THREE.DataTexture(new Uint16Array(width * height), width, height, THREE.RedIntegerFormat, THREE.UnsignedShortType)
+    texture.internalFormat = 'R16UI'
     texture.minFilter = THREE.NearestFilter
     texture.magFilter = THREE.NearestFilter
+    texture.generateMipmaps = false
+    texture.unpackAlignment = 2
     texture.needsUpdate = true
     return texture
   }, [width, height])
@@ -118,9 +124,10 @@ export function DepthReplay({
       }
     }
     const g = new THREE.BufferGeometry()
+    // Positions come from the depth texture; the attribute only sets the vertex count.
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(width * height * 3), 3))
     g.setAttribute('pixel', new THREE.BufferAttribute(pixels, 2))
-    const index = new THREE.BufferAttribute(new Uint32Array((width - 1) * (height - 1) * 6), 1)
+    const index = new THREE.BufferAttribute(new Uint16Array((width - 1) * (height - 1) * 6), 1)
     index.setUsage(THREE.DynamicDrawUsage)
     g.setIndex(index)
     g.setDrawRange(0, 0)
@@ -146,7 +153,7 @@ export function DepthReplay({
         },
         side: THREE.DoubleSide,
         vertexShader: /* glsl */ `
-          uniform sampler2D uDepth;
+          ${DEPTH_GLSL}
           uniform vec2 uGrid;
           uniform vec4 uK;
           uniform mat4 uT;
@@ -156,11 +163,12 @@ export function DepthReplay({
           varying vec3 vWorld;
           void main() {
             vUv = (pixel + 0.5) / uGrid;
-            float d = texture2D(uDepth, vUv).r;   // meters; unmeasured pixels are never in a triangle
             if (uVisible < 0.5) {
               gl_Position = vec4(2.0, 2.0, 2.0, 1.0);   // off screen
               return;
             }
+            // Meters; unmeasured pixels are never in a triangle.
+            float d = depthMeters(texelFetch(uDepth, ivec2(pixel), 0).r);
             // Image-camera space (y down, z forward), then ARKit camera space.
             vec3 cam = vec3((pixel.x - uK.z) * d / uK.x, -((pixel.y - uK.w) * d / uK.y), -d);
             vec4 world = uT * vec4(cam, 1.0);
@@ -191,24 +199,6 @@ export function DepthReplay({
     [depthTexture, videoTexture, width, height],
   )
 
-  const ready = timeline !== null && timeline !== 'building' ? timeline : null
-  const isRoom = useMemo(() => {
-    if (!ready) return () => false
-    const { nx, ny, nz, origin, voxel } = ready.grid
-    const room = ready.skip
-    return (x: number, y: number, z: number) => {
-      const ix = Math.floor((x - origin[0]) / voxel)
-      const iy = Math.floor((y - origin[1]) / voxel)
-      const iz = Math.floor((z - origin[2]) / voxel)
-      // Outside the room's extent counts as room: far stray depth is never replayed.
-      if (ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz) return true
-      return room[(iz * ny + iy) * nx + ix] === 1
-    }
-  }, [ready])
-  // A new room mask means the shown frame's blobs must be worked out again.
-  useEffect(() => {
-    shown.current = -1
-  }, [isRoom])
   const room = useMemo(() => (ready ? roomTexture(ready) : null), [ready])
   useEffect(() => {
     const u = material.uniforms
@@ -228,6 +218,7 @@ export function DepthReplay({
     g.setAttribute('color', new THREE.BufferAttribute(ready.colors, 3, true))
     g.setAttribute('aStart', new THREE.BufferAttribute(ready.start, 1))
     g.setAttribute('aEnd', new THREE.BufferAttribute(ready.end, 1))
+    g.computeBoundingSphere()
     return g
   }, [ready])
   useEffect(() => () => memoryGeometry?.dispose(), [memoryGeometry])
@@ -248,10 +239,10 @@ export function DepthReplay({
           ...selectionUniforms(),
         },
         vertexShader: /* glsl */ `
+          ${DEPTH_GLSL}
           attribute vec3 color;
           attribute float aStart;
           attribute float aEnd;
-          uniform sampler2D uDepth;
           uniform vec2 uGrid;
           uniform vec4 uK;
           uniform mat4 uTinv;
@@ -276,8 +267,8 @@ export function DepthReplay({
               if (d > 0.05) {
                 vec2 px = floor(vec2(cam.x * uK.x / d + uK.z, -cam.y * uK.y / d + uK.w) + 0.5);
                 if (px.x >= 0.0 && px.y >= 0.0 && px.x < uGrid.x && px.y < uGrid.y) {
-                  vec2 s = texture2D(uDepth, (px + 0.5) / uGrid).rg;
-                  if (s.y >= 1.0 && abs(s.x - d) < 0.06) { hide(); return; }
+                  uint s = texelFetch(uDepth, ivec2(px), 0).r;
+                  if (depthConfidence(s) >= 1u && abs(depthMeters(s) - d) < 0.06) { hide(); return; }
                 }
               }
             }
@@ -304,7 +295,8 @@ export function DepthReplay({
   useEffect(() => {
     applySelection(material, selection)
     applySelection(memoryMaterial, selection)
-  }, [material, memoryMaterial, selection])
+    invalidate()
+  }, [material, memoryMaterial, selection, invalidate])
 
   useEffect(
     () => () => {
@@ -316,73 +308,53 @@ export function DepthReplay({
     [geometry, material, depthTexture, videoTexture],
   )
 
-  /** Loads depth frame k (and its confidence) with two small Range requests. */
-  function load(k: number) {
-    if (k < 0 || k >= manifest.depth.count || cache.current.has(k)) return
-    cache.current.set(k, 'loading')
-    const depthBytes = width * height * 2
-    const confBytes = width * height
-    Promise.all([
-      fetchRange(captureId, manifest.depth.file, k * depthBytes, depthBytes),
-      fetchRange(captureId, v1ConfidenceFile(manifest.depth), k * confBytes, confBytes),
-    ])
-      .then(([depth, conf]) => cache.current.set(k, decodeDepthFrame(depth, conf, width * height)))
-      .catch(() => cache.current.delete(k))
-  }
-
-  // A paused video never pushes its frame to the GPU on its own (the replay stayed black or
-  // missing until playback). Upload it once whenever the paused frame changes.
+  // The depth frame on screen; reset when the source (and so the meshing) changes.
+  const shown = useRef<{ source: DepthSource | null; k: number }>({ source: null, k: -1 })
+  // A paused video never pushes its frame to the GPU on its own. Upload it once whenever the
+  // paused frame changes.
   const uploadedAt = useRef(-1)
-
-  const viewport = useMemo(() => new THREE.Vector2(), [])
-  // While the timeline is being built nothing live is drawn: the whole frame would fight the
-  // room surface. If it can't be built, the whole frame is drawn as before.
-  const liveAllowed = timeline !== 'building'
+  const viewport = useMemo(() => new THREE.Vector4(), [])
 
   useFrame((state) => {
-    memoryMaterial.uniforms.uTime.value = timeRef.current
-    memoryMaterial.uniforms.uViewportH.value = state.gl.getDrawingBufferSize(viewport).y
+    const time = timeRef.current ?? 0
+    memoryMaterial.uniforms.uTime.value = time
+    memoryMaterial.uniforms.uViewportH.value = state.gl.getCurrentViewport(viewport).w
     memoryMaterial.uniforms.uLive.value = material.uniforms.uVisible.value
     if (video.paused && video.readyState >= 2 && video.currentTime !== uploadedAt.current) {
       videoTexture.needsUpdate = true
       uploadedAt.current = video.currentTime
     }
-    const frame = nearestDepthFrame(frames, withDepth, timeRef.current, maxGap)
-    if (frame < 0) {
+    const frame = source ? nearestDepthFrame(frames, withDepth, time, maxGap) : -1
+    if (!source || frame < 0) {
       material.uniforms.uVisible.value = 0
       return
     }
     const f = frames[frame]
     const k = f.d as number
-    // Keep the next second of depth loading ahead of playback.
-    for (let ahead = 0; ahead <= 10; ahead++) load(k + ahead)
-
-    const entry = cache.current.get(k)
-    if (!entry || entry === 'loading') return // keep showing the previous frame
-    if (shown.current !== k) {
-      ;(depthTexture.image.data as Float32Array).set(entry.data)
+    const entry = source.frame(k)
+    if (!entry) return // keep showing the previous frame until this one arrives
+    if (shown.current.source !== source || shown.current.k !== k) {
+      depthTexture.image.data = entry.packed
       depthTexture.needsUpdate = true
-      const sx = width / manifest.video.width
-      const sy = height / manifest.video.height
-      const Kd = [f.K[0] * sx, f.K[1] * sy, f.K[2] * sx, f.K[3] * sy]
-      // Only what the room doesn't explain, as solid blobs (people, things brought in).
-      const keep = ready ? movingPixels(entry.data, width, height, Kd, f.T, minConfidence, isRoom) : null
       const index = geometry.getIndex()!
-      geometry.setDrawRange(0, depthMeshIndices(entry.data, width, height, minConfidence, index.array as Uint32Array, keep))
+      ;(index.array as Uint16Array).set(entry.indices)
+      index.clearUpdateRanges()
+      index.addUpdateRange(0, entry.indices.length)
       index.needsUpdate = true
-      material.uniforms.uK.value.set(Kd[0], Kd[1], Kd[2], Kd[3])
+      geometry.setDrawRange(0, entry.indices.length)
+      const sx = width / videoW
+      const sy = height / videoH
+      material.uniforms.uK.value.set(f.K[0] * sx, f.K[1] * sy, f.K[2] * sx, f.K[3] * sy)
       ;(material.uniforms.uT.value as THREE.Matrix4).fromArray(f.T)
       ;(memoryMaterial.uniforms.uTinv.value as THREE.Matrix4).fromArray(f.T).invert()
-      shown.current = k
-      // Drop frames far behind playback so memory stays flat.
-      for (const key of cache.current.keys()) if (key < k - 20) cache.current.delete(key)
+      shown.current = { source, k }
     }
     material.uniforms.uVisible.value = 1
   })
 
   return (
     <>
-      <mesh geometry={geometry} material={material} frustumCulled={false} visible={show && liveAllowed} />
+      <mesh geometry={geometry} material={material} frustumCulled={false} visible={show && timeline !== 'loading'} />
       {memoryGeometry && <points geometry={memoryGeometry} material={memoryMaterial} frustumCulled={false} visible={show} />}
     </>
   )

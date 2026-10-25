@@ -1,3 +1,4 @@
+import { useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import type { PointCloud } from './formats'
@@ -37,7 +38,10 @@ const fragmentShader = /* glsl */ `
 const DEFAULT_SIZE = 0.012
 
 /**
- * The scanned room as soft round points. Colors are sRGB bytes, written out unconverted. With
+ * A cloud given as float positions: a room.bin opened from this computer, or the selected points.
+ * Captures from the backend draw their room with RoomPoints (points.pack) instead.
+ *
+ * Soft round points. Colors are sRGB bytes, written out unconverted. With
  * `sizes`, each point is drawn just big enough to overlap its neighbors, so surfaces read as
  * surfaces; real holes (wider than gaps.ts SPLAT_MAX) stay open.
  */
@@ -54,21 +58,21 @@ interface Props {
   tint?: string
   tintMix?: number
   renderOrder?: number
+  visible?: boolean
 }
 
-export function StaticCloud({ cloud, sizes = null, pointSize = 1, opacity = 1, dim = 1, tint = '#ffffff', tintMix = 0, renderOrder = 0 }: Props) {
+export function StaticCloud({ cloud, sizes = null, pointSize = 1, opacity = 1, dim = 1, tint = '#ffffff', tintMix = 0, renderOrder = 0, visible = true }: Props) {
+  const invalidate = useThree((s) => s.invalidate)
+  // Rebuilt (and the old one freed) when the sizes arrive, so no GPU buffer is left behind.
   const geometry = useMemo(() => {
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.BufferAttribute(cloud.positions, 3))
     g.setAttribute('color', new THREE.BufferAttribute(cloud.colors, 3, true))
-    g.setAttribute('aSize', new THREE.BufferAttribute(new Float32Array(cloud.count).fill(DEFAULT_SIZE), 1))
+    const perPoint = sizes && sizes.length === cloud.count ? sizes : new Float32Array(cloud.count).fill(DEFAULT_SIZE)
+    g.setAttribute('aSize', new THREE.BufferAttribute(perPoint, 1))
     g.computeBoundingSphere()
     return g
-  }, [cloud])
-  useEffect(() => {
-    if (!sizes || sizes.length !== cloud.count) return
-    geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1))
-  }, [geometry, sizes, cloud.count])
+  }, [cloud, sizes])
 
   const material = useMemo(
     () =>
@@ -98,7 +102,8 @@ export function StaticCloud({ cloud, sizes = null, pointSize = 1, opacity = 1, d
     material.uniforms.uDim.value = dim
     material.uniforms.uTint.value.set(tint)
     material.uniforms.uTintMix.value = tintMix
-  }, [material, pointSize, opacity, dim, tint, tintMix])
+    invalidate()
+  }, [material, pointSize, opacity, dim, tint, tintMix, invalidate])
 
   useEffect(() => () => geometry.dispose(), [geometry])
   useEffect(() => () => material.dispose(), [material])
@@ -107,13 +112,13 @@ export function StaticCloud({ cloud, sizes = null, pointSize = 1, opacity = 1, d
     <points
       geometry={geometry}
       material={material}
-      frustumCulled={false}
       renderOrder={renderOrder}
+      visible={visible}
       onBeforeRender={(renderer) => {
-        material.uniforms.uViewportH.value = renderer.getDrawingBufferSize(tmpSize).y
+        material.uniforms.uViewportH.value = renderer.getCurrentViewport(tmpViewport).w
       }}
     />
   )
 }
 
-const tmpSize = new THREE.Vector2()
+const tmpViewport = new THREE.Vector4()

@@ -1,9 +1,8 @@
-import { onlineWorkers, useCaptureStatus, useHealth, useNow } from '../data'
-import { SceneViewer } from '../scene/SceneViewer'
+import { onlineWorkers, useCaptureAssets, useCaptureStatus, useHealth, useNow } from '../data'
+import { SceneViewer } from '../scene'
 import { PublicSwitch } from './PublicSwitch'
 import { EstimatedBadge } from './EstimatedBadge'
 import { PipelineStatus } from './Gallery'
-import { useLoadedCapture } from './useLoadedCapture'
 import { VisitDock } from './VisitDock'
 
 /**
@@ -11,7 +10,7 @@ import { VisitDock } from './VisitDock'
  * pause to look around, point at things and ask. `startAt` opens it at that second.
  */
 export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
-  const { capture, assets, error } = useLoadedCapture(id)
+  const state = useCaptureAssets(id)
   const status = useCaptureStatus(id)
   const health = useHealth()
   const now = useNow()
@@ -32,10 +31,12 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
       </div>
     )
   }
-  if (error) return <div className="center-message error">{error}</div>
-  if (!capture || !assets) return <div className="center-message">Loading the capture…</div>
+  if (state.status === 'error') return <div className="center-message error">{state.message}</div>
+  if (state.status === 'missing') return <div className="center-message error">This visit isn't here any more.</div>
+  if (state.status !== 'ready') return <div className="center-message">Loading the capture…</div>
 
-  const { manifest } = capture
+  const { assets } = state
+  const { manifest } = assets
   const pending = live && (['facts', 'bake', 'convert', 'splat'] as const).some((k) => live[k] !== 'done' && live[k] !== 'skipped')
   return (
     <div className="page">
@@ -44,7 +45,7 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
           ← Captures
         </a>
         <div className="bar-title">
-          <strong>{capture.label}</strong> <EstimatedBadge manifest={manifest} />
+          <strong>{manifest.title || 'Untitled visit'}</strong> <EstimatedBadge manifest={manifest} />
           {manifest && (
             <span className="meta">
               {new Date(manifest.createdAt).toLocaleString()} · {Math.round(manifest.video.durationSec)} s
@@ -61,19 +62,12 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
       </header>
       {live && pending && (
         <div className="banner">
-          <PipelineStatus capture={{ status: live, durationSec: manifest?.video.durationSec ?? 0 }} workers={workers} />
-        </div>
-      )}
-      {capture.errors.length > 0 && (
-        <div className="banner error">
-          {capture.errors.map((e) => (
-            <div key={e}>{e}</div>
-          ))}
+          <PipelineStatus capture={{ status: live, durationSec: manifest.video.durationSec ?? 0 }} workers={workers} />
         </div>
       )}
       <main className="main">
         <div className="viewer-wrap">
-          <SceneViewer capture={capture} startAt={startAt} overlay={(controls) => <VisitDock captureId={id} controls={controls} />} />
+          <SceneViewer assets={assets} startAt={startAt} overlay={(controls) => <VisitDock captureId={id} controls={controls} />} />
         </div>
       </main>
     </div>
