@@ -14,50 +14,46 @@ final class DepthConversionTests: XCTestCase {
         XCTAssertEqual(RecordingFormat.millimeters(-1), 0)
     }
 
-    func testDepthBufferBecomesRowMajorLittleEndianMillimeters() throws {
+    private func pixelBuffer(_ width: Int, _ height: Int, _ format: OSType) throws -> CVPixelBuffer {
         var buffer: CVPixelBuffer?
-        XCTAssertEqual(CVPixelBufferCreate(nil, 3, 2, kCVPixelFormatType_DepthFloat32, nil, &buffer), kCVReturnSuccess)
-        let depth = try XCTUnwrap(buffer)
+        XCTAssertEqual(CVPixelBufferCreate(nil, width, height, format, nil, &buffer), kCVReturnSuccess)
+        return try XCTUnwrap(buffer)
+    }
+
+    func testDepthAndConfidenceBecomePackedRowMajorLittleEndianPixels() throws {
+        let depth = try pixelBuffer(3, 2, kCVPixelFormatType_DepthFloat32)
+        let confidence = try pixelBuffer(3, 2, kCVPixelFormatType_OneComponent8)
 
         CVPixelBufferLockBaseAddress(depth, [])
-        let base = try XCTUnwrap(CVPixelBufferGetBaseAddress(depth))
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(depth)
-        let values: [[Float]] = [[0.5, 1.0, 1.5], [2.0, .nan, 4.5]]
-        for (row, rowValues) in values.enumerated() {
-            let p = (base + row * bytesPerRow).assumingMemoryBound(to: Float32.self)
-            for (col, v) in rowValues.enumerated() { p[col] = v }
-        }
-        CVPixelBufferUnlockBaseAddress(depth, [])
-
-        let data = try XCTUnwrap(RecordingFormat.millimeterData(fromDepth: depth))
-        XCTAssertEqual(data.count, 3 * 2 * 2)   // row padding dropped
-        let bytes = [UInt8](data)
-        let mm = Swift.stride(from: 0, to: bytes.count, by: 2).map { UInt16(bytes[$0]) | UInt16(bytes[$0 + 1]) << 8 }
-        XCTAssertEqual(mm, [500, 1000, 1500, 2000, 0, 4500])
-    }
-
-    func testConfidenceBufferIsCopiedWithoutPadding() throws {
-        var buffer: CVPixelBuffer?
-        XCTAssertEqual(CVPixelBufferCreate(nil, 3, 2, kCVPixelFormatType_OneComponent8, nil, &buffer), kCVReturnSuccess)
-        let confidence = try XCTUnwrap(buffer)
-
         CVPixelBufferLockBaseAddress(confidence, [])
-        let base = try XCTUnwrap(CVPixelBufferGetBaseAddress(confidence))
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(confidence)
+        let depthBase = try XCTUnwrap(CVPixelBufferGetBaseAddress(depth))
+        let confidenceBase = try XCTUnwrap(CVPixelBufferGetBaseAddress(confidence))
+        let meters: [[Float]] = [[0.5, 1.0, 1.5], [2.0, .nan, 20]]
         for row in 0..<2 {
-            let p = (base + row * bytesPerRow).assumingMemoryBound(to: UInt8.self)
-            for col in 0..<3 { p[col] = UInt8((row * 3 + col) % 3) }
+            let d = (depthBase + row * CVPixelBufferGetBytesPerRow(depth)).assumingMemoryBound(to: Float32.self)
+            let c = (confidenceBase + row * CVPixelBufferGetBytesPerRow(confidence)).assumingMemoryBound(to: UInt8.self)
+            for col in 0..<3 {
+                d[col] = meters[row][col]
+                c[col] = UInt8((row * 3 + col) % 3)
+            }
         }
         CVPixelBufferUnlockBaseAddress(confidence, [])
+        CVPixelBufferUnlockBaseAddress(depth, [])
 
-        let data = try XCTUnwrap(RecordingFormat.confidenceData(from: confidence))
-        XCTAssertEqual([UInt8](data), [0, 1, 2, 0, 1, 2])
+        let data = try XCTUnwrap(RecordingFormat.packedDepthData(depth: depth, confidence: confidence))
+        XCTAssertEqual(data.count, 3 * 2 * 2)   // row padding dropped
+        let bytes = [UInt8](data)
+        let packed = Swift.stride(from: 0, to: bytes.count, by: 2).map { UInt16(bytes[$0]) | UInt16(bytes[$0 + 1]) << 8 }
+        // 20 m clamps to 16,383 mm; NaN is "no data" (0) but keeps its confidence.
+        XCTAssertEqual(packed, [500, 1000 | 1 << 14, 1500 | 2 << 14, 2000, 0 | 1 << 14, 16_383 | 2 << 14])
     }
 
-    func testWrongPixelFormatIsRejected() throws {
-        var buffer: CVPixelBuffer?
-        XCTAssertEqual(CVPixelBufferCreate(nil, 2, 2, kCVPixelFormatType_32BGRA, nil, &buffer), kCVReturnSuccess)
-        XCTAssertNil(RecordingFormat.millimeterData(fromDepth: try XCTUnwrap(buffer)))
+    func testWrongPixelFormatOrSizeIsRejected() throws {
+        let bgra = try pixelBuffer(2, 2, kCVPixelFormatType_32BGRA)
+        let confidence = try pixelBuffer(2, 2, kCVPixelFormatType_OneComponent8)
+        XCTAssertNil(RecordingFormat.packedDepthData(depth: bgra, confidence: confidence))
+        let depth = try pixelBuffer(3, 2, kCVPixelFormatType_DepthFloat32)
+        XCTAssertNil(RecordingFormat.packedDepthData(depth: depth, confidence: confidence))
     }
 }
 
@@ -145,7 +141,9 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(json["imageOrientation"] as? String, "landscapeRight")
         let depth = try XCTUnwrap(json["depth"] as? [String: Any])
         XCTAssertEqual(depth["file"] as? String, "depth.bin")
-        XCTAssertEqual(depth["confidenceFile"] as? String, "confidence.bin")
+        XCTAssertEqual(depth["index"] as? String, "depth.index.json")
+        XCTAssertEqual(depth["encoding"] as? String, "v2")
+        XCTAssertNil(depth["confidenceFile"])
         XCTAssertEqual(depth["unit"] as? String, "mm")
         let room = try XCTUnwrap(json["room"] as? [String: Any])
         XCTAssertEqual(room["source"] as? String, "on-device")

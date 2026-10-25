@@ -2,8 +2,9 @@ import ARKit
 import AVFoundation
 import CoreImage
 
-/// Writes the capture package: depth.bin and confidence.bin at 10 Hz plus a
-/// frames.jsonl pose line per frame during both the scan and the moment, and
+/// Writes the capture package: depth v2 (depth.bin + depth.index.json) at
+/// 10 Hz plus a frames.jsonl pose line per frame during both the scan and the
+/// moment, and
 /// video.mp4 (H.264 + AAC, so every browser plays it) during the moment only
 /// (IOS_CAPTURE_PLAN.md 6, docs/capture-format.md).
 ///
@@ -41,13 +42,13 @@ final class CaptureRecorder {
 
     private let fileQueue = DispatchQueue(label: "braindance.files", qos: .utility)
     private let depthHandle: FileHandle
-    private let confidenceHandle: FileHandle
     private let framesHandle: FileHandle
+    /// Only used on the file queue, so compressing a chunk never blocks the camera.
+    private let depthChunks: DepthChunkWriter
     /// Set on the file queue when a write fails (usually a full disk).
     private var writeError: Error?
 
     private var depthCount = 0
-    private var depthSize = CGSize.zero
     private var lastDepthTimestamp: TimeInterval?
 
     /// Scan lines wait in memory until the moment's t0 is known, since every
@@ -80,9 +81,12 @@ final class CaptureRecorder {
             }
             return try FileHandle(forWritingTo: url)
         }
-        depthHandle = try open("depth.bin")
-        confidenceHandle = try open("confidence.bin")
+        let depthHandle = try open("depth.bin")
+        self.depthHandle = depthHandle
         framesHandle = try open("frames.jsonl")
+        depthChunks = DepthChunkWriter(width: RecordingFormat.depthWidth, height: RecordingFormat.depthHeight) { chunk in
+            try depthHandle.write(contentsOf: chunk)
+        }
     }
 
     // MARK: Phase changes
@@ -299,7 +303,15 @@ final class CaptureRecorder {
     private func closeFiles(cancelWriter: Bool, then: @escaping () -> Void) {
         if cancelWriter, let writer, writer.status == .writing { writer.cancelWriting() }
         fileQueue.async { [self] in
-            for handle in [depthHandle, confidenceHandle, framesHandle] {
+            if !cancelWriter, writeError == nil {
+                do {
+                    let index = try depthChunks.finish()
+                    try index.encoded().write(to: folder.appending(path: "depth.index.json"), options: .atomic)
+                } catch {
+                    writeError = error
+                }
+            }
+            for handle in [depthHandle, framesHandle] {
                 do { try handle.close() } catch { writeError = writeError ?? error }
             }
             then()
@@ -308,25 +320,25 @@ final class CaptureRecorder {
 
     // MARK: Helpers
 
-    /// Converts and queues this frame's depth and confidence if 10 Hz says
-    /// it's due. Returns the depth index, or nil if no depth was written.
+    /// Packs and queues this frame's depth and confidence if 10 Hz says it's
+    /// due. Returns the depth index, or nil if no depth was written.
     private func writeDepthIfDue(_ frame: ARFrame) -> Int? {
         guard RecordingFormat.isDepthDue(at: frame.timestamp, lastDepth: lastDepthTimestamp),
               let sceneDepth = frame.smoothedSceneDepth ?? frame.sceneDepth,
               let confidenceMap = sceneDepth.confidenceMap,
-              let depth = RecordingFormat.millimeterData(fromDepth: sceneDepth.depthMap),
-              let confidence = RecordingFormat.confidenceData(from: confidenceMap)
+              // Every frame must be the size depth.index.json declares.
+              CVPixelBufferGetWidth(sceneDepth.depthMap) == RecordingFormat.depthWidth,
+              CVPixelBufferGetHeight(sceneDepth.depthMap) == RecordingFormat.depthHeight,
+              let packed = RecordingFormat.packedDepthData(depth: sceneDepth.depthMap, confidence: confidenceMap)
         else { return nil }
-
-        // depth.bin is a flat array of same-sized frames; never mix sizes.
-        let size = CGSize(width: CVPixelBufferGetWidth(sceneDepth.depthMap), height: CVPixelBufferGetHeight(sceneDepth.depthMap))
-        if depthCount == 0 { depthSize = size } else if size != depthSize { return nil }
 
         lastDepthTimestamp = frame.timestamp
         let index = depthCount
         depthCount += 1
-        write(depth, to: depthHandle)
-        write(confidence, to: confidenceHandle)
+        fileQueue.async { [self] in
+            guard writeError == nil else { return }
+            do { try depthChunks.append(packed) } catch { writeError = error }
+        }
         return index
     }
 

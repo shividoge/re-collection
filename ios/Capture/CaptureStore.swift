@@ -46,7 +46,7 @@ extension CaptureStore {
                 width: Int(moment.videoSize.width), height: Int(moment.videoSize.height), fps: moment.fps,
                 durationSec: duration, frameCount: moment.frameCount),
             audio: .init(inVideo: true, sampleRate: moment.audioSampleRate, channels: 1),
-            depth: .init(width: 256, height: 192, rateHz: 10, count: moment.depthCount),
+            depth: .init(width: RecordingFormat.depthWidth, height: RecordingFormat.depthHeight, rateHz: 10, count: moment.depthCount),
             room: room.map { .init(points: $0.pointCount, voxelMeters: Double(PointCloudExporter.voxelMeters)) },
             transcript: transcript.map { .init(locale: $0.locale) },
             keyframes: keyframeCount > 0 ? .init(count: keyframeCount) : nil,

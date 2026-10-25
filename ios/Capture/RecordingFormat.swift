@@ -7,8 +7,11 @@ import simd
 /// IOS_CAPTURE_PLAN.md Section 7). Kept free of ARKit and AVFoundation so the
 /// unit tests run anywhere.
 enum RecordingFormat {
-    /// Depth and confidence frames are recorded at 10 Hz.
+    /// Depth frames are recorded at 10 Hz.
     static let depthInterval: TimeInterval = 0.1
+    /// ARKit's scene depth size on every LiDAR iPhone.
+    static let depthWidth = 256
+    static let depthHeight = 192
 
     /// H.264 average bit rate for the 1920x1440, 30 fps moment video.
     static let videoBitRate = 8_000_000
@@ -62,44 +65,39 @@ enum RecordingFormat {
         return UInt16(min(65_535, (meters * 1000).rounded()))
     }
 
-    /// Converts a Float32 depth map (meters) to row-major little-endian UInt16
-    /// millimeters, dropping any row padding. 256x192 is about 49k values.
-    static func millimeterData(fromDepth buffer: CVPixelBuffer) -> Data? {
-        guard CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_DepthFloat32 else { return nil }
-        CVPixelBufferLockBaseAddress(buffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
-        guard let base = CVPixelBufferGetBaseAddress(buffer) else { return nil }
+    /// Packs a Float32 depth map (meters) and its confidence map into depth v2
+    /// pixels (`DepthV2.pack`), row-major little-endian UInt16, dropping any row
+    /// padding. 256x192 is about 49k values.
+    static func packedDepthData(depth: CVPixelBuffer, confidence: CVPixelBuffer) -> Data? {
+        guard CVPixelBufferGetPixelFormatType(depth) == kCVPixelFormatType_DepthFloat32,
+              CVPixelBufferGetPixelFormatType(confidence) == kCVPixelFormatType_OneComponent8
+        else { return nil }
+        let width = CVPixelBufferGetWidth(depth)
+        let height = CVPixelBufferGetHeight(depth)
+        guard CVPixelBufferGetWidth(confidence) == width, CVPixelBufferGetHeight(confidence) == height else { return nil }
 
-        let width = CVPixelBufferGetWidth(buffer)
-        let height = CVPixelBufferGetHeight(buffer)
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
+        CVPixelBufferLockBaseAddress(depth, .readOnly)
+        CVPixelBufferLockBaseAddress(confidence, .readOnly)
+        defer {
+            CVPixelBufferUnlockBaseAddress(confidence, .readOnly)
+            CVPixelBufferUnlockBaseAddress(depth, .readOnly)
+        }
+        guard let depthBase = CVPixelBufferGetBaseAddress(depth),
+              let confidenceBase = CVPixelBufferGetBaseAddress(confidence)
+        else { return nil }
+
+        let depthRow = CVPixelBufferGetBytesPerRow(depth)
+        let confidenceRow = CVPixelBufferGetBytesPerRow(confidence)
         var out = Data(count: width * height * 2)
         out.withUnsafeMutableBytes { raw in
             let dst = raw.bindMemory(to: UInt16.self)
             for row in 0..<height {
-                let src = (base + row * bytesPerRow).assumingMemoryBound(to: Float32.self)
+                let meters = (depthBase + row * depthRow).assumingMemoryBound(to: Float32.self)
+                let levels = (confidenceBase + row * confidenceRow).assumingMemoryBound(to: UInt8.self)
                 for col in 0..<width {
-                    dst[row * width + col] = millimeters(src[col]).littleEndian
+                    dst[row * width + col] = DepthV2.pack(millimeters: millimeters(meters[col]), confidence: levels[col]).littleEndian
                 }
             }
-        }
-        return out
-    }
-
-    /// Copies a one-byte-per-pixel confidence map (0 low, 1 medium, 2 high),
-    /// dropping any row padding.
-    static func confidenceData(from buffer: CVPixelBuffer) -> Data? {
-        guard CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_OneComponent8 else { return nil }
-        CVPixelBufferLockBaseAddress(buffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
-        guard let base = CVPixelBufferGetBaseAddress(buffer) else { return nil }
-
-        let width = CVPixelBufferGetWidth(buffer)
-        let height = CVPixelBufferGetHeight(buffer)
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
-        var out = Data(capacity: width * height)
-        for row in 0..<height {
-            out.append(base.advanced(by: row * bytesPerRow).assumingMemoryBound(to: UInt8.self), count: width)
         }
         return out
     }
@@ -117,7 +115,7 @@ struct FrameLine {
     var intrinsics: SIMD4<Float>
     /// "normal", "limited" or "notAvailable".
     var tracking: String
-    /// Index into depth.bin / confidence.bin when this frame has depth.
+    /// Index of this frame's depth frame in depth.bin, when it has one.
     var depthIndex: Int?
     /// "scan" or "moment".
     var phase: String
@@ -174,9 +172,12 @@ struct CaptureManifest: Codable, Equatable {
         var channels: Int
     }
 
+    /// Depth v2 (docs/architecture-v3.md §3): confidence is packed into
+    /// depth.bin, so there's no confidence.bin.
     struct Depth: Codable, Equatable {
         var file = "depth.bin"
-        var confidenceFile = "confidence.bin"
+        var index = "depth.index.json"
+        var encoding = "v2"
         var width: Int
         var height: Int
         var unit = "mm"
