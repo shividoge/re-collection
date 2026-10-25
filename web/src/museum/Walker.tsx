@@ -52,7 +52,9 @@ export function Walker({
   hung = 0,
   ref,
   guided = false,
+  frozen = false,
 }: {
+  frozen?: boolean
   plan: MuseumPlan
   onArrive?: () => void
   onLook?: (slot: number) => void
@@ -75,6 +77,11 @@ export function Walker({
     look.current = onLook
   }, [onArrive, onLook])
   const lookedAt = useRef(-2)
+  const frozenRef = useRef(frozen)
+  useEffect(() => {
+    frozenRef.current = frozen
+    if (frozen) keys.current.clear()
+  }, [frozen])
   const lookTimer = useRef(0)
 
   // A new museum (another exhibition or style): start again at the entrance.
@@ -140,7 +147,7 @@ export function Walker({
       return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')
     }
     const down = (e: KeyboardEvent) => {
-      if (typing(e) || guided) return
+      if (typing(e) || guided || frozenRef.current) return
       keys.current.add(e.code)
       if (e.code.startsWith('Arrow')) e.preventDefault()
     }
@@ -157,6 +164,8 @@ export function Walker({
   }, [guided])
 
   useFrame((_, dt) => {
+    // Stepped into a picture: the dive has the camera.
+    if (frozenRef.current) return
     const step = Math.min(dt, 0.05)
     const k = keys.current
     const fwd = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0)
@@ -225,7 +234,7 @@ export function Walker({
       const dp = g.pitch - pitch.current
       yaw.current += dy * ease
       pitch.current += dp * ease
-      if (Math.abs(dy) < 0.01 && Math.abs(dp) < 0.01) {
+      if (Math.abs(dy) < 0.02 && Math.abs(dp) < 0.02) {
         lookGoal.current = null
         arrive.current?.()
       }

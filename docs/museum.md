@@ -13,6 +13,31 @@ piece framed on a wall, lit, and labelled. Not XR yet; it runs in any browser (l
   walk up to it.
 - A guided walk goes through the doorways and ends facing the piece, with its caption below.
 
+## Stepping into a picture, and the music
+
+Tap the picture you're standing at, or press **Step in** on its label (Enter on a keyboard; from
+elsewhere it walks you there first). The visitor goes into the picture, as if the frame were a
+window onto a real place: the view leans toward it, then rushes in, the museum smearing into a
+radial "warp" blur with the colours parting, light streaking past like stars at speed and a glow
+gathering in the middle (`web/src/museum/warp.ts`, `DiveCamera.tsx`, `Streaks.tsx`). On the far
+side the picture's own world comes out of the blur (`StepIn.tsx`):
+- a piece from a visit opens onto that visit's 3D room, seen from where the phone was at that
+  moment, so the picture and the room line up; the person can look around, replay the visit and
+  talk about it there;
+- any other photo fills the view and drifts slowly; a video plays, its own sound rising gently.
+
+**‹ Museum** (or Escape) runs the same journey backwards: the world smears away into the warp,
+and the view pulls back out of the frame to where the visitor stood.
+
+Quiet music plays while walking: Erik Satie's *Gymnopédie No. 1*, a public domain recording by
+Robin Alciatore for Musopen (`web/public/museum/audio/`, credits there). It starts softly on the
+first click (browsers allow no sound before one), fades away completely when you step into a
+picture (each picture has its own sound), and rises again slowly when you come back. **♪ Music**
+turns it off and on (remembered on the device). The sound of going through is made in the
+browser once, offline (`web/src/museum/sound.ts`): rushing air climbing with the speed, a deep
+rumble, a soft shimmer rising an octave, and the air parting in a sweep at the crossing, in a
+wide hall. Stepping out plays it backwards. Nothing rings on at the end.
+
 ## Rooms
 
 Five styles, chosen per exhibition with the buttons at the top (remembered on the device). The
@@ -80,8 +105,8 @@ of it, and guided walks step round it.
    iPad). They hang in the exhibition that's open and stay on that device (IndexedDB). "Take down"
    removes one again.
 2. **Our visits** fills itself from the guide: each finished capture hangs as its video, followed
-   by two of its keyframes, with the title and date the family gave it, and a link to step into
-   the visit in 3D.
+   by two of its keyframes, with the title and date the family gave it. Stepping into any of them
+   opens the visit's 3D room at that moment.
 3. **Curated exhibitions** come from `web/public/museum/exhibitions.json`:
 
 ```json

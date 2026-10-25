@@ -271,3 +271,194 @@
     text-align: center;
   }
 }
+
+/* Stepping into a picture: the visitor dives into its frame (warp.ts, DiveCamera.tsx), light
+   streaks past (Streaks.tsx), and the picture's own world comes out of the blur (StepIn.tsx). */
+.museum-stage {
+  position: absolute;
+  inset: 0;
+}
+.museum-top,
+.museum-bottom,
+.museum-hint {
+  transition: opacity 450ms ease;
+}
+.museum.inside .museum-top,
+.museum.inside .museum-bottom,
+.museum.inside .museum-hint {
+  opacity: 0;
+  pointer-events: none;
+}
+.museum.inside canvas {
+  cursor: default;
+}
+.museum-streaks {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.stepin {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  overflow: hidden;
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', system-ui, sans-serif;
+}
+/* Mounted during the dive so the far side can load, but not seen until the crossing. */
+.stepin.waiting {
+  pointer-events: none;
+}
+.stepin.waiting .stepin-world {
+  opacity: 0;
+}
+.stepin-world {
+  position: absolute;
+  inset: 0;
+  background: #0b080b;
+  will-change: transform, filter, opacity;
+}
+.stepin-backdrop {
+  position: absolute;
+  inset: -80px;
+  background-color: #0b080b;
+  background-size: cover;
+  background-position: center;
+  filter: blur(70px) saturate(1.5) brightness(0.5);
+}
+.stepin-full {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+/* A still photo is never quite still on the far side: a slow drift, as if breathing. */
+.stepin-full.drift {
+  animation: stepin-drift 26s ease-in-out infinite alternate;
+}
+@keyframes stepin-drift {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.06) translate(-0.6%, -0.4%);
+  }
+}
+.stepin-cover {
+  position: absolute;
+  inset: 0;
+  background: #0b080b;
+}
+.stepin-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.stepin-cover.gone {
+  pointer-events: none;
+}
+.stepin-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+.stepin-ui.shown {
+  opacity: 1;
+}
+.stepin-ui.shown > * {
+  pointer-events: auto;
+}
+.stepin-back {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  height: 44px;
+  padding: 0 18px 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(40, 36, 38, 0.5);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.stepin-back span {
+  font-size: 26px;
+  line-height: 1;
+  margin-top: -3px;
+}
+.stepin-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  max-width: min(620px, calc(100% - 32px));
+  padding: 14px 22px;
+  border-radius: 20px;
+  background: rgba(40, 36, 38, 0.45);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  color: #fff;
+  text-align: center;
+  display: grid;
+  gap: 3px;
+}
+.stepin-caption strong {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.stepin-caption span {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.stepin-caption p {
+  margin: 4px 0 0;
+  font-size: 15px;
+  line-height: 1.4;
+}
+/* Stepping into a visit: its 3D room waits behind the picture, then takes the whole screen. */
+.stepin-3d {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.stepin-3d.live {
+  pointer-events: auto;
+}
+/* The viewer's own buttons sit top-left, so the way back goes top-right. */
+.stepin-room .stepin-back {
+  left: auto;
+  right: 18px;
+}
+.stepin-room .viewer-selection {
+  top: 74px;
+}
+.museum-stepin {
+  padding: 6px 16px !important;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ffb35c, #ff7a8a) !important;
+  color: #2a1418 !important;
+  font-weight: 600;
+  text-decoration: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stepin-full.drift {
+    animation: none;
+  }
+}

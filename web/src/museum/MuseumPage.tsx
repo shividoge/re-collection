@@ -3,7 +3,11 @@ import { addFiles, kindOf, loadExhibitions, MY_EXHIBITION, removeLocal, type Exh
 import { planMuseum, STYLES, type RoomStyle } from './layout'
 import { LOOKS } from './looks'
 import { MuseumScene } from './MuseumScene'
+import { MuseumSound } from './sound'
+import { StepIn, type Stage } from './StepIn'
+import { Streaks } from './Streaks'
 import type { WalkerHandle } from './Walker'
+import { IN_MS, LEAVE_MS, OUT_MS, type Dive } from './warp'
 import './museum.css'
 
 // v3: the classic gallery became everyone's default; earlier choices made while trying styles are dropped.
@@ -42,6 +46,22 @@ export function MuseumPage({ id }: { id?: string }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [hint, setHint] = useState(true)
   const walker = useRef<WalkerHandle>(null)
+  // Stepping into a picture: which one, and how far: diving in, inside, leaving, or (`surfacing`)
+  // back through the frame and pulling out of it to where the visitor stood.
+  const [inside, setInside] = useState<{ index: number; stage: Stage | 'surfacing' } | null>(null)
+  const insideRef = useRef(inside)
+  useEffect(() => {
+    insideRef.current = inside
+  }, [inside])
+  // The picture's world fills the screen, so the museum can stop drawing.
+  const [covered, setCovered] = useState(false)
+  // The camera's dive into the frame, and the light streaking past on the way through.
+  const dive = useRef<Dive | null>(null)
+  const [warp, setWarp] = useState<{ dir: 'in' | 'out'; cross: number } | null>(null)
+  const pendingStep = useRef(-1)
+  const sizes = useRef(new Map<number, { w: number; h: number }>())
+  const sound = useMemo(() => new MuseumSound(), [])
+  const [musicOn, setMusicOn] = useState(sound.musicOn)
 
   const refresh = useCallback(() => {
     loadExhibitions()
@@ -79,7 +99,91 @@ export function MuseumPage({ id }: { id?: string }) {
     [exhibition, plan],
   )
 
-  const onArrive = useCallback(() => setArrived(true), [])
+  const onMeasure = useCallback((slot: number, w: number, h: number) => {
+    sizes.current.set(slot, { w, h })
+  }, [])
+
+  /** Steps into piece `i`: from where the visitor stands if they're at it, else after walking there. */
+  const stepIn = useCallback(
+    (i: number) => {
+      if (!exhibition || inside) return
+      const slot = plan.slots[i]
+      const size = sizes.current.get(i)
+      const at = walker.current?.position()
+      if (!slot || !size || !at) return
+      if (Math.hypot(at[0] - slot.view[0], at[1] - slot.view[1]) > 0.35) {
+        // Walk up to it first, then step in on arrival.
+        pendingStep.current = i
+        setFocus(i)
+        setArrived(false)
+        walker.current?.walkTo(slot.view, slot.center)
+        return
+      }
+      // Dive into the frame. The museum's music fades right away (every picture has its own
+      // sound), the rush builds as the view picks up speed, and at the crossing the picture's
+      // own world takes over.
+      const now = performance.now()
+      dive.current = {
+        dir: 'in',
+        target: { center: slot.center, normal: slot.normal, w: size.w, h: size.h },
+        start: now,
+        ms: IN_MS,
+        done: () => setInside((s) => (s && s.stage === 'diving' ? { ...s, stage: 'here' } : s)),
+      }
+      sound.wake()
+      sound.musicTo(0, 1.6)
+      sound.warp('in', IN_MS / 1000)
+      setWarp({ dir: 'in', cross: now + IN_MS })
+      setHint(false)
+      setInside({ index: i, stage: 'diving' })
+    },
+    [exhibition, inside, plan, sound],
+  )
+
+  /** Back out through the frame: the picture's world smears away, then the view pulls back out. */
+  const stepOut = useCallback(() => {
+    if (insideRef.current?.stage !== 'here') return
+    const now = performance.now()
+    setInside((s) => (s ? { ...s, stage: 'leaving' } : s))
+    sound.warp('out', LEAVE_MS / 1000)
+    setWarp({ dir: 'out', cross: now + LEAVE_MS })
+    const d = dive.current
+    if (d) {
+      dive.current = {
+        ...d,
+        dir: 'out',
+        start: now + LEAVE_MS,
+        ms: OUT_MS,
+        finished: false,
+        done: () => {
+          dive.current = null
+          setInside(null)
+          setWarp(null)
+        },
+      }
+    }
+    // The music comes back slowly once the museum is in view again.
+    setTimeout(() => sound.musicTo(1, 4), LEAVE_MS + 300)
+  }, [sound])
+
+  const onArrive = useCallback(() => {
+    setArrived(true)
+    if (pendingStep.current >= 0) {
+      const i = pendingStep.current
+      pendingStep.current = -1
+      // Let the camera settle for a beat, then step in.
+      setTimeout(() => stepIn(i), 250)
+    }
+  }, [stepIn])
+
+  /** A tap on a picture: walk to it, or step into it if already there. */
+  const select = useCallback(
+    (i: number) => {
+      if (i === focus && arrived) stepIn(i)
+      else goTo(i)
+    },
+    [focus, arrived, stepIn, goTo],
+  )
   // Walking and looking around freely: the piece in view becomes the current one (its label shows,
   // and Next / Previous carry on from it); looking away from every piece hides the label.
   const onLook = useCallback((slot: number) => {
@@ -122,13 +226,15 @@ export function MuseumPage({ id }: { id?: string }) {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT')) return
+      if (inside) return
       if (e.code === 'KeyN' || e.code === 'PageDown') goTo(focus + 1)
       if (e.code === 'KeyP' || e.code === 'PageUp') goTo(Math.max(0, focus - 1))
+      if (e.code === 'Enter' && focus >= 0 && arrived) stepIn(focus)
       if (e.code === 'Escape') setFocus(-1)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [focus, goTo])
+  }, [focus, arrived, inside, goTo, stepIn])
 
   if (error) return <div className="museum-message">{error}</div>
   if (!exhibitions || !exhibition) return <div className="museum-message">Opening the museum…</div>
@@ -139,7 +245,9 @@ export function MuseumPage({ id }: { id?: string }) {
 
   return (
     <div
-      className={`museum museum-${style}`}
+      className={`museum museum-${style}${inside ? ' inside' : ''}`}
+      // Sound can only start after a click or tap.
+      onPointerDown={() => sound.wake()}
       onDragOver={(e) => {
         if ([...e.dataTransfer.items].some((i) => i.kind === 'file')) {
           e.preventDefault()
@@ -155,9 +263,35 @@ export function MuseumPage({ id }: { id?: string }) {
         void add([...e.dataTransfer.files])
       }}
     >
-      {total > 0 || exhibition.id === MY_EXHIBITION ? (
-        <MuseumScene exhibition={exhibition} plan={plan} focus={focus} onSelect={goTo} onArrive={onArrive} onLook={onLook} walker={walker} />
-      ) : null}
+      <div className="museum-stage">
+        {total > 0 || exhibition.id === MY_EXHIBITION ? (
+          <MuseumScene
+            exhibition={exhibition}
+            plan={plan}
+            focus={focus}
+            onSelect={select}
+            onArrive={onArrive}
+            onLook={onLook}
+            onMeasure={onMeasure}
+            walker={walker}
+            frozen={Boolean(inside)}
+            paused={covered}
+            dive={dive}
+          />
+        ) : null}
+      </div>
+
+      {inside && inside.stage !== 'surfacing' && exhibition.items[inside.index] && (
+        <StepIn
+          key={inside.index}
+          art={exhibition.items[inside.index]}
+          stage={inside.stage}
+          onBack={stepOut}
+          onCovered={setCovered}
+          onGone={() => setInside((s) => (s ? { ...s, stage: 'surfacing' } : s))}
+        />
+      )}
+      {warp && <Streaks key={`${warp.dir}${warp.cross}`} dir={warp.dir} cross={warp.cross} />}
 
       <header className="museum-top">
         <a className="museum-chip" href="#/">
@@ -188,6 +322,18 @@ export function MuseumPage({ id }: { id?: string }) {
             </button>
           ))}
         </div>
+        <button
+          className={`museum-chip${musicOn ? ' on' : ''}`}
+          onClick={() => {
+            sound.wake()
+            sound.setMusic(!musicOn)
+            setMusicOn(!musicOn)
+          }}
+          aria-pressed={musicOn}
+          title="Satie, Gymnopédie No. 1"
+        >
+          {musicOn ? '♪ Music on' : '♪ Music off'}
+        </button>
         <label className="museum-chip museum-add">
           Add photos or videos
           <input type="file" accept="image/*,video/*" multiple hidden onChange={(e) => void add([...(e.target.files ?? [])])} />
@@ -222,7 +368,9 @@ export function MuseumPage({ id }: { id?: string }) {
                 {current.date && <span className="museum-date">{current.date}</span>}
                 {current.caption && <p>{current.caption}</p>}
                 <div className="museum-actions">
-                  {current.captureId && <a href={`#/capture/${current.captureId}`}>Step into this visit in 3D</a>}
+                  <button className="museum-stepin" onClick={() => stepIn(focus)}>
+                    Step in
+                  </button>
                   {current.local && <button onClick={() => void remove(current.id)}>Take down</button>}
                 </div>
               </div>

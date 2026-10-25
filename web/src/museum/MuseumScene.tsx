@@ -2,15 +2,17 @@ import { Environment, Lightformer } from '@react-three/drei'
 import { Canvas, type ThreeEvent } from '@react-three/fiber'
 import { EffectComposer, N8AO, SMAA, ToneMapping, Vignette } from '@react-three/postprocessing'
 import { ToneMappingMode } from 'postprocessing'
-import { useMemo, type Ref } from 'react'
+import { useMemo, type Ref, type RefObject } from 'react'
 import * as THREE from 'three'
 import { Artwork } from './Artwork'
 import { Furniture, Sconces, Window } from './Classic'
+import { DiveCamera } from './DiveCamera'
 import type { Exhibition } from './exhibitions'
 import { walkable, type MuseumPlan } from './layout'
 import { LOOKS } from './looks'
 import { Rooms } from './Rooms'
 import { EYE, Walker, type WalkerHandle } from './Walker'
+import type { Dive } from './warp'
 
 /** Lighter settings on phones and tablets: smaller reflections, half-resolution shading. */
 const handheld = typeof navigator !== 'undefined' && /iPad|iPhone|Android|Mobile/i.test(navigator.userAgent + (navigator.maxTouchPoints > 1 ? ' iPad' : ''))
@@ -22,7 +24,11 @@ export function MuseumScene({
   onSelect,
   onArrive,
   onLook,
+  onMeasure,
   walker,
+  frozen = false,
+  paused = false,
+  dive,
 }: {
   exhibition: Exhibition
   plan: MuseumPlan
@@ -31,7 +37,14 @@ export function MuseumScene({
   onArrive: () => void
   /** The piece the visitor is looking at while walking freely (−1: none). */
   onLook: (slot: number) => void
+  onMeasure: (slot: number, w: number, h: number) => void
   walker: Ref<WalkerHandle>
+  /** While stepped into a picture: the museum holds still and ignores walking keys. */
+  frozen?: boolean
+  /** While the visitor is inside a visit's 3D room, hidden behind it: the museum stops drawing. */
+  paused?: boolean
+  /** Diving into a picture (or back out): flies the camera and blurs the view. */
+  dive: RefObject<Dive | null>
 }) {
   const look = LOOKS[plan.style]
   const walk = (walker as { current: WalkerHandle | null }) ?? null
@@ -58,6 +71,7 @@ export function MuseumScene({
 
   return (
     <Canvas
+      frameloop={paused ? 'never' : 'always'}
       dpr={handheld ? [1, 1.5] : [1, 2]}
       camera={{ fov: 62, near: 0.05, far: 120, position: [plan.start[0], EYE, plan.start[1]] }}
       gl={{ antialias: false, powerPreference: 'high-performance', stencil: false }}
@@ -89,16 +103,17 @@ export function MuseumScene({
       </mesh>
 
       {exhibition.items.map((art, i) =>
-        plan.slots[i] ? <Artwork key={art.id} art={art} slot={plan.slots[i]} look={look} focused={i === focus} onSelect={onSelect} /> : null,
+        plan.slots[i] ? <Artwork key={art.id} art={art} slot={plan.slots[i]} look={look} focused={i === focus} onSelect={onSelect} onMeasure={onMeasure} /> : null,
       )}
 
-      <Walker plan={plan} onArrive={onArrive} onLook={onLook} hung={exhibition.items.length} ref={walker} guided={look.guided} />
+      <Walker plan={plan} onArrive={onArrive} onLook={onLook} hung={exhibition.items.length} ref={walker} guided={look.guided} frozen={frozen} />
 
       <EffectComposer multisampling={0} enableNormalPass={false}>
         <N8AO aoRadius={0.55} distanceFalloff={0.6} intensity={look.occlusion * (handheld ? 0.75 : 1)} quality={handheld ? 'performance' : 'medium'} halfRes={handheld} color={new THREE.Color('#1a1210')} />
         <SMAA />
         <Vignette offset={0.32} darkness={look.vignette ? 0.42 : 0} />
         <ToneMapping mode={ToneMappingMode.NEUTRAL} />
+        <DiveCamera dive={dive} />
       </EffectComposer>
     </Canvas>
   )
