@@ -1,0 +1,117 @@
+{
+  "source": "2ac42b66-4c0d-4962-9723-f359c34984ed",
+  "id": "496f722d-1ca7-4a3f-818e-aa6b93d1c4b9",
+  "device": "cuda",
+  "views": 310,
+  "before": 5378736,
+  "after": 4764574,
+  "reviewed_removed": 34142,
+  "exclusions": {
+    "source": "2ac42b66-4c0d-4962-9723-f359c34984ed",
+    "imageSize": [
+      1008,
+      567
+    ],
+    "regions": [
+      {
+        "time": 15,
+        "polygon": [
+          [
+            280,
+            307
+          ],
+          [
+            352,
+            307
+          ],
+          [
+            387,
+            400
+          ],
+          [
+            383,
+            484
+          ],
+          [
+            277,
+            496
+          ]
+        ],
+        "depthRange": [
+          2,
+          4.25
+        ],
+        "reason": "Remaining hair, sleeve and blouse fragments beside the left seated people; background cabinetry lies farther away. Thin foreground candle/branch pixels inside this volume are also removed."
+      },
+      {
+        "time": 15,
+        "polygon": [
+          [
+            905,
+            356
+          ],
+          [
+            944,
+            360
+          ],
+          [
+            948,
+            408
+          ],
+          [
+            910,
+            411
+          ]
+        ],
+        "depthRange": [
+          3,
+          4.2
+        ],
+        "reason": "Floating hand/sleeve fragment beside the right seated person, in front of the sink cabinetry."
+      },
+      {
+        "time": 15,
+        "polygon": [
+          [
+            243,
+            467
+          ],
+          [
+            276,
+            467
+          ],
+          [
+            279,
+            500
+          ],
+          [
+            244,
+            500
+          ]
+        ],
+        "depthRange": [
+          2,
+          4.1
+        ],
+        "reason": "Small skin-colored hand fragment at the left edge of the table."
+      }
+    ]
+  },
+  "person_rejected": 49051,
+  "free_space_rejected": 339461,
+  "unsupported": 320542,
+  "settings": {
+    "mask_score": 0.25,
+    "mask_padding_px": 16,
+    "person_depth_relative": 0.025,
+    "person_depth_min_m": 0.06,
+    "person_color_mae": 28,
+    "static_color_mae": 35,
+    "static_min_views": 3,
+    "static_to_person_ratio": 2,
+    "free_min_views": 5,
+    "free_to_static_ratio": 0.5
+  },
+  "representation": "points",
+  "replay": false
+}

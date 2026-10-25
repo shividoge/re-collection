@@ -60,6 +60,12 @@ or files. Once baked, the package with the most room points is selected by the f
 viewers, the palace and the Memory Window. An unfinished package leaves the original scene active.
 Use a new capture ID for changed packages. Deleting the memory also deletes its alternate packages.
 
+A cleaned scene may contain fewer points. After reviewing its direct capture URL, select it with
+`bun scripts/prefer-reconstruction.ts <original ID> <scene ID>`. This token-protected mutation
+only accepts a completed, non-empty scene linked to that memory. Pass `auto` instead of the scene ID to
+restore automatic density selection. An unavailable preferred package falls back to density selection;
+other memories retain their existing defaults. Importing a smaller scene does not select it automatically.
+
 For a reconstruction of a phone video whose world is tilted, first run
 `tools/video2capture/align_capture.py <converted folder> --reference <phone folder> --out <new folder>`
 in the converter environment. This applies one rigid transform to the room, camera poses and
