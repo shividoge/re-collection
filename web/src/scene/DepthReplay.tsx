@@ -6,7 +6,7 @@ import { fetchRange } from '../api'
 import type { Manifest } from '../api'
 import type { FrameRecord } from './formats'
 import { depthMeshIndices } from './gaps'
-import { frameIndexAtTime } from './pose'
+import { depthFrameIndices, nearestDepthFrame } from './pose'
 
 type DepthFrame = { data: Float32Array }
 
@@ -20,16 +20,6 @@ function decodeDepthFrame(depth: ArrayBuffer, confidence: ArrayBuffer, count: nu
     data[k * 2 + 1] = conf[k]
   }
   return { data }
-}
-
-/** The frame with depth closest to `frame`, up to `maxFrames` either way (depth is 10 Hz). -1 if none. */
-function depthFrameNear(frames: FrameRecord[], frame: number, maxFrames = 3): number {
-  for (let offset = 0; offset <= maxFrames; offset++) {
-    for (const k of offset === 0 ? [frame] : [frame - offset, frame + offset]) {
-      if (k >= 0 && k < frames.length && frames[k].d !== null) return k
-    }
-  }
-  return -1
 }
 
 /**
@@ -60,6 +50,9 @@ export function DepthReplay({
   const { width, height } = manifest.depth
   const cache = useRef(new Map<number, DepthFrame | 'loading'>())
   const shown = useRef(-1)
+  const withDepth = useMemo(() => depthFrameIndices(frames), [frames])
+  // Show a depth frame up to one depth interval away (0.1 s on a phone); past that, a gap shows nothing.
+  const maxGap = manifest.depth.rateHz > 0 ? 1 / manifest.depth.rateHz : Infinity
 
   const videoTexture = useMemo(() => {
     const texture = new THREE.VideoTexture(video)
@@ -164,7 +157,7 @@ export function DepthReplay({
   }
 
   useFrame(() => {
-    const frame = depthFrameNear(frames, frameIndexAtTime(frames, timeRef.current))
+    const frame = nearestDepthFrame(frames, withDepth, timeRef.current, maxGap)
     if (frame < 0) {
       material.uniforms.uVisible.value = 0
       return
