@@ -200,7 +200,7 @@ export function automaticArrangement(visits: Visit[]): Arrangement {
 }
 
 /** "Our visits": the caretaker's arrangement if there is one, otherwise the automatic museum. */
-async function visits(): Promise<Exhibition | null> {
+export async function visits(): Promise<Exhibition | null> {
   const [all, arrangement] = await Promise.all([loadVisits(), loadArrangement()])
   if (all.length === 0) return null
   return arrangedExhibition(arrangement && arrangement.items.length > 0 ? arrangement : automaticArrangement(all), all)
