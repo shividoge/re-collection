@@ -32,6 +32,8 @@ final class CaptureRecorder {
         let audioSampleRate: Int
         let scanSpan: CaptureManifest.Span?
         var warnings: [String]
+        /// Heard the moment while it recorded; nil when live recognition wasn't available.
+        let transcriber: LiveTranscriber?
     }
 
     static let maxMomentSeconds: Double = 180
@@ -79,6 +81,7 @@ final class CaptureRecorder {
     /// File queue only: keyframes written so far (always 0..<count) and why they stopped.
     private var keyframeCount = 0
     private var keyframeFailure: String?
+    private var transcriber: LiveTranscriber?
     private lazy var ciContext = CIContext()
 
     init(folder: URL, fps: Int) throws {
@@ -133,6 +136,8 @@ final class CaptureRecorder {
         guard mode == .moment, let t0, let audioInput else { return }
         // Drop audio from before the first video frame.
         guard CMSampleBufferGetPresentationTimeStamp(buffer).seconds >= t0 else { return }
+        // Every buffer goes to the recognizer, even one the writer drops.
+        transcriber?.append(buffer, t0: t0)
         guard audioInput.isReadyForMoreMediaData,
               let retimed = RecordingFormat.retimedAudio(buffer, t0: t0),
               audioInput.append(retimed)
@@ -214,6 +219,7 @@ final class CaptureRecorder {
         let t0 = frame.timestamp
         self.t0 = t0
         mode = .moment
+        transcriber = LiveTranscriber.start()
 
         // Now that t0 is known, the scan lines can be written before the moment's.
         let scanLines = pendingScanLines.map { entry -> String in
@@ -271,6 +277,7 @@ final class CaptureRecorder {
     func finishMoment(completion: @escaping (Result<MomentResult, Error>) -> Void) {
         guard mode == .moment, let writer, let t0 else {
             mode = .finished
+            transcriber?.cancel()
             closeFiles(cancelWriter: true) {}
             completion(.failure(RecorderError.noFrames))
             return
@@ -296,7 +303,8 @@ final class CaptureRecorder {
             fps: fps,
             audioSampleRate: audioSampleRate,
             scanSpan: scanSpan,
-            warnings: warnings)
+            warnings: warnings,
+            transcriber: transcriber)
 
         writer.finishWriting { [self] in
             if writer.status != .completed {
@@ -321,6 +329,7 @@ final class CaptureRecorder {
     func cancel() {
         guard mode != .finished else { return }
         mode = .finished
+        transcriber?.cancel()
         closeFiles(cancelWriter: true) {}
     }
 

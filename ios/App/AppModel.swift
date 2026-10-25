@@ -251,13 +251,9 @@ final class AppModel: ObservableObject {
         let videoURL = folder.appending(path: moment.videoFile)
         var warnings: [String] = []
 
-        phase = .savingMoment(step: "Transcribing on the phone…")
-        var transcript: TranscriptFile?
-        do {
-            transcript = try await PostProcessor.transcribe(video: videoURL, folder: folder)
-        } catch {
-            warnings.append(error.localizedDescription)
-        }
+        phase = .savingMoment(step: "Finishing the transcript…")
+        let (transcript, transcriptWarning) = await PostProcessor.transcript(live: moment.transcriber, video: videoURL, folder: folder)
+        if let transcriptWarning { warnings.append(transcriptWarning) }
 
         guard token == activeToken else { return }
         let manifest = CaptureStore.manifest(

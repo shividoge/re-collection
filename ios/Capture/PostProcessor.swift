@@ -15,6 +15,37 @@ enum PostProcessor {
         }
     }
 
+    /// The transcript heard live during recording when that worked, otherwise
+    /// the saved audio transcribed now. Writes transcript.json; on failure
+    /// returns nil plus the reason for the manifest warnings.
+    static func transcript(live: LiveTranscriber?, video: URL, folder: URL) async -> (file: TranscriptFile?, warning: String?) {
+        if let live {
+            do {
+                let words = try await live.finish()
+                return (try writeTranscript(words, locale: live.localeIdentifier, folder: folder), nil)
+            } catch {
+                print("Live transcription failed, transcribing the saved audio instead: \(error.localizedDescription)")
+            }
+        }
+        do {
+            return (try await transcribe(video: video, folder: folder), nil)
+        } catch {
+            return (nil, error.localizedDescription)
+        }
+    }
+
+    /// "No speech detected": nobody spoke, which is a valid answer.
+    static func isNoSpeech(_ error: Error) -> Bool {
+        let error = error as NSError
+        return error.domain == "kAFAssistantErrorDomain" && error.code == 1110
+    }
+
+    private static func writeTranscript(_ words: [TranscriptWord], locale: String, folder: URL) throws -> TranscriptFile {
+        let transcript = TranscriptFile(locale: locale, segments: TranscriptBuilder.segments(from: words))
+        try transcript.encoded().write(to: folder.appending(path: "transcript.json"), options: .atomic)
+        return transcript
+    }
+
     /// Transcribes the video's audio on the phone (nothing leaves the device)
     /// and writes transcript.json. An empty recording gives an empty transcript.
     static func transcribe(video: URL, folder: URL, localeIdentifier: String = "en-US") async throws -> TranscriptFile {
@@ -47,13 +78,10 @@ enum PostProcessor {
             words = result.bestTranscription.segments.map {
                 TranscriptWord(start: $0.timestamp, end: $0.timestamp + $0.duration, word: $0.substring)
             }
-        } catch let error as NSError where error.domain == "kAFAssistantErrorDomain" && error.code == 1110 {
-            words = []   // "No speech detected": nobody spoke, which is a valid answer
+        } catch where isNoSpeech(error) {
+            words = []
         }
-
-        let transcript = TranscriptFile(locale: localeIdentifier, segments: TranscriptBuilder.segments(from: words))
-        try transcript.encoded().write(to: folder.appending(path: "transcript.json"), options: .atomic)
-        return transcript
+        return try writeTranscript(words, locale: localeIdentifier, folder: folder)
     }
 
     private static func recognize(_ request: SFSpeechRecognitionRequest, with recognizer: SFSpeechRecognizer) async throws -> SFSpeechRecognitionResult {
