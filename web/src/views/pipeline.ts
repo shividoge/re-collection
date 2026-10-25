@@ -37,7 +37,7 @@ const NO_WORKER: Record<Exclude<Kind, 'facts'>, (durationSec: number | null) => 
  * `queued` the capture's queued jobs with their needs; a queued job nobody online can take says
  * what it's waiting for.
  */
-export function stageLines(status: CaptureStatus, workers: WorkerInfo[], durationSec: number | null, queued: QueuedJob[]): StageLine[] {
+export function stageLines(status: CaptureStatus, workers: WorkerInfo[], durationSec: number | null, queued: QueuedJob[] | undefined): StageLine[] {
   if (status.upload === 'invalid') {
     return [{ key: 'upload', label: `Incomplete: ${status.uploadErrors[0] ?? 'the upload didn’t match its manifest'}`, tone: 'failed' }]
   }
@@ -53,7 +53,8 @@ export function stageLines(status: CaptureStatus, workers: WorkerInfo[], duratio
     }
     let label = VERBS[kind][stage] ?? `${NAMES[kind]}: not started`
     if (stage === 'queued' && kind !== 'facts') {
-      const needs = queued.find((j) => j.kind === kind)?.needs ?? { gpu: kind !== 'bake' }
+      // `queued` is missing from a backend deployed before it existed: fall back to kind + GPU.
+      const needs = queued?.find((j) => j.kind === kind)?.needs ?? { gpu: kind !== 'bake' }
       if (!workers.some((w) => canRun({ kind, needs }, w))) label = NO_WORKER[kind](durationSec)
     }
     lines.push({ key: kind, label, tone: toneOf(stage) })
