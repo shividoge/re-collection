@@ -9,14 +9,22 @@ import {
   piecesOf,
   resetArrangement,
   saveArrangement,
+  type Artwork,
   type Visit,
 } from './exhibitions'
 import { visitLink } from './live/visitKey'
 import { MuseumPage, type MuseumHandle } from './MuseumPage'
+import { useUprightSrc } from './upright'
 import './museum.css'
 import './editor.css'
 
 const STATIC = dataMode === 'static'
+
+/** A piece's picture (a video's poster), upright as it hangs. */
+function PieceImg({ art }: { art: Artwork }) {
+  const src = useUprightSrc(art.poster ?? art.src, art.turns)
+  return src ? <img src={src} alt="" loading="lazy" /> : null
+}
 
 const CAPTION_MAX = 240
 const TITLE_MAX = 80
@@ -259,7 +267,7 @@ export function MuseumEditor() {
                       if (!art) return null
                       return (
                         <button key={piece} className="me-piece" onClick={() => add(v, piece)} title={`Hang ${piece === 'video' ? 'the video' : 'this picture'}`}>
-                          <img src={art.poster ?? art.src} alt="" loading="lazy" />
+                          <PieceImg art={art} />
                           {piece === 'video' && <span className="me-badge">▶ video</span>}
                         </button>
                       )
@@ -287,7 +295,7 @@ export function MuseumEditor() {
                 >
                   <span className="me-n">{i + 1}</span>
                   <div className="me-thumb">
-                    {art ? <img src={art.poster ?? art.src} alt="" loading="lazy" /> : <span>missing</span>}
+                    {art ? <PieceImg art={art} /> : <span>missing</span>}
                     {row.piece === 'video' && <span className="me-badge">▶</span>}
                   </div>
                   <div className="me-words">

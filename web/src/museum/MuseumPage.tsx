@@ -5,6 +5,7 @@ import type * as THREE from 'three'
 import { followIndex, visits, type Exhibition } from './exhibitions'
 import { planMuseum, walkTarget } from './layout'
 import { MuseumScene } from './MuseumScene'
+import type { QuarterTurns } from '../scene/pose'
 import { paintToCanvas } from './painter'
 import { roomHash } from './roomSync'
 import { MuseumSound } from './sound'
@@ -84,7 +85,8 @@ export function MuseumPage({
     renderer.current = gl
   }, [])
   const paint = useCallback(
-    (src: string, maxW: number, maxH: number) => (renderer.current ? paintToCanvas(renderer.current, src, maxW, maxH) : Promise.reject(new Error('The museum is not drawn yet.'))),
+    (src: string, maxW: number, maxH: number, turns: QuarterTurns) =>
+      renderer.current ? paintToCanvas(renderer.current, src, maxW, maxH, turns) : Promise.reject(new Error('The museum is not drawn yet.')),
     [],
   )
   const sound = useMemo(() => new MuseumSound(), [])

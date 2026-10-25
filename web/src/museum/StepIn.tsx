@@ -8,6 +8,8 @@ import { Painted, PaintedStill } from './Painted'
 import { useCaptureAssets } from '../data'
 import { SceneViewer, useCaptureScene } from '../scene'
 import { ARRIVE_MS, LEAVE_MS } from './warp'
+import { useUprightSrc } from './upright'
+import type { QuarterTurns } from '../scene/pose'
 
 /** Where the visitor is with a picture: diving toward it, inside it, or on the way back out. */
 export type Stage = 'diving' | 'here' | 'leaving'
@@ -50,9 +52,9 @@ function fadeVolume(v: HTMLVideoElement, to: number, ms: number, done?: () => vo
 /**
  * The world inside a picture, which the visitor reaches by diving into its frame (the museum
  * does the dive; this is the far side).
- * - A visit's picture opens onto the visit's own 3D room, seen from where the phone was at that
- *   moment, so the picture and the room line up; the visitor can look around, replay the visit
- *   and talk about it there. The room loads during the dive; until it's ready the picture
+ * - A visit's picture opens onto the visit's own 3D room, in the same player as the capture page
+ *   (the room, the video and its sound, the people replayed in 3D); the visitor can look around,
+ *   replay the visit and talk about it there. The room loads during the dive; until it's ready the picture
  *   itself stands in for it.
  * - Any other photo fills the view and drifts slowly; a video plays, its own sound rising
  *   gently as the visitor arrives.
@@ -75,7 +77,7 @@ export function StepIn({
   onCovered?: (covered: boolean) => void
   onGone: () => void
   /** Paints a photo as the museum shows it (the museum's own renderer); without it, no painted overlay. */
-  paint?: (src: string, maxW: number, maxH: number) => Promise<HTMLCanvasElement>
+  paint?: (src: string, maxW: number, maxH: number, turns: QuarterTurns) => Promise<HTMLCanvasElement>
   /** False for family following her in a live visit: they come back out when she does. */
   canLeave?: boolean
 }) {
@@ -99,6 +101,8 @@ export function StepIn({
   const stopFade = useRef<() => void>(() => {})
   useEffect(() => () => stopFade.current(), [])
   const still = art.kind === 'photo' ? art.src : (art.poster ?? '')
+  // The picture as it hangs: a phone's sideways pictures turned upright.
+  const shownStill = useUprightSrc(still || undefined, art.turns)
 
   const onRoomReady = useCallback(() => setRoomSince(performance.now()), [])
 
@@ -171,7 +175,7 @@ export function StepIn({
   const painted =
     art.kind === 'video' && !hasRoom
       ? stage !== 'diving' && <Painted source={source} fit={fit} painted={paint} ms={ms} onSettled={onPaintSettled} />
-      : still && paintPhoto && <PaintedStill src={still} paint={paintPhoto} fit={fit} painted={paint} ms={ms} onSettled={onPaintSettled} />
+      : still && paintPhoto && <PaintedStill src={still} turns={art.turns} paint={paintPhoto} fit={fit} painted={paint} ms={ms} onSettled={onPaintSettled} />
 
   const showUi = stage === 'here' && settled && (!hasRoom || roomLive || Boolean(roomError))
   return (
@@ -187,16 +191,16 @@ export function StepIn({
             )}
             {/* The picture itself, standing in for the room until the room is ready. */}
             <div ref={cover} className={`stepin-cover${roomLive ? ' gone' : ''}`}>
-              {still && <img src={still} alt="" draggable={false} />}
+              {shownStill && <img src={shownStill} alt="" draggable={false} />}
               {painted}
             </div>
           </>
         ) : (
           <>
-            <div className="stepin-backdrop" style={still ? { backgroundImage: `url("${still}")` } : undefined} />
+            <div className="stepin-backdrop" style={shownStill ? { backgroundImage: `url("${shownStill}")` } : undefined} />
             <div className={`stepin-picture${art.kind === 'photo' ? ' drift' : ''}`}>
               {art.kind === 'photo' ? (
-                <img className="stepin-full" src={art.src} alt={art.title ?? ''} draggable={false} />
+                shownStill && <img className="stepin-full" src={shownStill} alt={art.title ?? ''} draggable={false} />
               ) : (
                 <video
                   ref={video}
@@ -249,6 +253,7 @@ function Room({ assets, startAt, onReady, onError }: { assets: CaptureAssets; st
   }, [status, message, onReady, onError])
   if (status !== 'ready') return null
   return (
-    <SceneViewer assets={assets} initialMode="follow" startAt={startAt} showVideo={false} overlay={(controls) => <VisitDock captureId={assets.id} controls={controls} />} />
+    // The same player as the capture page: its video, sound and people replayed in 3D.
+    <SceneViewer assets={assets} startAt={startAt} overlay={(controls) => <VisitDock captureId={assets.id} controls={controls} />} />
   )
 }

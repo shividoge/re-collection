@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
+import type { QuarterTurns } from '../scene/pose'
 import { brushStep, PAINT_GLSL } from './paint'
 
 /**
@@ -146,6 +147,7 @@ export function Painted({ source, fit, painted, ms, onSettled }: { source: HTMLI
  */
 export function PaintedStill({
   src,
+  turns = 0,
   paint,
   fit,
   painted,
@@ -153,7 +155,9 @@ export function PaintedStill({
   onSettled,
 }: {
   src: string
-  paint: (src: string, maxW: number, maxH: number) => Promise<HTMLCanvasElement>
+  /** Quarter turns clockwise that stand the photo upright. */
+  turns?: QuarterTurns
+  paint: (src: string, maxW: number, maxH: number, turns: QuarterTurns) => Promise<HTMLCanvasElement>
   fit: 'contain' | 'cover'
   painted: boolean
   ms: number
@@ -166,14 +170,14 @@ export function PaintedStill({
     let cancelled = false
     const k = Math.min(2, window.devicePixelRatio || 1)
     const side = Math.min(2048, Math.ceil(Math.max(window.innerWidth, window.innerHeight) * k))
-    paint(src, side, side).then(
+    paint(src, side, side, turns).then(
       (c) => !cancelled && setCanvas(c),
       () => !cancelled && setFailed(true),
     )
     return () => {
       cancelled = true
     }
-  }, [src, paint])
+  }, [src, turns, paint])
   useEffect(() => {
     const el = box.current
     if (!el || !canvas) return

@@ -109,12 +109,15 @@ export function rollColumnMajor(T: number[], angle: number): number[] {
   return out
 }
 
+/** Quarter turns clockwise (0–3). */
+export type QuarterTurns = 0 | 1 | 2 | 3
+
 /**
  * The sensor image is always landscape, however the phone was held. Returns k so that
  * rolling the camera by k·90° (T · Rz(k·π/2)) brings its up axis closest to world up.
  * The same k, as a CSS rotate(k·90deg), turns the stored video upright.
  */
-export function uprightQuarterTurns(T: number[]): 0 | 1 | 2 | 3 {
+export function uprightQuarterTurns(T: number[]): QuarterTurns {
   // World-space camera axes: x = column 0, y = column 1. Their world-up components:
   const xUp = T[1]
   const yUp = T[5]
@@ -122,7 +125,7 @@ export function uprightQuarterTurns(T: number[]): 0 | 1 | 2 | 3 {
   const scores = [yUp, -xUp, -yUp, xUp]
   let best = 0
   for (let k = 1; k < 4; k++) if (scores[k] > scores[best]) best = k
-  return best as 0 | 1 | 2 | 3
+  return best as QuarterTurns
 }
 
 /** Rotate a pixel offset from image center the way CSS rotate(deg) does (screen y down). */
@@ -134,9 +137,9 @@ export function rotatePixelOffsetCss(dx: number, dy: number, deg: number): [numb
 }
 
 /** Most common upright correction across the frames (phones rarely rotate mid-clip). */
-export function dominantQuarterTurns(frames: FrameRecord[]): 0 | 1 | 2 | 3 {
+export function dominantQuarterTurns(frames: FrameRecord[]): QuarterTurns {
   const counts = [0, 0, 0, 0]
   const step = Math.max(1, Math.floor(frames.length / 200))
   for (let i = 0; i < frames.length; i += step) counts[uprightQuarterTurns(frames[i].T)]++
-  return counts.indexOf(Math.max(...counts)) as 0 | 1 | 2 | 3
+  return counts.indexOf(Math.max(...counts)) as QuarterTurns
 }
