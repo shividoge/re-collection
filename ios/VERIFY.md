@@ -133,6 +133,7 @@ Upload
 - [ ] Send, then go to the home screen and open another app for a few minutes: the upload continues and finishes
 - [ ] Send, then force-quit the app (swipe it away) halfway through. Reopen it: Home shows the upload resuming, and it finishes without starting over (the progress jumps back to about where it was; the Convex logs show `uploads:resume`, not new `uploads:start` calls for files that were done)
 - [ ] Turn on Airplane mode mid-upload: progress stops; turn it off: it carries on. If it ends in an error instead, "Try again" finishes it
+- [ ] Force-quit mid-upload of the video, turn on Airplane mode, reopen the app (so `uploads:resume` fails), then turn Airplane mode off: the upload keeps the same upload and finishes without re-sending the parts already in R2 (Convex logs: `uploads:resume` again, no new `uploads:start` for video.mp4)
 - [ ] "Finish" on the review screen during an upload goes home, and Home shows "Uploading “title”… N%"
 - [ ] An upload that failed for good (e.g. the backend rejected the package) shows the reason on Home with "Try again" and "Stop trying"
 - [ ] A 3-minute visit (about 180 MB of video) uploads completely on venue Wi-Fi

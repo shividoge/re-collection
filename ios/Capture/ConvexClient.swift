@@ -40,7 +40,8 @@ struct ConvexClient {
                     function: path,
                     message: envelope.errorMessage ?? "unknown error",
                     code: envelope.errorData?.code,
-                    details: envelope.errorData?.errors ?? [])
+                    details: envelope.errorData?.errors ?? [],
+                    retryable: envelope.errorData?.retryable ?? false)
             }
         }
         if !(200..<300).contains(status) {
@@ -64,17 +65,20 @@ struct ConvexClient {
         var errorData: ErrorData?
     }
 
-    /// `ConvexError({ code, errors })` data. Anything else is ignored.
+    /// `ConvexError({ code, message, retryable, errors })` data (backend/convex/lib/errors.ts).
+    /// Anything else is ignored; a missing `retryable` means no.
     private struct ErrorData: Decodable {
         var code: String?
         var errors: [String]?
+        var retryable: Bool?
 
-        private enum Keys: String, CodingKey { case code, errors }
+        private enum Keys: String, CodingKey { case code, errors, retryable }
 
         init(from decoder: Decoder) throws {
             let container = try? decoder.container(keyedBy: Keys.self)
             code = (try? container?.decodeIfPresent(String.self, forKey: .code)) ?? nil
             errors = (try? container?.decodeIfPresent([String].self, forKey: .errors)) ?? nil
+            retryable = (try? container?.decodeIfPresent(Bool.self, forKey: .retryable)) ?? nil
         }
     }
 
@@ -172,22 +176,24 @@ enum UploadError: LocalizedError, Equatable {
     case badURL(String)
     case network(String)
     case http(status: Int, function: String, message: String?)
-    case convex(function: String, message: String, code: String?, details: [String])
+    /// `retryable` is the backend's own call (e.g. a storage hiccup); missing means false.
+    case convex(function: String, message: String, code: String?, details: [String], retryable: Bool)
     /// R2 refused a PUT (an expired URL answers 403).
     case storage(file: String, status: Int)
     /// Some part didn't make it; the next round asks R2 what's missing.
     case incomplete(String)
     case unexpected(String)
 
-    /// Network trouble, 5xx answers and expired upload URLs can pass on a
-    /// second try (which asks Convex for fresh URLs). A function error such as
-    /// an invalid package won't.
+    /// Network trouble, 5xx answers, expired upload URLs and function errors
+    /// the backend marks retryable can pass on a second try (which asks Convex
+    /// for fresh URLs). A function error such as an invalid package won't.
     var isRetryable: Bool {
         switch self {
         case .network, .incomplete: return true
         case .http(let status, _, _): return status >= 500 || status == 429
         case .storage(_, let status): return status >= 500 || status == 403 || status == 408 || status == 429 || status == 0
-        case .badURL, .convex, .unexpected: return false
+        case .convex(_, _, _, _, let retryable): return retryable
+        case .badURL, .unexpected: return false
         }
     }
 
@@ -199,9 +205,9 @@ enum UploadError: LocalizedError, Equatable {
             return "Couldn't reach Braindance: \(detail)"
         case .http(let status, let function, let message):
             return "\(function) failed (HTTP \(status))" + (message.map { ": \($0)" } ?? ".")
-        case .convex(_, _, let code, let details) where code == "invalid" && !details.isEmpty:
+        case .convex(_, _, let code, let details, _) where code == "invalid" && !details.isEmpty:
             return "The upload didn't check out: " + details.joined(separator: " ")
-        case .convex(let function, let message, _, _):
+        case .convex(let function, let message, _, _, _):
             return "\(function): \(message)"
         case .storage(let file, let status):
             return status == 0 ? "\(file) didn't reach the storage server." : "The storage server refused \(file) (HTTP \(status))."
