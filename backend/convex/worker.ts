@@ -1,12 +1,11 @@
 // The job protocol for bake and GPU workers (docs/architecture-v3.md §7). Every function takes
 // the shared WORKER_TOKEN and, after claim, the `attempt` claim returned: only the attempt holding
 // the job's lease can read inputs, write outputs (to keys of its own) and complete or fail it.
-import { ConvexError, v } from 'convex/values'
+import { v } from 'convex/values'
 import { parseManifest } from '../../shared/manifest'
 import { internal } from './_generated/api'
-import type { Doc } from './_generated/dataModel'
 import { action, internalQuery, mutation } from './_generated/server'
-import { getCapture, getFile, invalid, listFiles, notFound, patchStatus, workerKey } from './lib/data'
+import { getCapture, invalid, listFiles, patchStatus, workerKey } from './lib/data'
 import { canRun, cancelled, enqueue, heartbeat as extendLease, holdsLease, lease, markDone, markFailed, requireLease, requireToken, seeWorker } from './lib/jobs'
 import { r2Config, stableGetUrl } from './lib/r2'
 import { completeUpload, publishOutputs } from './lib/stages'
