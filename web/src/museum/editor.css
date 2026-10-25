@@ -1,0 +1,356 @@
+/* The caretaker's museum editor: the list on the left, the museum itself as a live preview. */
+
+.museum-editor {
+  display: grid;
+  grid-template-columns: minmax(340px, 440px) 1fr;
+  user-select: auto;
+  touch-action: auto;
+}
+.museum-editor input,
+.museum-editor textarea {
+  user-select: text;
+}
+
+.me-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  background: #1a1118;
+  border-right: 1px solid var(--m-line);
+}
+.me-head {
+  padding: 20px 22px 8px;
+}
+.me-back {
+  color: var(--m-muted);
+  font-size: 14px;
+  text-decoration: none;
+}
+.me-back:hover {
+  color: var(--m-ink);
+}
+.me-head h1 {
+  margin: 14px 0 6px;
+  font-family: 'Iowan Old Style', Palatino, Georgia, serif;
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.me-head p {
+  margin: 0;
+  color: var(--m-muted);
+  font-size: 15px;
+  line-height: 1.45;
+}
+.me-head .me-note {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 179, 92, 0.12);
+  color: #ffcf96;
+  font-size: 13px;
+}
+
+.me-section {
+  padding: 14px 22px;
+  border-top: 1px solid var(--m-line);
+}
+.me-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.me-section-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.me-section-head h2 span {
+  margin-left: 6px;
+  color: var(--m-muted);
+  font-weight: 400;
+}
+
+.me-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--m-muted);
+}
+.museum-editor input,
+.museum-editor textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--m-line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--m-ink);
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+.museum-editor input:focus,
+.museum-editor textarea:focus {
+  outline: none;
+  border-color: #ffb35c;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.museum-editor button {
+  font: inherit;
+  cursor: pointer;
+}
+.me-add-toggle {
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--m-line);
+  background: transparent;
+  color: var(--m-ink);
+  font-size: 13px;
+}
+.me-add-toggle:hover {
+  border-color: #ffb35c;
+}
+
+.me-library {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 340px;
+  overflow-y: auto;
+  margin-bottom: 14px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
+}
+.me-visit strong {
+  display: block;
+  font-size: 14px;
+}
+.me-visit > span {
+  color: var(--m-muted);
+  font-size: 12px;
+}
+.me-pieces {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+.me-piece {
+  position: relative;
+  padding: 0;
+  aspect-ratio: 4 / 3;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--m-line);
+  background: #000;
+}
+.me-piece:hover {
+  border-color: #ffb35c;
+}
+.me-piece img,
+.me-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.me-badge {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 10px;
+}
+
+.me-empty {
+  color: var(--m-muted);
+  font-size: 14px;
+}
+.me-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.me-row {
+  display: grid;
+  grid-template-columns: 18px 64px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: grab;
+}
+.me-row.on {
+  border-color: rgba(255, 179, 92, 0.6);
+  background: rgba(255, 179, 92, 0.08);
+}
+.me-n {
+  padding-top: 6px;
+  color: var(--m-muted);
+  font-size: 12px;
+  text-align: right;
+}
+.me-thumb {
+  position: relative;
+  width: 64px;
+  aspect-ratio: 4 / 3;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #000;
+}
+.me-words {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.me-words textarea {
+  font-size: 13px;
+}
+.me-count {
+  align-self: flex-end;
+  color: var(--m-muted);
+  font-size: 11px;
+}
+.me-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.me-tools button {
+  width: 30px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--m-line);
+  background: transparent;
+  color: var(--m-ink);
+}
+.me-tools button:hover:not(:disabled) {
+  border-color: #ffb35c;
+}
+.me-tools button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.me-foot {
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  padding: 14px 22px 18px;
+  border-top: 1px solid var(--m-line);
+  background: #1a1118;
+}
+.me-buttons {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.me-save {
+  padding: 11px 22px;
+  border-radius: 999px;
+  border: 0;
+  background: #ff5c3a;
+  color: #fff;
+  font-weight: 600;
+}
+.me-save:disabled {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--m-muted);
+  cursor: default;
+}
+.me-open {
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--m-line);
+  color: var(--m-ink);
+  text-decoration: none;
+  font-size: 14px;
+}
+.me-open:hover {
+  border-color: #ffb35c;
+}
+.me-status {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.me-status.ok {
+  color: #9fe0b0;
+}
+.me-status.error {
+  color: #ff9b8a;
+}
+.me-status.busy {
+  color: var(--m-muted);
+}
+.me-link {
+  margin: 8px 0 4px;
+}
+.me-reset {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--m-muted);
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+.me-preview {
+  position: relative;
+  min-width: 0;
+}
+.me-preview-label {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--m-glass);
+  color: var(--m-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.museum-editor button:focus-visible,
+.museum-editor a:focus-visible {
+  outline: 2px solid #ffb35c;
+  outline-offset: 2px;
+}
+
+@media (max-width: 820px) {
+  .museum-editor {
+    grid-template-columns: 1fr;
+    grid-template-rows: 42vh auto;
+    overflow-y: auto;
+  }
+  .me-preview {
+    order: -1;
+    height: 42vh;
+  }
+  .me-panel {
+    overflow: visible;
+    border-right: 0;
+  }
+  .me-preview-label {
+    display: none;
+  }
+}

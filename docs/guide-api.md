@@ -213,6 +213,21 @@ type Peers = { patient: number; helpers: string[] };   // screens listening or p
 - **Validation:** `at` is an integer from -1 to 9999; `atId` is null or a capture id; `window` is null or the id of a capture on this guide; `by` is `patient` or `helper`; `name` is at most 40 characters. A bad body → 400. A badly formed or unknown code → 404.
 - **Storage:** in memory only (a `Map`); a guide restart forgets every room. A room expires 3 hours after its last change once no one is listening and no one has polled for 10 s; its code can then be reused.
 
+### Museum arrangement (the caretaker's editor)
+
+The caretaker sets up the patient's museum at `#/museum/edit`: which pictures hang, in what order, and the title and caption on each label. The patient's museum (`#/museum`) shows exactly that; without one, it hangs every visit automatically. Stored in `<DATA_DIR>/museum.json` (`guide/src/arrangement.mjs`).
+
+```
+GET    /api/museum/arrangement   → { arrangement: Arrangement | null }
+PUT    /api/museum/arrangement   ← { title, subtitle, items: [{ capture, piece, title, caption }] }   → { arrangement }
+DELETE /api/museum/arrangement   → { arrangement: null }   (back to the automatic museum)
+GET    /public/museum/arrangement → the same, with only pictures from public captures
+```
+
+- `capture` must be an existing capture id. `piece` is `video`, `thumb` or a keyframe `kNNNN` (never a path).
+- At most 60 items; `title` and the museum title up to 80 characters, `caption` up to 240 (cut, whitespace collapsed). 400 with a reason otherwise.
+- The static export writes the public copy to `data/museum/arrangement.json` when one is saved. On the static site the editor saves into that browser only.
+
 ## Public routes (visitors, no key)
 
 For the site's front page. Nothing here needs `X-Braindance-Key`, nothing writes, and nothing calls Claude. A capture is visible only after the family marks it public; a private capture answers 404, the same as one that doesn't exist.

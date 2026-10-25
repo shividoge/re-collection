@@ -1,3 +1,4 @@
+import { publicArrangement } from './arrangement.mjs';
 import { createPublicViews } from './public-views.mjs';
 import { sendError, sendFile, sendJson } from './http.mjs';
 
@@ -7,7 +8,7 @@ import { sendError, sendFile, sendJson } from './http.mjs';
  * private capture from one that doesn't exist. Nothing here writes or calls
  * Claude. What each route returns comes from public-views.mjs.
  */
-export function createPublic({ store, sessions }) {
+export function createPublic({ store, sessions, arrangement = null }) {
   const views = createPublicViews({ store, sessions });
   const notFound = (res, what = 'capture') => sendError(res, 404, `No public ${what} with that id.`);
   const FILES = '/public/files';
@@ -35,6 +36,12 @@ export function createPublic({ store, sessions }) {
     ['GET', /^\/public\/moments\/([^/]+)$/, json(views.moment, 'moment')],
     ['GET', /^\/public\/progress\/([^/]+)$/, json(views.progress)],
     ['GET', /^\/public\/sessions\/([^/]+)$/, json(views.session, 'session')],
+    // The caretaker's museum, with only the pictures from public captures.
+    [
+      'GET',
+      /^\/public\/museum\/arrangement$/,
+      async (req, res) => sendJson(res, 200, { arrangement: publicArrangement(await arrangement?.read(), await views.publicIds()) }),
+    ],
     ['GET', /^\/public\/files\/([^/]+)\/(.+)$/, file],
     ['HEAD', /^\/public\/files\/([^/]+)\/(.+)$/, file],
   ];

@@ -4,6 +4,7 @@ import { Dashboard, DashboardOverview } from './views/Dashboard'
 import { FactsPage } from './views/FactsPage'
 import { Gallery } from './views/Gallery'
 import { PublicView } from './views/PublicView'
+import { MuseumEditor } from './museum/MuseumEditor'
 import { MuseumPage } from './museum/MuseumPage'
 import { RoomFile } from './views/RoomFile'
 import { Showcase } from './views/Showcase'
@@ -28,6 +29,8 @@ const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
   [/^#\/memories(\?join=[A-Za-z]*)?$/i, (join) => <Museum key={join ?? ''} join={join?.slice('?join='.length)} />],
   // The walkable museum: #/museum, or #/museum/<exhibition id>.
   [/^#\/museum(?:\/([\w-]+))?$/, (id) => <MuseumPage key="museum" id={id} />],
+  // The caretaker's editor for that museum (after the line above, so it wins over an exhibition id).
+  [/^#\/museum\/edit$/, () => <MuseumEditor />],
 ]
 
 export default function App() {

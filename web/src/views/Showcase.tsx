@@ -75,7 +75,7 @@ export function Showcase() {
           {entries && entries.length > 0 && <a href="#moments">Moments</a>}
           <a href="#safety">Safety</a>
           <a href="#research">Research</a>
-          <a className="sn-museum" href="#/museum"><span className="sn-long">Enter the museum</span><span className="sn-short">Museum</span> →</a>
+          <a className="sn-museum" href="#/museum/edit"><span className="sn-long">Set up her museum</span><span className="sn-short">Museum</span> →</a>
         </div>
       </nav>
 

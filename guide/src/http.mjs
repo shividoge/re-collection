@@ -21,7 +21,7 @@ const CONTENT_TYPES = {
 
 export const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, PUT, POST, PATCH, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, PUT, POST, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Range, X-Braindance-Key',
   'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
 };

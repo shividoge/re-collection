@@ -168,6 +168,7 @@ function url(path: string): string {
     .replace(/^\/public\/captures$/, 'data/captures.json')
     .replace(/^\/public\/(captures|moments|progress|sessions)\/([^/?]+)$/, 'data/$1/$2.json')
     .replace(/^\/public\/files\//, 'data/files/')
+    .replace(/^\/public\/museum\/arrangement$/, 'data/museum/arrangement.json')
   return import.meta.env.BASE_URL + file
 }
 
@@ -236,7 +237,17 @@ export const publicGuide = {
   progress: (id: string) => publicGet<Progress>(`/public/progress/${id}`),
   session: (sid: string) => publicGet<PublicSession>(`/public/sessions/${sid}`),
   file: (id: string, name: string) => url(`/public/files/${id}/${name}`),
+  /** The caretaker's museum, public pictures only; null when none was saved. */
+  arrangement: () =>
+    publicGet<{ arrangement: Arrangement | null }>('/public/museum/arrangement')
+      .then((r) => r.arrangement)
+      .catch(() => null),
 }
+
+/** One picture the caretaker hung: a piece of a capture ("video", "thumb" or a keyframe "k0012"). */
+export type ArrangementItem = { capture: string; piece: string; title: string; caption: string }
+/** The museum as the caretaker set it up (docs/guide-api.md "Museum arrangement"). */
+export type Arrangement = { title: string; subtitle: string; items: ArrangementItem[]; updatedAt?: string }
 
 export const guide = {
   /** The family's switch: only a public capture is visible to visitors. Needs the key. */
@@ -249,6 +260,14 @@ export const guide = {
   health: () => request<{ ok: boolean; mock: boolean; keyRequired?: boolean }>('/health'),
   captures: () => request<CaptureSummary[]>('/api/captures'),
   capture: (id: string) => request<CaptureDetail>(`/api/captures/${id}`),
+  arrangement: () => request<{ arrangement: Arrangement | null }>('/api/museum/arrangement').then((r) => r.arrangement),
+  saveArrangement: (a: Omit<Arrangement, 'updatedAt'>) =>
+    request<{ arrangement: Arrangement }>('/api/museum/arrangement', {
+      method: 'PUT',
+      body: JSON.stringify(a),
+      headers: { 'Content-Type': 'application/json' },
+    }).then((r) => r.arrangement),
+  resetArrangement: () => request<{ arrangement: null }>('/api/museum/arrangement', { method: 'DELETE' }),
   putFile: (id: string, name: string, data: Uint8Array) =>
     request<{ ok: true; bytes: number }>(`/api/captures/${id}/files/${name.split('/').map(encodeURIComponent).join('/')}`, {
       method: 'PUT',
