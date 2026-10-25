@@ -229,7 +229,8 @@ def upload(
         log.info("uploaded %s (%d bytes)", path.name, size)
         return None
 
-    part_size = target.get("partSize")
+    # Convex's HTTP API sends numbers as floats (16777216.0); seek and read need ints.
+    part_size = int(target.get("partSize") or 0)
     urls = sorted(target.get("parts", []), key=lambda p: p["partNumber"])
     if not part_size or not urls:
         raise ValueError(f"Upload target for {path.name} has neither a single URL nor parts.")
@@ -238,7 +239,7 @@ def upload(
 
     def put_part(part: PartUrl, stop: ShouldStop) -> FinishedPart:
         _check(stop)
-        n = part["partNumber"]
+        n = int(part["partNumber"])
         with open(path, "rb") as f:
             f.seek((n - 1) * part_size)
             body = f.read(part_size)

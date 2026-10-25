@@ -209,8 +209,9 @@ class FakeConvex:
                           "single": {"url": f"{self.base}/put/{uid}?{SIG}", "headers": {"Content-Type": f["contentType"]}}}
             else:
                 n = -(-f["bytes"] // PART_SIZE)
-                target = {"uploadId": uid, "key": f"k/{f['name']}", "partSize": PART_SIZE,
-                          "parts": [{"partNumber": i, "url": f"{self.base}/part/{uid}/{i}?{SIG}"} for i in range(1, n + 1)]}
+                # Convex's HTTP API sends every number as a float (16777216.0), as here.
+                target = {"uploadId": uid, "key": f"k/{f['name']}", "partSize": float(PART_SIZE),
+                          "parts": [{"partNumber": float(i), "url": f"{self.base}/part/{uid}/{i}?{SIG}"} for i in range(1, n + 1)]}
             out.append({"name": f["name"], "target": target})
         return out
 
