@@ -1,10 +1,11 @@
 import { Canvas } from '@react-three/fiber'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CaptureAssets } from '../data/assets'
 import type { NavMode } from '../scene/SceneViewer'
+import type { SplatStatus } from '../scene/SplatRoom'
 // TEMPORARY: the real exports come from '../data' and '../scene' once they land.
 import { useCaptureAssets } from '../data'
-import { PlaybackDriver, SceneReplay, SceneRoom, useCaptureScene, usePlayback, usePlaybackState, type CaptureScene } from '../scene'
+import { PlaybackDriver, SceneReplay, SceneRoom, useCaptureScene, usePlayback, usePlaybackState, useSceneNotes, type CaptureScene } from '../scene'
 import { WithYou } from '../museum/Together'
 import { useMuseumRoom, type MuseumRoom } from '../museum/useMuseumRoom'
 import { EstimatedBadge } from '../views/EstimatedBadge'
@@ -51,6 +52,12 @@ const DRAG_HOLD_MS = 8000
 function WindowStage({ scene, back, room }: { scene: CaptureScene; back: string; room: MuseumRoom }) {
   const { manifest, moment: frames } = scene
   const tracker = useHeadTracker()
+  // What didn't load (the splat, the room's photos, the people for a stretch), said plainly.
+  const [notes, onNote] = useSceneNotes()
+  const onSplatStatus = useCallback(
+    (s: SplatStatus) => onNote('splat', s.state === 'failed' ? `The splat didn't load (${s.message}), so the room is drawn from its points.` : null),
+    [onNote],
+  )
 
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null)
   const [videoError, setVideoError] = useState(false)
@@ -161,8 +168,8 @@ function WindowStage({ scene, back, room }: { scene: CaptureScene; back: string;
         flat dpr={[1, 2]} camera={{ near: 0.02, far: 60 }} gl={{ antialias: true }} className="window-canvas">
         <color attach="background" args={['#07080a']} />
         <PlaybackDriver playback={playback} />
-        <SceneRoom scene={scene} dim={canReplayPeople && playing ? 0.6 : 1} />
-        {canReplayPeople && started && video && <SceneReplay scene={scene} video={video} timeRef={playback.timeRef} />}
+        <SceneRoom scene={scene} dim={canReplayPeople && playing ? 0.6 : 1} onSplatStatus={onSplatStatus} onNote={onNote} />
+        {canReplayPeople && started && video && <SceneReplay scene={scene} video={video} timeRef={playback.timeRef} onNote={onNote} />}
         <WindowCamera
           frames={frames}
           timeRef={playback.timeRef}
@@ -215,6 +222,13 @@ function WindowStage({ scene, back, room }: { scene: CaptureScene; back: string;
       </header>
 
       <TrackerHint status={tracker.status} />
+      {notes.length > 0 && (
+        <div className="window-notes" role="status">
+          {notes.map((n) => (
+            <div key={n}>{n}</div>
+          ))}
+        </div>
+      )}
 
       <div className="window-dock">
         <VisitDock captureId={scene.id} controls={controls} />

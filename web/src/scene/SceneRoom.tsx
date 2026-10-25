@@ -9,7 +9,7 @@ import { RoomPoints } from './RoomPoints'
 import { RoomSurfaceMesh } from './RoomSurfaceMesh'
 import type { SelectionTint } from './selectionTint'
 import type { SplatStatus } from './SplatRoom'
-import type { CaptureScene } from './useCaptureScene'
+import type { CaptureScene, SceneNote } from './useCaptureScene'
 
 // Spark is big; only captures with a splat load it.
 const SplatRoom = lazy(() => import('./SplatRoom'))
@@ -40,13 +40,15 @@ interface RoomProps {
   /** Screen-space hole filling over the points (it takes over rendering for the whole canvas). */
   holeFill?: boolean
   onSplatStatus?: (status: SplatStatus) => void
+  /** Live problems to show next to the view (the room's photos failing). */
+  onNote?: SceneNote
 }
 
 /**
  * The room: the fused surface, the points (with hole filling), or the splat. Everything loaded
  * stays mounted and switching only toggles visibility, so nothing is uploaded twice.
  */
-export function SceneRoom({ scene, view = 'auto', dim = 1, selection = null, budget, holeFill = true, onSplatStatus }: RoomProps) {
+export function SceneRoom({ scene, view = 'auto', dim = 1, selection = null, budget, holeFill = true, onSplatStatus, onNote }: RoomProps) {
   const invalidate = useThree((s) => s.invalidate)
   const [splatStatus, setSplatStatus] = useState<SplatStatus>({ state: 'loading' })
   const onStatus = useCallback(
@@ -69,7 +71,7 @@ export function SceneRoom({ scene, view = 'auto', dim = 1, selection = null, bud
   return (
     <>
       {holeFill && shown === 'points' && <HoleFill />}
-      {surface && <RoomSurfaceMesh surface={surface} keyframeUrls={keyframeUrls} selection={selection} dim={dim} visible={shown === 'surface'} />}
+      {surface && <RoomSurfaceMesh surface={surface} keyframeUrls={keyframeUrls} selection={selection} dim={dim} visible={shown === 'surface'} onNote={onNote} />}
       {points && <RoomPoints points={points} budget={budget} dim={dim} visible={shown === 'points'} />}
       {scene.splat && splatStatus.state !== 'failed' && (
         <Suspense fallback={null}>
@@ -91,10 +93,12 @@ interface ReplayProps {
   masked?: boolean
   selection?: SelectionTint | null
   show?: boolean
+  /** Live problems to show next to the view (depth frames that didn't load). */
+  onNote?: SceneNote
 }
 
 /** The people replay (DepthReplay) for a capture; renders nothing when it has no depth. */
-export function SceneReplay({ scene, video, timeRef, masked = true, selection = null, show = true }: ReplayProps) {
+export function SceneReplay({ scene, video, timeRef, masked = true, selection = null, show = true, onNote }: ReplayProps) {
   if (!scene.canReplay || !scene.depth) return null
   const t = scene.timeline
   const timeline = !masked || !t || t.status === 'failed' ? null : t.status === 'loading' ? 'loading' : t.data
@@ -111,6 +115,7 @@ export function SceneReplay({ scene, video, timeRef, masked = true, selection = 
       timeline={timeline}
       selection={selection}
       show={show}
+      onNote={onNote}
     />
   )
 }
