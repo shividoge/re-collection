@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { FrameRecord } from '../src/scene/formats'
 import {
   cameraPosition,
+  depthFrameIndices,
   frameIndexAtTime,
+  nearestDepthFrame,
   projectToImage,
   rotatePixelOffsetCss,
   rollColumnMajor,
@@ -96,5 +98,36 @@ describe('uprightQuarterTurns', () => {
 describe('cameraPosition', () => {
   it('reads the translation column', () => {
     expect(cameraPosition(rolledPose(0, [1, 2, 3]))).toEqual([1, 2, 3])
+  })
+})
+
+describe('nearestDepthFrame', () => {
+  const rec = (t: number, d: number | null): FrameRecord => ({ t, T: I, K, d, phase: 'moment' })
+
+  it('finds depth for every frame of a video capture (60 fps video, depth at ~2 Hz)', () => {
+    const frames = Array.from({ length: 410 }, (_, i) => rec(i / 60, i % 27 === 0 ? i / 27 : null))
+    const withDepth = depthFrameIndices(frames)
+    for (let i = 0; i < frames.length; i++) {
+      const k = nearestDepthFrame(frames, withDepth, frames[i].t, 1 / 2.2)
+      expect(k).toBe(Math.round(i / 27) * 27)
+      expect(frames[k].d).not.toBeNull()
+    }
+  })
+
+  it('picks the nearest by time on a variable frame rate and returns that frame (its own T and K)', () => {
+    const frames = [rec(0, 0), rec(0.5, null), rec(1.9, null), rec(2.0, 1), rec(2.1, null)]
+    const withDepth = depthFrameIndices(frames)
+    expect(withDepth).toEqual([0, 3])
+    expect(nearestDepthFrame(frames, withDepth, 0.9, 2)).toBe(0)
+    expect(nearestDepthFrame(frames, withDepth, 1.1, 2)).toBe(3)
+    expect(nearestDepthFrame(frames, withDepth, 5, 10)).toBe(3)
+  })
+
+  it('shows nothing across a gap longer than maxGap, or with no depth at all', () => {
+    const frames = [rec(0, 0), rec(1, null), rec(2, 1)]
+    expect(nearestDepthFrame(frames, depthFrameIndices(frames), 1, 0.1)).toBe(-1)
+    expect(nearestDepthFrame(frames, depthFrameIndices(frames), 0.05, 0.1)).toBe(0)
+    const none = [rec(0, null)]
+    expect(nearestDepthFrame(none, depthFrameIndices(none), 0, Infinity)).toBe(-1)
   })
 })

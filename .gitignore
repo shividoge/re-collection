@@ -10,3 +10,6 @@ ios/DerivedData/
 *.xcuserstate
 xcuserdata/
 ios/*.xcodeproj/
+
+.static-site/
+.static-publish/

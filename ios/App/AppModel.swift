@@ -48,6 +48,14 @@ final class AppModel: ObservableObject {
         didSet { UserDefaults.standard.set(guideKey, forKey: "guideKey") }
     }
 
+    /// Also keep medium-confidence depth within 3 m in the room scan (Settings).
+    @Published var keepMediumConfidence: Bool = UserDefaults.standard.bool(forKey: "keepMediumConfidence") {
+        didSet {
+            UserDefaults.standard.set(keepMediumConfidence, forKey: "keepMediumConfidence")
+            engine.accumulator?.keepsMediumConfidence = keepMediumConfidence
+        }
+    }
+
     let isDeviceSupported: Bool
     let engine: CaptureEngine
     private let setupError: String?
@@ -80,6 +88,7 @@ final class AppModel: ObservableObject {
         }
         self.setupError = setupError
         engine = CaptureEngine(accumulator: accumulator)
+        accumulator?.keepsMediumConfidence = keepMediumConfidence
 
         engine.onEvent = { [weak self] token, event in
             Task { @MainActor in self?.handle(event, token: token) }

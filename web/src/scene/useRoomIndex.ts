@@ -32,6 +32,8 @@ export interface Selection {
   cloud: PointCloud
   /** Their indices in the room cloud. */
   points: Uint32Array
+  /** The voxels they fill in the room index. */
+  voxels: Uint32Array
   /** When the recording camera had it in view. */
   seen: Interval[]
   hit: Vec3
@@ -81,6 +83,7 @@ export function selectAlongRay(room: RoomIndex, cloud: PointCloud, frames: Frame
     bounds: boundsOfPoints(cloud.positions, points),
     cloud: { count: points.length, positions, colors },
     points,
+    voxels: seg.voxels,
     seen: visibleIntervals(room.index, seg.voxels, frames, videoW, videoH),
     hit: hit.point,
   }

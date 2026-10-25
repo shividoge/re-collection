@@ -3,7 +3,7 @@
 // substituted.
 
 import { captureFileUrl, fetchBytes, fetchText, guide } from '../api'
-import type { Manifest } from '../api'
+import type { Manifest, RoomSplat } from '../api'
 import { parseFramesJsonl, parseRoomBin, type FrameLog, type PointCloud } from './formats'
 
 export interface LoadedCapture {
@@ -15,13 +15,17 @@ export interface LoadedCapture {
   frames: FrameLog | null
   /** The recorded video. Its frames are stored sensor-landscape; the viewer turns them upright. */
   videoUrl: string | null
+  /** The room as 3D Gaussians, when the capture has one; the points stay available as the raw view. */
+  splat: (RoomSplat & { url: string }) | null
   errors: string[]
+  /** True when the family marked this capture public (only meaningful for guide captures). */
+  isPublic: boolean
 }
 
 const FRAMES_FILE = 'frames.jsonl'
 
 export async function loadGuideCapture(id: string): Promise<LoadedCapture> {
-  const { manifest } = await guide.capture(id)
+  const { manifest, status } = await guide.capture(id)
   const errors: string[] = []
   const attempt = async <T>(what: string, load: () => Promise<T>): Promise<T | null> => {
     try {
@@ -36,7 +40,8 @@ export async function loadGuideCapture(id: string): Promise<LoadedCapture> {
     attempt(FRAMES_FILE, async () => parseFramesJsonl(await fetchText(id, FRAMES_FILE))),
   ])
   if (!manifest.room) errors.push('This capture has no room scan (room.bin).')
-  for (const w of manifest.warnings ?? []) errors.push(`Warning from the phone: ${w}`)
+  const from = manifest.source === 'video' ? 'Note' : 'Warning from the phone'
+  for (const w of manifest.warnings ?? []) errors.push(`${from}: ${w}`)
   return {
     id,
     label: manifest.title || 'Untitled visit',
@@ -44,7 +49,9 @@ export async function loadGuideCapture(id: string): Promise<LoadedCapture> {
     cloud,
     frames,
     videoUrl: manifest.video?.file ? captureFileUrl(id, manifest.video.file) : null,
+    splat: manifest.room?.splat ? { ...manifest.room.splat, url: captureFileUrl(id, manifest.room.splat.file) } : null,
     errors,
+    isPublic: status.public === true,
   }
 }
 
@@ -57,6 +64,8 @@ export async function loadRoomFile(file: File): Promise<LoadedCapture> {
     cloud: parseRoomBin(await file.arrayBuffer()),
     frames: null,
     videoUrl: null,
+    splat: null,
     errors: [],
+    isPublic: false,
   }
 }

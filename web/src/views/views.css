@@ -30,7 +30,7 @@
   font: inherit;
   font-size: 12px;
   color: var(--bd-fg);
-  background: rgba(10, 16, 26, 0.8);
+  background: rgba(17, 19, 23, 0.8);
   border: 1px solid var(--bd-line);
   padding: 6px 12px;
   cursor: pointer;
@@ -79,7 +79,7 @@ button.link:hover {
 }
 .gallery.dragging .dropzone {
   border-color: var(--bd-accent);
-  background: rgba(110, 231, 255, 0.08);
+  background: rgba(255, 92, 58, 0.08);
 }
 .drop-title {
   margin: 0;
@@ -143,7 +143,7 @@ button.link:hover {
   aspect-ratio: 4 / 3;
   object-fit: cover;
   display: block;
-  background: #0d121b;
+  background: #15181d;
 }
 .card-body {
   padding: 10px 12px 12px;
@@ -166,7 +166,7 @@ button.link:hover {
 }
 .badge.working {
   color: var(--bd-accent);
-  border-color: rgba(110, 231, 255, 0.4);
+  border-color: rgba(255, 92, 58, 0.4);
 }
 .badge.failed {
   color: var(--bd-error);
@@ -438,6 +438,76 @@ button.link:hover {
   border: 1px solid var(--bd-line);
   padding: 5px 10px;
 }
+.dashboard-links {
+  display: flex;
+  gap: 8px;
+}
+.scan-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.scan-switcher a {
+  font-size: 12px;
+  text-decoration: none;
+  color: var(--bd-muted);
+  border: 1px solid var(--bd-line);
+  padding: 4px 10px;
+}
+.scan-switcher a.active {
+  color: var(--bd-accent);
+  border-color: var(--bd-accent);
+}
+.scan-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: grid;
+  gap: 10px;
+}
+.scan-row {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--bd-panel);
+  border: 1px solid var(--bd-line);
+  color: var(--bd-fg);
+  text-decoration: none;
+}
+.scan-row:hover {
+  border-color: var(--bd-accent);
+}
+.scan-row img,
+.scan-row .thumb-missing {
+  width: 120px;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+.scan-row h2 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--bd-fg);
+}
+.sparkline {
+  color: var(--bd-muted);
+}
+@media (max-width: 560px) {
+  .scan-row {
+    grid-template-columns: 80px 1fr;
+  }
+  .scan-row img,
+  .scan-row .thumb-missing {
+    width: 80px;
+  }
+  .sparkline {
+    display: none;
+  }
+}
 .chart {
   width: 100%;
   max-width: 680px;
@@ -520,7 +590,7 @@ blockquote {
   line-height: 1.3;
   text-align: center;
   color: #fff;
-  background: rgba(5, 6, 10, 0.72);
+  background: rgba(7, 8, 10, 0.72);
   border-radius: 10px;
 }
 .visit-dock {
@@ -534,7 +604,7 @@ blockquote {
   font: inherit;
   font-size: 15px;
   color: var(--bd-fg);
-  background: rgba(10, 16, 26, 0.85);
+  background: rgba(17, 19, 23, 0.85);
   border: 1px solid var(--bd-line);
   border-radius: 999px;
   padding: 10px 18px;
@@ -549,7 +619,7 @@ blockquote {
   min-width: 180px;
   min-height: 56px;
   background: var(--bd-accent);
-  color: #05060a;
+  color: #07080a;
   border: none;
 }
 .visit-dock .visit-talk.live {
@@ -568,7 +638,7 @@ blockquote {
   flex: 1;
   font: inherit;
   color: var(--bd-fg);
-  background: rgba(10, 16, 26, 0.9);
+  background: rgba(17, 19, 23, 0.9);
   border: 1px solid var(--bd-line);
   border-radius: 8px;
   padding: 8px 10px;
@@ -576,7 +646,7 @@ blockquote {
 .visit-type button {
   font: inherit;
   color: var(--bd-fg);
-  background: rgba(10, 16, 26, 0.9);
+  background: rgba(17, 19, 23, 0.9);
   border: 1px solid var(--bd-line);
   border-radius: 8px;
   padding: 8px 12px;
@@ -585,6 +655,11 @@ blockquote {
   margin: 0;
   padding: 6px 12px;
   color: var(--bd-error);
-  background: rgba(5, 6, 10, 0.8);
+  background: rgba(7, 8, 10, 0.8);
   border-radius: 8px;
+}
+.gallery-dashboard {
+  display: inline-block;
+  margin: -12px 0 24px;
+  text-decoration: none;
 }

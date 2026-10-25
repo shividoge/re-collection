@@ -88,3 +88,12 @@ final class PoseDeltaTests: XCTestCase {
                        30 * .pi / 180, accuracy: 1e-4)
     }
 }
+
+final class AccumulateUniformsTests: XCTestCase {
+    /// Shaders.metal's AccumulateUniforms must be the same size, or every field after the mismatch reads garbage.
+    func testUniformsMatchTheShaderLayout() {
+        XCTAssertEqual(MemoryLayout<AccumulateUniforms>.stride, 112)
+        XCTAssertEqual(MemoryLayout<AccumulateUniforms>.offset(of: \.mediumMaxDepth), 96)
+        XCTAssertEqual(PointAccumulator.mediumMaxDepth, 3.0)
+    }
+}

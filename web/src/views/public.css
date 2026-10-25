@@ -1,0 +1,62 @@
+/* The facts panel on the public viewer. Sits over the 3D view, out of the way of its toolbar. */
+.pub-facts {
+  position: absolute;
+  top: 56px;
+  right: 12px;
+  bottom: 64px;
+  width: min(360px, calc(100% - 24px));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 5;
+}
+.pub-facts > * { pointer-events: auto; }
+.pub-toggle {
+  font: inherit;
+  font-size: 12px;
+  color: var(--bd-fg);
+  background: rgba(10, 16, 26, 0.85);
+  border: 1px solid var(--bd-line);
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.pub-body {
+  width: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+  background: rgba(10, 16, 26, 0.9);
+  border: 1px solid var(--bd-line);
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.pub-summary { margin: 0 0 10px; color: var(--bd-fg); }
+.pub-note { margin: 10px 0; color: var(--bd-muted); font-size: 12px; }
+.pub-chapters { display: flex; flex-wrap: wrap; gap: 6px; }
+.pub-chapters button {
+  font: inherit; font-size: 12px; color: var(--bd-fg); background: transparent;
+  border: 1px solid var(--bd-line); border-radius: 999px; padding: 3px 10px; cursor: pointer;
+}
+.pub-body ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.pub-body li { padding-top: 10px; border-top: 1px solid var(--bd-line); }
+.pub-body li p { margin: 0 0 6px; }
+.pub-evidence { display: flex; flex-wrap: wrap; gap: 6px; }
+.pub-evidence .frame {
+  position: relative; padding: 0; border: 1px solid var(--bd-line); border-radius: 6px; overflow: hidden;
+  background: #000; cursor: pointer; width: 96px; height: 72px;
+}
+.pub-evidence .frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pub-evidence .frame span {
+  position: absolute; right: 4px; bottom: 3px; font-size: 10px; color: #fff; text-shadow: 0 1px 4px #000;
+}
+.pub-evidence .quote {
+  font: inherit; font-size: 12px; color: var(--bd-fg); background: transparent; text-align: left;
+  border: 1px solid var(--bd-line); border-radius: 6px; padding: 6px 8px; cursor: pointer;
+}
+.pub-evidence .quote span { color: var(--bd-muted); margin-left: 4px; }
+/* The "Public" switch family members flip in the capture bar. */
+.public-switch { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--bd-muted); cursor: pointer; }

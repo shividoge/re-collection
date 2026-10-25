@@ -9,6 +9,8 @@ import { guideRoot, loadConfig } from './config.mjs';
 import { CORS_HEADERS, readJsonBody, sendError, sendFile, sendJson } from './http.mjs';
 import { ClaudeError, createClaude } from './claude.mjs';
 import { extractFacts } from './facts.mjs';
+import { createMuseumRooms } from './museum.mjs';
+import { createPublic } from './public.mjs';
 import { createSessions, SessionError } from './session.mjs';
 import { Store, StoreError } from './store.mjs';
 import { validateCapture } from './validate.mjs';
@@ -21,7 +23,7 @@ const MAX_UPLOAD_BYTES = 2 * 1024 ** 3;
  * Builds the request handler. Routes and JSON shapes are the contract in
  * docs/guide-api.md; change that doc first if a route changes.
  */
-export function createApp(config, { claude = createClaude(config), log = console } = {}) {
+export function createApp(config, { claude = createClaude(config), log = console, museum: museumOptions = {} } = {}) {
   const store = new Store(config.dataDir);
   const started = Date.now();
   const worker = createFactsWorker({
@@ -39,7 +41,11 @@ export function createApp(config, { claude = createClaude(config), log = console
   /** The built web app (web/dist), served at / so judges need one URL. */
   const webDir = config.webDir ?? join(guideRoot, '..', 'web', 'dist');
 
+  const publicRoutes = createPublic({ store, sessions });
+  const museum = createMuseumRooms({ store, ...museumOptions });
+
   const routes = [
+    ['PUT', /^\/api\/captures\/([^/]+)\/public$/, setPublic],
     ['GET', /^\/health$/, health],
     ['GET', /^\/api\/captures$/, listCaptures],
     ['GET', /^\/api\/captures\/([^/]+)$/, getCapture],
@@ -56,9 +62,19 @@ export function createApp(config, { claude = createClaude(config), log = console
     ['GET', /^\/api\/progress$/, json((query) => sessions.progress(query))],
     ['GET', /^\/api\/person$/, json(() => sessions.person())],
     ['PUT', /^\/api\/person$/, json((body) => sessions.setPerson(body))],
+    ...museum.routes,
     ['GET', /^\/files\/([^/]+)\/(.+)$/, getFile],
     ['HEAD', /^\/files\/([^/]+)\/(.+)$/, getFile],
   ];
+
+  /** The family's switch: only a public capture is visible at /public/*. */
+  async function setPublic(req, res, id) {
+    if (!(await store.exists(id))) return sendError(res, 404, `No capture with id ${id}.`);
+    const body = await readJsonBody(req);
+    if (typeof body.public !== 'boolean') return sendError(res, 400, 'Send { "public": true } or { "public": false }.');
+    const status = await store.setStatus(id, { public: body.public });
+    sendJson(res, 200, { ok: true, public: status.public });
+  }
 
   async function health(req, res) {
     sendJson(res, 200, {
@@ -80,6 +96,7 @@ export function createApp(config, { claude = createClaude(config), log = console
       title: manifest.title ?? '',
       createdAt: manifest.createdAt ?? null,
       durationSec: manifest.video?.durationSec ?? null,
+      source: manifest.source ?? null,
       thumb: files.includes('thumb.jpg') ? `/files/${id}/thumb.jpg` : null,
       status: await store.status(id),
     };
@@ -217,14 +234,15 @@ export function createApp(config, { claude = createClaude(config), log = console
   }
 
   function isApiPath(pathname) {
-    return pathname === '/health' || pathname.startsWith('/api/') || pathname.startsWith('/files/');
+    return pathname === '/health' || pathname.startsWith('/api/') || pathname.startsWith('/files/') || pathname.startsWith('/public/');
   }
 
   function authorized(req, url) {
     if (!config.key) return true;
     if (req.headers['x-braindance-key'] === config.key) return true;
-    // <video> and <img> can't send headers, so /files also accepts ?key=.
-    return url.pathname.startsWith('/files/') && url.searchParams.get('key') === config.key;
+    // <video>, <img> and EventSource can't send headers, so these also accept ?key=.
+    const headerless = url.pathname.startsWith('/files/') || /^\/api\/museum\/rooms\/[^/]+\/events$/.test(url.pathname);
+    return headerless && url.searchParams.get('key') === config.key;
   }
 
   // Pick up anything queued before a restart.
@@ -239,6 +257,14 @@ export function createApp(config, { claude = createClaude(config), log = console
       }
       if ((req.method === 'GET' || req.method === 'HEAD') && !isApiPath(url.pathname)) {
         return await getWebFile(req, res, url);
+      }
+      if (url.pathname.startsWith('/public/')) {
+        for (const [method, pattern, handler] of publicRoutes) {
+          if (req.method !== method) continue;
+          const match = pattern.exec(url.pathname);
+          if (match) return await handler(req, res, ...match.slice(1));
+        }
+        return sendError(res, 404, `No public route for ${req.method} ${url.pathname}.`);
       }
       if (url.pathname !== '/health' && !authorized(req, url)) {
         return sendError(res, 401, 'Missing or wrong X-Braindance-Key.');
@@ -261,6 +287,8 @@ export function createApp(config, { claude = createClaude(config), log = console
 
   /** Captures imported with `npm run import` while the guide runs are found by this. */
   handle.kickFacts = () => worker.kick();
+  /** Ends open museum event streams so a server can close (tests). */
+  handle.close = () => museum.close();
   return handle;
 }
 

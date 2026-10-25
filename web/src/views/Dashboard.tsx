@@ -1,6 +1,120 @@
 import { useEffect, useState } from 'react'
-import { guide } from '../api'
-import type { Progress } from '../api'
+import { fileUrl, guide } from '../api'
+import type { CaptureSummary, Progress } from '../api'
+
+/** Every scan with facts, and its progress (null while it loads or when it has none). */
+function useAllProgress() {
+  const [rows, setRows] = useState<{ capture: CaptureSummary; progress: Progress | null }[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    guide
+      .captures()
+      .then(async (list) => {
+        const withFacts = list.filter((c) => c.status.facts === 'done')
+        const progress = await Promise.all(withFacts.map((c) => guide.progress(c.id).catch(() => null)))
+        setRows(withFacts.map((capture, i) => ({ capture, progress: progress[i] })))
+      })
+      .catch((e: Error) => setError(e.message))
+  }, [])
+  return { rows, error }
+}
+
+/** All scans side by side: how many revisits each had and how the latest one went. */
+export function DashboardOverview() {
+  const { rows, error } = useAllProgress()
+  if (error) return <div className="center-message error">{error}</div>
+  if (!rows) return <div className="center-message">Loading…</div>
+
+  const sessions = rows.flatMap((r) => r.progress?.sessions ?? [])
+  const alerts = sessions.flatMap((s) => s.alerts ?? []).length
+  const branches = sessions.flatMap((s) => s.branches).length
+
+  return (
+    <div className="dashboard">
+      <a href="#/" className="back">
+        ← All visits
+      </a>
+      <h1>Recall across visits</h1>
+      <p className="meta">
+        {plural(rows.length, 'scan')} · {plural(sessions.length, 'revisit')} · {plural(branches, 'older memory', 'older memories')} ·{' '}
+        {plural(alerts, 'distress alert')}
+      </p>
+
+      {rows.length === 0 ? (
+        <p className="muted">No scans with approved facts yet.</p>
+      ) : (
+        <ul className="scan-list">
+          {rows.map(({ capture, progress }) => {
+            const last = progress?.sessions.at(-1)
+            const total = progress?.facts.length ?? 0
+            return (
+              <li key={capture.id}>
+                <a className="scan-row" href={`#/dashboard/${capture.id}`}>
+                  {capture.thumb ? <img src={fileUrl(capture.thumb)} alt="" loading="lazy" /> : <div className="thumb-missing" />}
+                  <div>
+                    <h2>{capture.title || 'Untitled visit'}</h2>
+                    <p className="meta">
+                      {capture.createdAt ? fmt(capture.createdAt) : 'Unknown date'} · {plural(total, 'approved fact')} ·{' '}
+                      {plural(progress?.sessions.length ?? 0, 'revisit')}
+                    </p>
+                    <p className="meta">
+                      {last
+                        ? `Latest ${fmt(last.startedAt)}: ${last.unprompted} unprompted, ${last.afterCue} after a cue, of ${total}`
+                        : 'No revisit sessions yet.'}
+                    </p>
+                  </div>
+                  {progress && progress.sessions.length > 0 && <Sparkline sessions={progress.sessions} total={total} />}
+                </a>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** A tiny stacked bar per session, in session order. */
+function Sparkline({ sessions, total }: { sessions: Progress['sessions']; total: number }) {
+  const bw = 8
+  const gap = 4
+  const H = 40
+  const W = sessions.length * (bw + gap)
+  const h = (n: number) => (total ? (n / total) * H : 0)
+  return (
+    <svg className="sparkline" viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-label="Facts recalled per session">
+      {sessions.map((s, i) => (
+        <g key={s.sessionId}>
+          <rect x={i * (bw + gap)} y={0} width={bw} height={H} fill="currentColor" opacity={0.12} />
+          <rect x={i * (bw + gap)} y={H - h(s.unprompted + s.afterCue)} width={bw} height={h(s.unprompted + s.afterCue)} fill="var(--bd-warn)" />
+          <rect x={i * (bw + gap)} y={H - h(s.unprompted)} width={bw} height={h(s.unprompted)} fill="var(--bd-accent)" />
+          <title>{fmt(s.startedAt)}</title>
+        </g>
+      ))}
+    </svg>
+  )
+}
+
+/** Links to the other scans' dashboards. */
+function ScanSwitcher({ id }: { id: string }) {
+  const [scans, setScans] = useState<CaptureSummary[]>([])
+  useEffect(() => {
+    guide
+      .captures()
+      .then((list) => setScans(list.filter((c) => c.status.facts === 'done')))
+      .catch(() => {})
+  }, [])
+  if (scans.length < 2) return null
+  return (
+    <nav className="scan-switcher">
+      {scans.map((capture) => (
+        <a key={capture.id} href={`#/dashboard/${capture.id}`} className={capture.id === id ? 'active' : ''}>
+          {capture.title || 'Untitled visit'}
+        </a>
+      ))}
+    </nav>
+  )
+}
 
 /** The family's view of recall over time (CLAUDE.md 7.5). Real session times only. */
 export function Dashboard({ id }: { id: string }) {
@@ -29,9 +143,15 @@ export function Dashboard({ id }: { id: string }) {
 
   return (
     <div className="dashboard">
-      <a href={`#/capture/${id}`} className="back">
-        ← Back to the visit
-      </a>
+      <div className="dashboard-links">
+        <a href="#/dashboard" className="back">
+          ← All scans
+        </a>
+        <a href={`#/capture/${id}`} className="back">
+          Open the visit
+        </a>
+      </div>
+      <ScanSwitcher id={id} />
       <h1>{title || 'Recall'}</h1>
       <p className="meta">
         {plural(sessions.length, 'revisit')} · {plural(data.facts.length, 'approved fact')}
@@ -110,7 +230,7 @@ export function Dashboard({ id }: { id: string }) {
 }
 
 const fmt = (iso: string) => new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`
 
 /** One stacked bar per session, placed by real start time (never relabeled as "day N"). */
 function RecallChart({ sessions, total }: { sessions: Progress['sessions']; total: number }) {

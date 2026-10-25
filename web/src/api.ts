@@ -5,6 +5,8 @@ const KEY_STORAGE = 'braindance.guideKey'
 const base = (import.meta.env.VITE_GUIDE_URL as string | undefined)?.replace(/\/+$/, '') ?? ''
 
 export type CaptureStatus = {
+  /** True when the family marked this capture public (visitors see it without a key). */
+  public?: boolean
   upload: 'receiving' | 'done' | 'invalid'
   uploadErrors?: string[]
   warnings?: string[]
@@ -13,6 +15,8 @@ export type CaptureStatus = {
 }
 
 export type CaptureSummary = {
+  /** \"video\" for scenes rebuilt from an ordinary video (estimated). */
+  source?: string | null
   id: string
   title: string
   createdAt: string | null
@@ -27,11 +31,22 @@ export type Manifest = {
   title: string
   attendees: string[]
   video: { file: string; width: number; height: number; fps: number; durationSec: number; frameCount: number }
-  depth: { file: string; confidenceFile: string; width: number; height: number; rateHz: number; count: number }
-  room?: { bin: string; ply: string; points: number; voxelMeters: number }
+  depth: { file: string; confidenceFile: string; width: number; height: number; rateHz: number; count: number; estimated?: boolean; model?: string }
+  /** "video" when rebuilt from an ordinary video (estimated); absent for LiDAR scans. */
+  source?: string
+  room?: { bin: string; ply: string; points: number; voxelMeters: number; source?: string; splat?: RoomSplat }
   transcript?: { file: string; locale: string }
   keyframes?: { dir: string; everySec: number; count: number }
   warnings: string[]
+}
+
+/** Optional 3D Gaussian splat of the static room (docs/capture-format.md "room splat"). Same world coordinates as room.bin. */
+export type RoomSplat = {
+  file: string
+  format: '3dgs-ply'
+  count: number
+  shDegree: number
+  source: 'trained-from-video' | 'trained-from-lidar-capture'
 }
 
 export type CaptureDetail = {
@@ -121,14 +136,50 @@ export function setKey(key: string) {
 
 let memoryKey = getKey()
 
+/**
+ * A static build (VITE_STATIC=1) has no server: everything a visitor reads was exported to plain
+ * files under data/ (guide/scripts/export-static.mjs), so the same /public paths are mapped onto
+ * those files. It is always public.
+ */
+export const STATIC = import.meta.env.VITE_STATIC === '1'
+
+/**
+ * Public mode is for visitors: every request goes to the read-only /public routes, no key is
+ * sent, and nothing can change. The viewer is the same code either way; only the paths differ.
+ */
+let publicMode = STATIC
+export function setPublicMode(on: boolean) {
+  publicMode = on
+}
+
+function route(path: string): string {
+  if (!publicMode) return path
+  return path
+    .replace(/^\/api\/captures\/([^/?]+)$/, '/public/captures/$1')
+    .replace(/^\/api\/moments\/([^/?]+)$/, '/public/moments/$1')
+    .replace(/^\/files\//, '/public/files/')
+}
+
+/** Where a request really goes: the guide, or an exported file in a static build. */
+function url(path: string): string {
+  const routed = route(path)
+  if (!STATIC) return base + routed
+  const file = routed
+    .replace(/^\/public\/captures$/, 'data/captures.json')
+    .replace(/^\/public\/(captures|moments|progress|sessions)\/([^/?]+)$/, 'data/$1/$2.json')
+    .replace(/^\/public\/files\//, 'data/files/')
+  return import.meta.env.BASE_URL + file
+}
+
 function headers(extra: Record<string, string> = {}): Record<string, string> {
-  return memoryKey ? { 'X-Braindance-Key': memoryKey, ...extra } : extra
+  return memoryKey && !publicMode ? { 'X-Braindance-Key': memoryKey, ...extra } : extra
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response
   try {
-    response = await fetch(base + path, { ...init, headers: headers(init.headers as Record<string, string>) })
+    // A static host lets browsers reuse files for minutes; always ask whether the data changed.
+    response = await fetch(url(path), { ...init, ...(STATIC ? { cache: 'no-cache' as const } : {}), headers: headers(init.headers as Record<string, string>) })
   } catch {
     throw new GuideError(0, "Can't reach the guide server. Is it running (npm start in guide/)?")
   }
@@ -143,7 +194,58 @@ const post = (body: unknown): RequestInit => ({
   headers: { 'Content-Type': 'application/json' },
 })
 
+/** What visitors can see (docs/guide-api.md "Public routes"). No key, read-only. */
+export type PublicCapture = {
+  id: string
+  title: string
+  summary: string
+  createdAt: string | null
+  durationSec: number | null
+  thumb: string | null
+  facts: number
+}
+export type PublicSession = {
+  id: string
+  momentId: string
+  startedAt: string
+  endedAt: string
+  endReason: string
+  turns: { t: string; speaker: string; text: string; kind?: string; factIds?: string[] }[]
+  dropped: { t: string; sentence: string; reason: string }[]
+  branches: Branch[]
+  scores: Score[]
+  note: string
+}
+
+async function publicGet<T>(path: string): Promise<T> {
+  let response: Response
+  try {
+    // A static host lets browsers reuse files for minutes; always ask whether the data changed.
+    response = await fetch(url(path), STATIC ? { cache: 'no-cache' } : undefined)
+  } catch {
+    throw new GuideError(0, "Can't reach the site's server right now.")
+  }
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new GuideError(response.status, body.error ?? `HTTP ${response.status}`)
+  return body as T
+}
+
+export const publicGuide = {
+  captures: () => publicGet<PublicCapture[]>('/public/captures'),
+  moment: (id: string) => publicGet<Moment>(`/public/moments/${id}`),
+  progress: (id: string) => publicGet<Progress>(`/public/progress/${id}`),
+  session: (sid: string) => publicGet<PublicSession>(`/public/sessions/${sid}`),
+  file: (id: string, name: string) => url(`/public/files/${id}/${name}`),
+}
+
 export const guide = {
+  /** The family's switch: only a public capture is visible to visitors. Needs the key. */
+  setPublic: (id: string, on: boolean) =>
+    request<{ ok: true; public: boolean }>(`/api/captures/${id}/public`, {
+      method: 'PUT',
+      body: JSON.stringify({ public: on }),
+      headers: { 'Content-Type': 'application/json' },
+    }),
   health: () => request<{ ok: boolean; mock: boolean; keyRequired?: boolean }>('/health'),
   captures: () => request<CaptureSummary[]>('/api/captures'),
   capture: (id: string) => request<CaptureDetail>(`/api/captures/${id}`),
@@ -178,7 +280,7 @@ export const guide = {
 
 /** URL for a capture file. <video> and <img> can't send headers, so the key rides as ?key=. */
 export function fileUrl(path: string): string {
-  return base + path + (memoryKey ? `?key=${encodeURIComponent(memoryKey)}` : '')
+  return url(path) + (memoryKey && !publicMode ? `?key=${encodeURIComponent(memoryKey)}` : '')
 }
 
 export function captureFileUrl(id: string, name: string): string {
@@ -187,7 +289,7 @@ export function captureFileUrl(id: string, name: string): string {
 
 /** Fetches a byte range of a capture file (used for depth frames). */
 export async function fetchRange(id: string, name: string, start: number, length: number): Promise<ArrayBuffer> {
-  const response = await fetch(base + `/files/${id}/${name}`, {
+  const response = await fetch(url(`/files/${id}/${name}`), {
     headers: headers({ Range: `bytes=${start}-${start + length - 1}` }),
   })
   if (!response.ok) throw new GuideError(response.status, `${name}: HTTP ${response.status}`)
@@ -195,13 +297,61 @@ export async function fetchRange(id: string, name: string, start: number, length
 }
 
 export async function fetchBytes(id: string, name: string): Promise<ArrayBuffer> {
-  const response = await fetch(base + `/files/${id}/${name}`, { headers: headers() })
+  const response = await fetch(url(`/files/${id}/${name}`), { headers: headers() })
   if (!response.ok) throw new GuideError(response.status, `${name}: HTTP ${response.status}`)
   return response.arrayBuffer()
 }
 
 export async function fetchText(id: string, name: string): Promise<string> {
-  const response = await fetch(base + `/files/${id}/${name}`, { headers: headers() })
+  const response = await fetch(url(`/files/${id}/${name}`), { headers: headers() })
   if (!response.ok) throw new GuideError(response.status, `${name}: HTTP ${response.status}`)
   return response.text()
+}
+
+/** "Visit together" (docs/guide-api.md "Visit together (museum rooms)"). */
+export type RoomRole = 'patient' | 'helper'
+export type RoomState = { at: number; atId: string | null; window: string | null; by: RoomRole; name: string | null; rev: number; updatedAt: string }
+export type RoomChange = { at: number; atId: string | null; window: string | null; by: RoomRole; name?: string | null }
+export type RoomPeers = { patient: number; helpers: string[] }
+/** `version` goes up on any change to state or peers; a poll sends it back as `since`. */
+export type Room = { code: string; state: RoomState; peers: RoomPeers; version: number }
+/** Who a listening or polling screen is: `client` is one id per browser tab. */
+export type RoomWho = { as: RoomRole; name: string | null; client: string }
+
+function whoQuery({ as, name, client }: RoomWho): URLSearchParams {
+  const query = new URLSearchParams({ as, client })
+  if (name) query.set('name', name)
+  return query
+}
+
+export const museumRooms = {
+  create: (at: number) => request<Room>('/api/museum/rooms', post({ at })),
+  get: (code: string) => request<Room>(`/api/museum/rooms/${encodeURIComponent(code)}`),
+  setState: (code: string, change: RoomChange) =>
+    request<{ ok: true; state: RoomState }>(`/api/museum/rooms/${encodeURIComponent(code)}/state`, post(change)),
+  /**
+   * The polling fallback (the event stream doesn't get through a quick tunnel). Counts this screen
+   * as present for 10 s. Resolves null when nothing changed since `since` (the guide answers 204).
+   */
+  poll: async (code: string, who: RoomWho, since: number | null, signal?: AbortSignal): Promise<Room | null> => {
+    const query = whoQuery(who)
+    if (since !== null) query.set('since', String(since))
+    let response: Response
+    try {
+      response = await fetch(url(`/api/museum/rooms/${encodeURIComponent(code)}?${query}`), { headers: headers(), cache: 'no-store', signal })
+    } catch (error) {
+      if (signal?.aborted) throw error
+      throw new GuideError(0, "Can't reach the guide server.")
+    }
+    if (response.status === 204) return null
+    const body = (await response.json().catch(() => ({}))) as Partial<Room> & { error?: string }
+    if (!response.ok) throw new GuideError(response.status, body.error ?? `HTTP ${response.status}`)
+    return body as Room
+  },
+  /** EventSource can't send headers, so the key rides as ?key= here too. */
+  eventsUrl: (code: string, who: RoomWho) => {
+    const query = whoQuery(who)
+    if (memoryKey) query.set('key', memoryKey)
+    return `${base}/api/museum/rooms/${encodeURIComponent(code)}/events?${query}`
+  },
 }

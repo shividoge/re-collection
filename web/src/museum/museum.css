@@ -1,0 +1,464 @@
+/* The museum's interface: warm, quiet, out of the way of the rooms (Relive's golden-hour
+   palette: plum night, amber to rose, cream). Big touch targets for a tablet. */
+
+.museum {
+  --m-ink: #f6eee4;
+  --m-muted: #c9b8ab;
+  --m-glass: rgba(26, 16, 22, 0.62);
+  --m-line: rgba(246, 238, 228, 0.16);
+  --m-accent: linear-gradient(90deg, #ffb35c, #ff7a8a);
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background: #140d14;
+  color: var(--m-ink);
+  font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+  touch-action: none;
+  user-select: none;
+}
+.museum canvas {
+  display: block;
+  cursor: grab;
+}
+.museum canvas:active {
+  cursor: grabbing;
+}
+
+.museum-message {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: #c9b8ab;
+  background: #140d14;
+  font-family: 'Iowan Old Style', Palatino, Georgia, serif;
+  font-size: 20px;
+}
+
+.museum-top {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+}
+.museum-top > * {
+  pointer-events: auto;
+}
+.museum-chip {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--m-glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--m-line);
+  color: var(--m-ink);
+  font: inherit;
+  font-size: 14px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.museum-chip.on {
+  border-color: transparent;
+  background: var(--m-accent);
+  color: #2a1418;
+  font-weight: 600;
+}
+.museum-styles {
+  display: flex;
+  gap: 6px;
+}
+.museum-select select {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  padding-right: 4px;
+  max-width: 46vw;
+  cursor: pointer;
+}
+.museum-select select option {
+  color: #140d14;
+}
+.museum-add {
+  margin-left: auto;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.museum-hint {
+  position: absolute;
+  left: 50%;
+  top: 70px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--m-glass);
+  color: var(--m-muted);
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: museum-fade 9s ease forwards;
+}
+@keyframes museum-fade {
+  0%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.museum-bottom {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  width: min(720px, calc(100% - 28px));
+  display: grid;
+  grid-template-columns: 64px 1fr 64px;
+  gap: 10px;
+  align-items: end;
+}
+.museum-nav {
+  height: 64px;
+  border-radius: 50%;
+  border: 1px solid var(--m-line);
+  background: var(--m-glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--m-ink);
+  font-size: 26px;
+  cursor: pointer;
+}
+.museum-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.museum-caption {
+  padding: 14px 20px;
+  border-radius: 18px;
+  background: var(--m-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--m-line);
+  text-align: center;
+  display: grid;
+  gap: 4px;
+  transition: transform 300ms ease, opacity 300ms ease;
+}
+.museum-caption-body {
+  display: grid;
+  gap: 4px;
+  animation: museum-caption-in 450ms ease both;
+}
+@keyframes museum-caption-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .museum-caption-body {
+    animation: none;
+  }
+}
+.museum-caption strong {
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  font-size: 22px;
+  font-weight: 500;
+}
+.museum-caption p {
+  margin: 4px 0 0;
+  font-size: 15px;
+  line-height: 1.4;
+}
+.museum-date {
+  color: var(--m-muted);
+  font-size: 13px;
+}
+.museum-actions {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 6px;
+}
+.museum-actions a,
+.museum-actions button {
+  color: #ffc58a;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.museum-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  padding: 24px;
+  pointer-events: none;
+}
+.museum-empty h2 {
+  font-family: 'Iowan Old Style', Palatino, Georgia, serif;
+  font-weight: 400;
+  font-size: 34px;
+  margin: 0 0 8px;
+}
+.museum-empty p {
+  color: var(--m-muted);
+  max-width: 420px;
+}
+
+.museum-drop {
+  position: absolute;
+  inset: 10px;
+  border: 2px dashed #ffb35c;
+  border-radius: 22px;
+  background: rgba(20, 13, 20, 0.55);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  font-family: 'Iowan Old Style', Palatino, Georgia, serif;
+  font-size: 26px;
+}
+.museum-toast {
+  position: absolute;
+  left: 50%;
+  top: 70px;
+  transform: translateX(-50%);
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: var(--m-glass);
+  font-size: 14px;
+}
+
+@media (max-width: 760px) {
+  .museum-styles {
+    order: 3;
+    width: 100%;
+  }
+  .museum-add {
+    margin-left: 0;
+  }
+  .museum-hint {
+    white-space: normal;
+    width: calc(100% - 40px);
+    text-align: center;
+  }
+}
+
+/* Stepping into a picture: the visitor dives into its frame (warp.ts, DiveCamera.tsx), light
+   streaks past (Streaks.tsx), and the picture's own world comes out of the blur (StepIn.tsx). */
+.museum-stage {
+  position: absolute;
+  inset: 0;
+}
+.museum-top,
+.museum-bottom,
+.museum-hint {
+  transition: opacity 450ms ease;
+}
+.museum.inside .museum-top,
+.museum.inside .museum-bottom,
+.museum.inside .museum-hint {
+  opacity: 0;
+  pointer-events: none;
+}
+.museum.inside canvas {
+  cursor: default;
+}
+.museum-streaks {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.stepin {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  overflow: hidden;
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', system-ui, sans-serif;
+}
+/* Mounted during the dive so the far side can load, but not seen until the crossing. */
+.stepin.waiting {
+  pointer-events: none;
+}
+.stepin.waiting .stepin-world {
+  opacity: 0;
+}
+.stepin-world {
+  position: absolute;
+  inset: 0;
+  background: #0b080b;
+  will-change: transform, filter, opacity;
+}
+.stepin-backdrop {
+  position: absolute;
+  inset: -80px;
+  background-color: #0b080b;
+  background-size: cover;
+  background-position: center;
+  filter: blur(70px) saturate(1.5) brightness(0.5);
+}
+.stepin-full {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+/* A still photo is never quite still on the far side: a slow drift, as if breathing. */
+.stepin-full.drift {
+  animation: stepin-drift 26s ease-in-out infinite alternate;
+}
+@keyframes stepin-drift {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.06) translate(-0.6%, -0.4%);
+  }
+}
+.stepin-cover {
+  position: absolute;
+  inset: 0;
+  background: #0b080b;
+}
+.stepin-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.stepin-cover.gone {
+  pointer-events: none;
+}
+.stepin-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+.stepin-ui.shown {
+  opacity: 1;
+}
+.stepin-ui.shown > * {
+  pointer-events: auto;
+}
+.stepin-back {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  height: 44px;
+  padding: 0 18px 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(40, 36, 38, 0.5);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.stepin-back span {
+  font-size: 26px;
+  line-height: 1;
+  margin-top: -3px;
+}
+.stepin-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  max-width: min(620px, calc(100% - 32px));
+  padding: 14px 22px;
+  border-radius: 20px;
+  background: rgba(40, 36, 38, 0.45);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  color: #fff;
+  text-align: center;
+  display: grid;
+  gap: 3px;
+}
+.stepin-caption strong {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.stepin-caption span {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.stepin-caption p {
+  margin: 4px 0 0;
+  font-size: 15px;
+  line-height: 1.4;
+}
+/* Stepping into a visit: its 3D room waits behind the picture, then takes the whole screen. */
+.stepin-3d {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.stepin-3d.live {
+  pointer-events: auto;
+}
+/* The viewer's own buttons sit top-left, so the way back goes top-right. */
+.stepin-room .stepin-back {
+  left: auto;
+  right: 18px;
+}
+.stepin-room .viewer-selection {
+  top: 74px;
+}
+.museum-stepin {
+  padding: 6px 16px !important;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ffb35c, #ff7a8a) !important;
+  color: #2a1418 !important;
+  font-weight: 600;
+  text-decoration: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stepin-full.drift {
+    animation: none;
+  }
+}

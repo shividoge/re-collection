@@ -76,6 +76,9 @@ export function Gallery() {
       <header className="gallery-header">
         <h1>BRAINDANCE</h1>
         <p className="tagline">Step back into a visit.</p>
+        <a href="#/dashboard" className="btn ghost gallery-dashboard">
+          Recall dashboard
+        </a>
       </header>
 
       {needsKey && <KeyForm onSaved={refresh} />}
@@ -126,6 +129,7 @@ export function Gallery() {
                 {c.thumb ? <img src={fileUrl(c.thumb)} alt="" loading="lazy" /> : <div className="thumb-missing" />}
                 <div className="card-body">
                   <h2>{c.title || 'Untitled visit'}</h2>
+                  {c.source === 'video' && <span className="estimated-badge">Estimated from a video</span>}
                   <p className="meta">
                     {c.createdAt ? new Date(c.createdAt).toLocaleString() : 'Unknown date'}
                     {c.durationSec != null && ` · ${Math.round(c.durationSec)} s`}

@@ -1,14 +1,15 @@
 :root {
-  --bd-bg: #05060a;
-  --bd-panel: #0a0f18;
-  --bd-fg: #d7e3ee;
-  --bd-muted: #7d8ea3;
-  --bd-line: #1a2230;
-  --bd-accent: #6ee7ff;
-  --bd-warn: #f5c451;
-  --bd-error: #ff6b6b;
+  /* One look for the whole app: the public site's palette (showcase/showcase.css). */
+  --bd-bg: #07080a;
+  --bd-panel: #111317;
+  --bd-fg: #e8e6e3;
+  --bd-muted: #8b9099;
+  --bd-line: #22252b;
+  --bd-accent: #ff5c3a;
+  --bd-warn: #ffb347;
+  --bd-error: #ff7b72;
   color-scheme: dark;
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: ui-sans-serif, -apple-system, 'Segoe UI', system-ui, sans-serif;
   background: var(--bd-bg);
   color: var(--bd-fg);
 }
@@ -124,4 +125,19 @@ body,
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+
+/* Scenes rebuilt from an ordinary video are estimates; say so wherever they appear. */
+.estimated-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 179, 71, 0.55);
+  color: #ffb347;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  vertical-align: middle;
+  white-space: nowrap;
 }

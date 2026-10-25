@@ -1,6 +1,6 @@
 import { OrbitControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { CameraPath, FollowCamera } from './CameraPath'
 import { cloudBounds } from './cloudBounds'
@@ -10,15 +10,25 @@ import type { FrameRecord } from './formats'
 import type { LoadedCapture } from './loadCapture'
 import { CameraTween, FlyControls, PickHandler, PivotMarker, type CameraGoal, type NavMode } from './Navigation'
 import { dominantQuarterTurns, type Vec3 } from './pose'
+import { useSelectionTint } from './selectionTint'
+import type { SplatStatus } from './SplatRoom'
 import { StaticCloud } from './StaticCloud'
+import { RoomSurfaceMesh } from './RoomSurfaceMesh'
 import { usePlayback } from './usePlayback'
+import { useRoomSurface } from './useRoomSurface'
 import { useSplatSizes } from './useSplatSizes'
 import { useVirtualCursor } from './useVirtualCursor'
 import { selectAlongRay, useRoomIndex, type Selection } from './useRoomIndex'
 import './viewer.css'
 
 const NO_FRAMES: FrameRecord[] = []
-const ACCENT = '#6ee7ff'
+// Spark is big; only captures with a splat load it.
+const SplatRoom = lazy(() => import('./SplatRoom'))
+const SPLAT_SOURCE: Record<NonNullable<LoadedCapture['splat']>['source'], string> = {
+  'trained-from-video': "trained on the video's frames",
+  'trained-from-lidar-capture': "trained on the capture's frames",
+}
+const ACCENT = '#ff5c3a'
 const IS_WINDOWS = typeof navigator !== 'undefined' && /win/i.test(navigator.platform)
 
 export type { NavMode }
@@ -63,7 +73,7 @@ const HELP: Record<NavMode, string> = {
  * synced panel. Areas without data stay empty.
  */
 export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVideo = true, interactive = true, startAt, overlay }: Props) {
-  const { cloud, frames, manifest } = capture
+  const { cloud, frames, manifest, splat } = capture
   const moment = frames?.moment ?? NO_FRAMES
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null)
@@ -72,6 +82,14 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
     setVideoEl(el)
   }, [])
   const [showPath, setShowPath] = useState(true)
+  // The room as one connected surface (fused from the scan's depth frames), or as raw points.
+  const [showSurface, setShowSurface] = useState(true)
+  // The splat when there is one; the points (what was measured or estimated) are always a click away.
+  const [roomView, setRoomView] = useState<'splat' | 'points'>('splat')
+  const [splatStatus, setSplatStatus] = useState<SplatStatus>({ state: 'loading' })
+  const splatUsable = Boolean(splat) && splatStatus.state !== 'failed'
+  // Until the splat has loaded, and whenever "Points (raw)" is picked, the surface or points draw.
+  const showSplat = splatUsable && roomView === 'splat' && splatStatus.state === 'ready'
   // The video plays all the time (sound, people replay); this only hides or shows its panel.
   const [videoOpen, setVideoOpen] = useState(false)
   const cameraRef = useRef<THREE.Camera | null>(null)
@@ -120,8 +138,13 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
   const canFollow = moment.length > 0
   const indexState = useRoomIndex(interactive ? cloud : null)
   const sizes = useSplatSizes(cloud)
+  const { surface: surfaceState, timeline: timelineState } = useRoomSurface(capture)
+  const surface = surfaceState.status === 'ready' ? surfaceState.surface : null
+  const timeline = timelineState.status === 'ready' ? timelineState.timeline : timelineState.status === 'building' ? 'building' : null
   const selectionSizes = useMemo(() => (sizes && selection ? Float32Array.from(selection.points, (i) => sizes[i]) : null), [sizes, selection])
   const room = indexState.status === 'ready' ? indexState.room : null
+  // The selected object, tinted on the connected surface and in the video replay.
+  const selectionTint = useSelectionTint(room?.index ?? null, selection?.voxels ?? null)
 
   const startCam = bounds
     ? ([bounds.center.x + bounds.radius * 0.6, bounds.center.y + bounds.radius * 1.3, bounds.center.z + bounds.radius * 1.0] as const)
@@ -161,10 +184,11 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
       const sel = selectAlongRay(room, cloud, moment, videoW, videoH, origin, dir)
       setSelection(sel)
       setPickMiss(!sel)
-      // In orbit, whatever you click becomes the point you circle around.
-      if (sel && mode === 'orbit') faceTowards(pivotOf(sel))
+      // In orbit, whatever you click becomes the point you circle around; clicking empty space
+      // deselects, and the pivot goes back to the room center like Esc.
+      if (mode === 'orbit') faceTowards(sel ? pivotOf(sel) : roomCenter)
     },
-    [room, cloud, moment, videoW, videoH, mode, faceTowards],
+    [room, cloud, moment, videoW, videoH, mode, faceTowards, roomCenter],
   )
 
   const goToSelection = useCallback(() => {
@@ -218,18 +242,38 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
                 if (import.meta.env.DEV) Object.assign(window, { __bdCamera: s.camera, __bdState: s.get })
               }}
             >
-              <color attach="background" args={['#05060a']} />
-              <HoleFill />
-              <StaticCloud cloud={cloud} sizes={sizes} dim={selection ? 0.45 : canReplayPeople && playback.playing ? 0.55 : 1} />
+              <color attach="background" args={['#07080a']} />
+              {/* Hole filling is for points; it would also misread splats, which write no depth. */}
+              {!showSplat && <HoleFill />}
+              {showSplat ? null : surface && showSurface ? (
+                <RoomSurfaceMesh surface={surface} selection={selectionTint} />
+              ) : (
+                <StaticCloud cloud={cloud} sizes={sizes} />
+              )}
+              {splat && splatUsable && (
+                <Suspense fallback={null}>
+                  <SplatRoom url={splat.url} visible={roomView === 'splat'} dim={selection ? 0.45 : 1} onStatus={setSplatStatus} />
+                </Suspense>
+              )}
               {selection && (
                 <>
-                  <StaticCloud cloud={selection.cloud} sizes={selectionSizes} pointSize={1.2} tint={ACCENT} tintMix={0.35} renderOrder={1} />
+                  {(showSplat || !(surface && showSurface)) && (
+                    <StaticCloud cloud={selection.cloud} sizes={selectionSizes} pointSize={1.2} tint={ACCENT} tintMix={0.35} renderOrder={1} />
+                  )}
                   <SelectionBox selection={selection} />
                 </>
               )}
               {canFollow && showPath && <CameraPath frames={moment} timeRef={playback.timeRef} />}
               {canReplayPeople && capture.id && manifest && videoEl && (
-                <DepthReplay captureId={capture.id} manifest={manifest} frames={moment} video={videoEl} timeRef={playback.timeRef} />
+                <DepthReplay
+                  captureId={capture.id}
+                  manifest={manifest}
+                  frames={moment}
+                  video={videoEl}
+                  timeRef={playback.timeRef}
+                  selection={selectionTint}
+                  timeline={surface && showSurface ? timeline : null}
+                />
               )}
               {mode === 'follow' && canFollow && <FollowCamera frames={moment} timeRef={playback.timeRef} videoW={videoW} videoH={videoH} />}
               {mode === 'orbit' && (
@@ -281,10 +325,21 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
           )}
 
           <div className="viewer-foot">
-            {cloud && <span>{cloud.count.toLocaleString()} points</span>}
+            {cloud && !showSplat && <span>{cloud.count.toLocaleString()} points</span>}
+            {splat && showSplat && (
+              <span>
+                {splat.count.toLocaleString()} Gaussians, {SPLAT_SOURCE[splat.source] ?? splat.source}
+              </span>
+            )}
+            {splat && roomView === 'splat' && splatStatus.state === 'loading' && <span>Loading the splat…</span>}
+            {splatStatus.state === 'failed' && <span className="err">The splat didn't load ({splatStatus.message}). Showing the points.</span>}
             {interactive && indexState.status === 'building' && <span>Indexing room for selection…</span>}
             {indexState.status === 'failed' && <span className="err">Selection unavailable: {indexState.message}</span>}
             {pickMiss && <span>Nothing scanned there</span>}
+            {surfaceState.status === 'building' && <span>Building the room's surface…</span>}
+            {surfaceState.status === 'failed' && <span className="err">Surface unavailable: {surfaceState.message}</span>}
+            {surface && timelineState.status === 'building' && <span>Building the visit's timeline…</span>}
+            {timelineState.status === 'failed' && <span className="err">Timeline unavailable: {timelineState.message}</span>}
             {interactive && (
               <span className="help">{HELP[mode]}</span>
             )}
@@ -317,7 +372,18 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
         <span className="time">
           {fmt(playback.time)} / {fmt(duration)}
         </span>
+        {splatUsable && (
+          <div className="room-view" role="group" aria-label="How to draw the room">
+            <button className={roomView === 'splat' ? 'on' : ''} onClick={() => setRoomView('splat')} title="The room as 3D Gaussians, fitted to the recording">
+              Splat
+            </button>
+            <button className={roomView === 'points' ? 'on' : ''} onClick={() => setRoomView('points')} title="The room as it came out of the capture: the surface, or the raw points">
+              Points
+            </button>
+          </div>
+        )}
         <div className="layers">
+          <Layer label="Surface" on={showSurface} disabled={!surface} set={setShowSurface} />
           <Layer label="Path" on={showPath} disabled={!canFollow} set={setShowPath} />
         </div>
         {showVideo && (

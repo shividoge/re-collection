@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SPLAT_MAX, SPLAT_MIN, depthMeshIndices, splatSizes } from '../src/scene/gaps'
+import { SPLAT_MAX, SPLAT_MIN, depthMeshIndices, movingPixels, splatSizes } from '../src/scene/gaps'
 
 /** A flat square patch of points on y = 0 with the given spacing. */
 function patch(spacing: number, side = 0.6, offsetX = 0): Float32Array {
@@ -59,5 +59,28 @@ describe('depthMeshIndices', () => {
     const holes = depthMeshIndices(grid((u, v) => (u === 1 && v === 1 ? [0, 2] : [2, u === 2 && v === 1 ? 0 : 2])), W, H, 1, out)
     expect(holes).toBeLessThan((W - 1) * (H - 1) * 6)
     for (let k = 0; k < holes; k++) expect([1 * W + 1, 1 * W + 2]).not.toContain(out[k])
+  })
+})
+
+describe('moving pixels', () => {
+  it('keeps a solid blob the room does not explain and drops scattered specks', () => {
+    const w = 64
+    const h = 48
+    const depth = new Float32Array(w * h * 2)
+    for (let k = 0; k < w * h; k++) {
+      depth[k * 2] = 3
+      depth[k * 2 + 1] = 2
+    }
+    // A 20×20 blob at 1 m, and three single-pixel specks at 1.5 m.
+    for (let v = 10; v < 30; v++) for (let u = 10; u < 30; u++) depth[(v * w + u) * 2] = 1
+    for (const k of [5 * w + 50, 40 * w + 5, 44 * w + 60]) depth[k * 2] = 1.5
+    // The room is everything at 2 m or more from the camera (camera at the origin looking down −z).
+    const T = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    const keep = movingPixels(depth, w, h, [50, 50, 32, 24], T, 1, (_x, _y, z) => z <= -2, 100)
+    expect(keep[20 * w + 20]).toBe(1)
+    expect(keep[5 * w + 50]).toBe(0)
+    expect(keep[40 * w + 5]).toBe(0)
+    expect(keep[0]).toBe(0)
+    expect(keep.reduce((a, b) => a + b, 0)).toBe(400)
   })
 })

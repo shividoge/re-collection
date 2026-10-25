@@ -3,28 +3,30 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: var(--bd-bg, #05060a);
-  color: var(--bd-fg, #d7e3ee);
+  background: var(--bd-bg, #07080a);
+  color: var(--bd-fg, #e8e6e3);
 }
 .viewer-stage {
   flex: 1;
   display: flex;
   min-height: 0;
   gap: 1px;
-  background: var(--bd-line, #1a2230);
+  background: var(--bd-line, #22252b);
 }
 .viewer-canvas {
   position: relative;
   flex: 1;
   min-width: 0;
-  background: #05060a;
+  background: #07080a;
+  /* The hidden video panel waits just below; without this the page could scroll to it. */
+  overflow: hidden;
 }
 .viewer-side {
   width: min(34%, 440px);
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--bd-panel, #0a0f18);
+  background: var(--bd-panel, #111317);
 }
 .viewer-video {
   flex: 1;
@@ -43,11 +45,11 @@
   gap: 5px;
   align-items: center;
   font-size: 12px;
-  color: var(--bd-muted, #7d8ea3);
+  color: var(--bd-muted, #8b9099);
   cursor: pointer;
 }
 .viewer-timeline .layer input {
-  accent-color: var(--bd-accent, #6ee7ff);
+  accent-color: var(--bd-accent, #ff5c3a);
 }
 .viewer-timeline .layer.disabled {
   opacity: 0.4;
@@ -73,7 +75,7 @@
   justify-content: center;
   padding: 24px;
   text-align: center;
-  color: var(--bd-muted, #7d8ea3);
+  color: var(--bd-muted, #8b9099);
   font-size: 14px;
 }
 .viewer-modes {
@@ -89,15 +91,15 @@
   font-size: 12px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--bd-fg, #d7e3ee);
-  background: rgba(10, 16, 26, 0.8);
-  border: 1px solid var(--bd-line, #1a2230);
+  color: var(--bd-fg, #e8e6e3);
+  background: rgba(17, 19, 23, 0.8);
+  border: 1px solid var(--bd-line, #22252b);
   padding: 6px 10px;
   cursor: pointer;
 }
 .viewer-modes button.on {
-  border-color: var(--bd-accent, #6ee7ff);
-  color: var(--bd-accent, #6ee7ff);
+  border-color: var(--bd-accent, #ff5c3a);
+  color: var(--bd-accent, #ff5c3a);
 }
 .viewer-modes button:disabled,
 .viewer-timeline button:disabled {
@@ -113,7 +115,7 @@
   flex-wrap: wrap;
   gap: 4px 16px;
   font-size: 11px;
-  color: var(--bd-muted, #7d8ea3);
+  color: var(--bd-muted, #8b9099);
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
@@ -131,7 +133,7 @@
   padding: 10px 12px;
   font-size: 12px;
   background: rgba(8, 12, 20, 0.88);
-  border: 1px solid var(--bd-accent, #6ee7ff);
+  border: 1px solid var(--bd-accent, #ff5c3a);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -140,15 +142,15 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: var(--bd-accent, #6ee7ff);
+  color: var(--bd-accent, #ff5c3a);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 .viewer-selection button {
   font: inherit;
-  color: var(--bd-fg, #d7e3ee);
+  color: var(--bd-fg, #e8e6e3);
   background: transparent;
-  border: 1px solid var(--bd-line, #1a2230);
+  border: 1px solid var(--bd-line, #22252b);
   padding: 3px 6px;
   cursor: pointer;
 }
@@ -159,14 +161,14 @@
   padding: 0 2px;
 }
 .viewer-selection .muted {
-  color: var(--bd-muted, #7d8ea3);
+  color: var(--bd-muted, #8b9099);
 }
 .viewer-selection .sel-sub {
   margin-top: 6px;
   font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--bd-muted, #7d8ea3);
+  color: var(--bd-muted, #8b9099);
 }
 .viewer-selection .sel-seen {
   display: flex;
@@ -175,20 +177,20 @@
 }
 .viewer-selection .sel-seen button:hover,
 .viewer-selection .sel-go:hover {
-  border-color: var(--bd-accent, #6ee7ff);
+  border-color: var(--bd-accent, #ff5c3a);
 }
 .viewer-selection .sel-go {
   margin-top: 6px;
-  color: var(--bd-bg, #05060a);
-  background: var(--bd-accent, #6ee7ff);
-  border-color: var(--bd-accent, #6ee7ff);
+  color: var(--bd-bg, #07080a);
+  background: var(--bd-accent, #ff5c3a);
+  border-color: var(--bd-accent, #ff5c3a);
 }
 .viewer-timeline {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  border-top: 1px solid var(--bd-line, #1a2230);
+  border-top: 1px solid var(--bd-line, #22252b);
 }
 .viewer-timeline .track {
   position: relative;
@@ -198,7 +200,7 @@
 }
 .viewer-timeline input[type='range'] {
   width: 100%;
-  accent-color: var(--bd-accent, #6ee7ff);
+  accent-color: var(--bd-accent, #ff5c3a);
 }
 /* When the selected object was on camera. Sits just above the slider. */
 .viewer-timeline .seen {
@@ -207,14 +209,14 @@
   height: 5px;
   padding: 0;
   border: none;
-  background: var(--bd-accent, #6ee7ff);
+  background: var(--bd-accent, #ff5c3a);
   opacity: 0.8;
   cursor: pointer;
 }
 .viewer-timeline .time {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  color: var(--bd-muted, #7d8ea3);
+  color: var(--bd-muted, #8b9099);
   min-width: 110px;
   text-align: right;
 }
@@ -240,8 +242,8 @@
   margin: -9px 0 0 -9px;
   pointer-events: none;
   background:
-    linear-gradient(var(--bd-accent, #6ee7ff), var(--bd-accent, #6ee7ff)) center / 2px 18px no-repeat,
-    linear-gradient(var(--bd-accent, #6ee7ff), var(--bd-accent, #6ee7ff)) center / 18px 2px no-repeat;
+    linear-gradient(var(--bd-accent, #ff5c3a), var(--bd-accent, #ff5c3a)) center / 2px 18px no-repeat,
+    linear-gradient(var(--bd-accent, #ff5c3a), var(--bd-accent, #ff5c3a)) center / 18px 2px no-repeat;
   opacity: 0.85;
 }
 /* Fly steering (WASD held): hide the cursor on the whole page, like a game. */
@@ -283,7 +285,7 @@ html.bd-virtual-cursor * {
   width: min(36%, 420px);
   max-height: calc(100% - 64px);
   display: flex;
-  border: 1px solid var(--bd-line, #1a2230);
+  border: 1px solid var(--bd-line, #22252b);
   background: #000;
   transition: transform 220ms ease, opacity 220ms ease;
   transform: translateY(calc(100% + 60px));
@@ -303,9 +305,14 @@ html.bd-virtual-cursor * {
 .viewer-video-float .viewer-video {
   flex: 1;
 }
+.viewer-timeline .room-view {
+  display: flex;
+  gap: 4px;
+}
+.viewer-timeline .room-view button.on,
 .viewer-timeline .video-toggle.on {
-  border-color: var(--bd-accent, #6ee7ff);
-  color: var(--bd-accent, #6ee7ff);
+  border-color: var(--bd-accent, #ff5c3a);
+  color: var(--bd-accent, #ff5c3a);
 }
 @media (max-width: 760px) {
   .viewer-video-float {

@@ -24,6 +24,7 @@ capture-<uuid>/
   manifest.json      [built] what's in the folder; read this first
   room.bin           [built] the room's point cloud, compact format for the web
   room.ply           [built] same cloud for MeshLab / CloudCompare
+  room.splat.ply     [optional] the room as 3D Gaussians, trained off the phone; see "room splat"
   video.mp4          [built on ios/upload] H.264 + AAC, so every browser can play it. The sample capture predates this and has video.mov (HEVC)
   frames.jsonl       [built] one line per frame: camera pose, intrinsics, depth index
   depth.bin          [built] 10 Hz depth frames, UInt16 millimeters
@@ -73,6 +74,7 @@ Always read file names from `manifest.json` (`video.file`, `room.bin`, and so on
 - `title` and `attendees` are filled in on the phone's review screen [next]. Until then they're empty. Attendee names come from the family, never from face recognition.
 - Newer captures add `"transcript": { "file": "transcript.json", "locale": "en-US", "onDevice": true }` and `"keyframes": { "dir": "keyframes", "everySec": 1, "count": 29 }` (one per whole second with video). Treat both as optional and check for them; the sample capture has neither.
 - `warnings` lists anything that went wrong during recording, such as dropped frames. Show these to the family, don't hide them.
+- `room.splat` is optional; see "room splat" below. Without it, everything works as described here.
 
 ## room.bin [built]
 
@@ -91,6 +93,30 @@ function parseRoomBin(buf: ArrayBuffer) {
   return { n, positions, colors };
 }
 ```
+
+## room splat [optional]
+
+A 3D Gaussian splat of the static room, made after the capture (never on the phone). It never replaces `room.bin`, which stays required alongside it: the points are the measured (or, for a video, estimated) data, and the web always offers them as "Points (raw)".
+
+```json
+"room": { "ply": "room.ply", "bin": "room.bin", "points": 171618, "voxelMeters": 0.015, "source": "estimated-from-video",
+          "splat": { "file": "room.splat.ply", "format": "3dgs-ply", "count": 312000, "shDegree": 0, "source": "trained-from-video" } }
+```
+
+| Field | Meaning |
+|---|---|
+| `file` | The splat file in the capture folder. |
+| `format` | Always `3dgs-ply` for now. |
+| `count` | Number of Gaussians (`element vertex` in the PLY header). |
+| `shDegree` | Spherical-harmonics degree, 0 to 3. The file has `3·((shDegree+1)² − 1)` `f_rest_*` properties. |
+| `source` | `trained-from-video` (optimized against an old video's frames) or `trained-from-lidar-capture` (optimized against a phone capture's frames). |
+
+The file is the standard INRIA 3DGS PLY, `binary_little_endian 1.0`, one `vertex` element with float properties: `x y z`, optional `nx ny nz`, `f_dc_0..2`, `f_rest_*`, `opacity` (a logit), `scale_0..2` (natural log), `rot_0..3` (quaternion, w first). It is in the **same world coordinates as `room.bin` and `frames.jsonl`** (ARKit world, meters, y up), so it lines up with the camera path and the people replay with no transform.
+
+Rules:
+- People are masked out; the splat is the static room only. People come from `depth.bin` as before.
+- Gaussians come only from this capture's own frames: they are optimized to reproduce them. No generative fill, no inpainting of surfaces the camera never saw: those areas stay empty (CLAUDE.md "Nothing fake").
+- The guide checks on `complete` that the header says `binary_little_endian`, has `count` vertices and the required properties, and that the file size matches.
 
 ## frames.jsonl [built]
 

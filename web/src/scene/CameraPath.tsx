@@ -9,7 +9,7 @@ function poseMatrix(T: number[], quarterTurns: number): THREE.Matrix4 {
 }
 
 /** The recorder's path as a faint line, plus a small frustum at the current playhead. */
-export function CameraPath({ frames, timeRef, color = '#6ee7ff' }: { frames: FrameRecord[]; timeRef: MutableRefObject<number>; color?: string }) {
+export function CameraPath({ frames, timeRef, color = '#ff5c3a' }: { frames: FrameRecord[]; timeRef: MutableRefObject<number>; color?: string }) {
   const line = useMemo(() => {
     const pts = new Float32Array(frames.length * 3)
     frames.forEach((f, i) => pts.set([f.T[12], f.T[13], f.T[14]], i * 3))

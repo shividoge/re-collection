@@ -86,6 +86,11 @@ export class Store {
     return status;
   }
 
+  /** True when the family marked this capture public (visitors can see it without a key). */
+  async isPublic(id) {
+    return (await this.status(id)).public === true;
+  }
+
   async listIds() {
     if (!existsSync(this.capturesDir)) return [];
     const entries = await readdir(this.capturesDir, { withFileTypes: true });

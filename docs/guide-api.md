@@ -48,6 +48,8 @@ guide/data/
 
 The capture id is the manifest's `id`.
 
+Museum rooms ("Visit together") live in memory only and are never written to disk.
+
 ## Conventions
 
 - JSON in and out, `Content-Type: application/json`, except file uploads and downloads.
@@ -179,6 +181,53 @@ type Progress = {
   nextRevisit: string[];                          // ISO dates: visit +1, +3, +7, +14 days
 };
 ```
+
+### Visit together (museum rooms)
+
+A family member joins the patient's Memory Museum from their phone and leads the walk. The iPad opens a room and shows its code; the helper opens `…/#/museum?join=CODE`. Both screens follow one shared state.
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| POST | `/api/museum/rooms` | optional `{ at }` (the iPad's current frame) | `{ code, state, peers, version }` |
+| GET | `/api/museum/rooms/:code?as=&name=&client=&since=` | – | `{ code, state, peers, version }`, or 204 with no body when `since` equals `version`. Checks a typed code, and is the polling fallback, below |
+| GET | `/api/museum/rooms/:code/events?as=patient\|helper&name=&client=` | – | server-sent events (`text/event-stream`), below |
+| POST | `/api/museum/rooms/:code/state` | `{ at, atId?, window, by, name? }` | `{ ok: true, state }`, and the new state goes to every listener |
+
+```ts
+type RoomState = {
+  at: number;               // frame index in the museum's oldest-first list; -1 = the entrance
+  atId: string | null;      // capture id of that frame (screens prefer it, in case their lists differ)
+  window: string | null;    // capture id open in the Memory Window on the iPad, or null (in the hall)
+  by: "patient" | "helper"; // who made this change
+  name: string | null;      // the helper's name, when by = "helper"
+  rev: number;              // goes up by one on every change
+  updatedAt: string;        // ISO time
+};
+type Peers = { patient: number; helpers: string[] };   // screens listening or polling; helpers by name
+// version: goes up by one on every change to state or peers (send it back as ?since=)
+```
+
+- **Codes** are 4 consonants with no vowels and no Y (e.g. `KTRB`), so they never spell a word. A new code skips codes in use. Codes are case-insensitive. No auth beyond the code (hackathon only).
+- **Events:** `event: state` with a `RoomState` (sent on connect, then on every change) and `event: peers` with `Peers` (on connect and whenever someone joins or leaves). A comment line (`: keepalive`) every 15 s keeps the cloudflared tunnel open. `as`, `name` and `client` only label the listener in `peers`. A malformed `client` or `since` → 400. `EventSource` can't send headers, so when `BRAINDANCE_KEY` is set this route also accepts `?key=`.
+- **Polling fallback:** a cloudflared quick tunnel (`*.trycloudflare.com`) passes the event stream's headers but never its body, so a screen whose stream hasn't delivered its first `state` within 3 s (or errors) polls `GET /api/museum/rooms/:code` about once a second instead. A poll with `client` (8–64 letters, digits, `-` or `_`, one per browser tab) counts that screen in `peers` for 10 s after its last poll; `as` and `name` label it as on the event stream. A screen that sends the same `client` on its stream and its polls is counted once, and its first poll ends that stream (a tunnel can hold a stream open at the guide for about 30 s after the browser closed it). Stale pollers are dropped (and listeners get `peers`) within a few seconds. `since` is a whole number; with `since` equal to the room's `version`, the answer is 204 with no body. Screens order states by `rev`, so a late poll never moves a screen back.
+- **Validation:** `at` is an integer from -1 to 9999; `atId` is null or a capture id; `window` is null or the id of a capture on this guide; `by` is `patient` or `helper`; `name` is at most 40 characters. A bad body → 400. A badly formed or unknown code → 404.
+- **Storage:** in memory only (a `Map`); a guide restart forgets every room. A room expires 3 hours after its last change once no one is listening and no one has polled for 10 s; its code can then be reused.
+
+## Public routes (visitors, no key)
+
+For the site's front page. Nothing here needs `X-Braindance-Key`, nothing writes, and nothing calls Claude. A capture is visible only after the family marks it public; a private capture answers 404, the same as one that doesn't exist.
+
+| Method | Path | Returns |
+|---|---|---|
+| PUT | `/api/captures/:id/public` (needs the key) | body `{ "public": true \| false }` → `{ ok, public }`. Also `npm --prefix guide run publish -- <id> [--off]` |
+| GET | `/public/captures` | public captures: `{ id, title, summary, createdAt, durationSec, thumb, facts }[]` |
+| GET | `/public/captures/:id` | like `/api/captures/:id`, with file URLs under `/public/files/` |
+| GET | `/public/moments/:id` | the moment with only facts that are approved and not "don't bring this up", in the family's wording; the grounding log is left out |
+| GET | `/public/progress/:id` | same as `/api/progress` |
+| GET | `/public/sessions/:id` | a finished session of a public capture: turns, held-back sentences, branches, scores, note (no person details) |
+| GET, HEAD | `/public/files/:id/:name` | capture files with Range; never `status.json`, `moment.json` or `room.ply` |
+
+The web app's `#/` (front page) and `#/p/<id>` (walk-in viewer) use only these routes. `#/captures` is the family's gallery and asks for the key.
 
 ## The grounding check (code, not prompt)
 
