@@ -33,17 +33,33 @@ def viewmats(c2w: torch.Tensor) -> torch.Tensor:
     return FLIP.to(c2w) @ torch.linalg.inv(c2w)
 
 
+def _gauss_blur(x: torch.Tensor) -> torch.Tensor:
+    """11-tap Gaussian (sigma 1.5) blur of (B, C, H, W), separable: two 1D passes."""
+    g = torch.exp(-((torch.arange(11, device=x.device, dtype=x.dtype) - 5.0) ** 2) / (2 * 1.5**2))
+    g = g / g.sum()
+    c = x.shape[1]
+    x = F.conv2d(x, g.view(1, 1, 11, 1).expand(c, 1, 11, 1), padding=(5, 0), groups=c)
+    return F.conv2d(x, g.view(1, 1, 1, 11).expand(c, 1, 1, 11), padding=(0, 5), groups=c)
+
+
 def ssim(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    """Mean SSIM of two images (B, 3, H, W) in 0..1, 11x11 Gaussian window."""
-    g = torch.exp(-((torch.arange(11, device=a.device) - 5.0) ** 2) / (2 * 1.5**2))
-    g = (g / g.sum()).to(a.dtype)
-    win = (g[:, None] * g[None, :]).expand(3, 1, 11, 11)
-    blur = lambda x: F.conv2d(x, win, padding=5, groups=3)  # noqa: E731
-    mu_a, mu_b = blur(a), blur(b)
-    va, vb, cov = blur(a * a) - mu_a**2, blur(b * b) - mu_b**2, blur(a * b) - mu_a * mu_b
+    """Mean SSIM of images (B, 3, H, W) in 0..1, 11x11 Gaussian window (same value as the usual
+    2D-window SSIM; fused_ssim's CUDA kernel is used for training when it's installed)."""
+    mu_a, mu_b = _gauss_blur(a), _gauss_blur(b)
+    va, vb, cov = _gauss_blur(a * a) - mu_a**2, _gauss_blur(b * b) - mu_b**2, _gauss_blur(a * b) - mu_a * mu_b
     c1, c2 = 0.01**2, 0.03**2
     s = ((2 * mu_a * mu_b + c1) * (2 * cov + c2)) / ((mu_a**2 + mu_b**2 + c1) * (va + vb + c2))
     return s.mean()
+
+
+def training_ssim():
+    """fused_ssim (much faster, same formula) when installed, else `ssim`."""
+    try:
+        from fused_ssim import fused_ssim
+
+        return lambda a, b: fused_ssim(a, b, padding="same")
+    except ImportError:
+        return ssim
 
 
 # ---------- PLY ----------
@@ -127,26 +143,43 @@ def neighbour_spacing(points: np.ndarray, k: int = 3) -> np.ndarray:
     return d[:, 1:].mean(1).astype(np.float32)
 
 
+def schedule(n: int, batch: int, steps: int, seed: int = 0) -> torch.Tensor:
+    """Frame indices (steps, batch): consecutive random passes over all n frames."""
+    rng = np.random.default_rng(seed)
+    order = np.concatenate([rng.permutation(n) for _ in range(-(-steps * batch // n))])
+    return torch.from_numpy(order[: steps * batch].reshape(steps, batch))
+
+
+def train_steps(n: int, batch: int, passes: float) -> int:
+    """Optimiser steps for `passes` passes over n frames, `batch` frames per step."""
+    return max(100, math.ceil(passes * n / batch))
+
+
 def train(points: torch.Tensor, colors: torch.Tensor, images: torch.Tensor, masks: torch.Tensor,
-          poses: torch.Tensor, Ks: torch.Tensor, depths: torch.Tensor, steps: int = 7000, sh_degree: int = 1,
-          cap: int = 1_000_000, depth_weight: float = 0.2, empty_weight: float = 0.1, log=print) -> dict[str, np.ndarray]:
-    """Optimise Gaussians so they reproduce the training frames.
+          poses: torch.Tensor, Ks: torch.Tensor, depths: torch.Tensor, passes: float = 30, batch: int = 4,
+          sh_degree: int = 1, cap: int = 800_000, depth_weight: float = 0.2, empty_weight: float = 0.1,
+          log=print, checkpoint=lambda: None) -> dict[str, torch.Tensor]:
+    """Optimise Gaussians so they reproduce the training frames, `batch` frames per step.
     points (P, 3), colors (P, 3) 0..255: the fused room cloud (initial Gaussians).
     images (N, H, W, 3) uint8, masks (N, H, W) bool (True = moving thing, ignored by the loss),
     poses (N, 4, 4) capture camera-to-world, Ks (N, 3, 3) at the images' resolution.
-    depths (N, h, w): the model's depth for these frames, 0 where it shouldn't be trusted (edges,
-    people, sky); any resolution. Matching it keeps the splat's shape sensible away from the
+    depths (N, h, w): the model's depth for these frames on the depth grid, 0 where it isn't
+    trusted (edges, people, sky). Matching it keeps the splat's shape sensible away from the
     recorded path: with little camera motion, colour alone lets Gaussians smear along the rays.
     Inside the masks the splat is nudged towards transparent (`empty_weight`): a wall another
     frame shows keeps its colour, but nothing is made up behind someone who never moved.
-    A small per-frame colour gain/offset absorbs the camera's auto-exposure; it is not exported."""
+    A small per-frame colour gain/offset absorbs the camera's auto-exposure; it is not exported.
+    No step reads a value back from the GPU except the progress log."""
+    from gsplat import rasterization
     from gsplat.strategy import MCMCStrategy
 
     dev = images.device
+    n, H, W, _ = images.shape
+    B = min(batch, n)
+    steps = train_steps(n, B, passes)
     if len(points) > cap // 2:  # start from a random half of the budget; MCMC adds the rest where needed
         pick = torch.randperm(len(points), device=points.device)[: cap // 2]
         points, colors = points[pick], colors[pick]
-    n, H, W, _ = images.shape
     centres = poses[:, :3, 3]
     scene_scale = float((centres - centres.mean(0)).norm(dim=1).max().clamp_min(0.5)) * 1.1
 
@@ -163,38 +196,50 @@ def train(points: torch.Tensor, colors: torch.Tensor, images: torch.Tensor, mask
         "sh0": torch.nn.Parameter(sh[:, :1].contiguous()),
         "shN": torch.nn.Parameter(sh[:, 1:].contiguous()),
     })
+    # Batches average B frames' gradients: scale the learning rates by sqrt(B), as gsplat does.
     lr = {"means": 1.6e-4 * scene_scale, "scales": 5e-3, "quats": 1e-3, "opacities": 5e-2, "sh0": 2.5e-3, "shN": 2.5e-3 / 20}
-    optimizers = {name: torch.optim.Adam([params[name]], lr=lr[name], eps=1e-15) for name in params}
+    optimizers = {name: torch.optim.Adam([params[name]], lr=lr[name] * math.sqrt(B), eps=1e-15 / math.sqrt(B))
+                  for name in params}
     means_decay = torch.optim.lr_scheduler.ExponentialLR(optimizers["means"], gamma=0.01 ** (1.0 / steps))
     exposure = torch.nn.Parameter(torch.zeros((n, 2, 3), device=dev))  # per frame: log gain, offset
-    exposure_opt = torch.optim.Adam([exposure], lr=1e-3)
+    exposure_opt = torch.optim.Adam([exposure], lr=1e-3 * math.sqrt(B))
 
-    strategy = MCMCStrategy(cap_max=cap, refine_stop_iter=int(steps * 0.8), verbose=False)
+    every = max(5, round(steps / 70))
+    strategy = MCMCStrategy(cap_max=cap, refine_start_iter=every * 5, refine_stop_iter=int(steps * 0.8),
+                            refine_every=every, verbose=False)
     strategy.check_sanity(params, optimizers)
     state = strategy.initialize_state()
+    ssim_fn = training_ssim()
 
-    target_depth = F.interpolate(depths[:, None], size=(H, W), mode="nearest")[:, 0]
-    order = torch.randperm(n, device=dev)
+    dh, dw = depths.shape[1:]
+    iv = ((torch.arange(dh, device=dev) + 0.5) * H / dh).long().clamp_max(H - 1)
+    iu = ((torch.arange(dw, device=dev) + 0.5) * W / dw).long().clamp_max(W - 1)
+    order = schedule(n, B, steps).to(dev)
+    sh_at = steps // 7
+    log_every = max(1, steps // 7)
+    log(f"    {steps} steps of {B} frames ({passes:g} passes over {n})")
     for step in range(steps):
-        i = int(order[step % n])
-        if step % n == n - 1:
-            order = torch.randperm(n, device=dev)
-        degree = min(sh_degree, step // 1000)
-        g = {"means": params["means"], "scales": params["scales"], "quats": params["quats"],
-             "opacities": params["opacities"], "sh": torch.cat([params["sh0"], params["shN"]], 1)}
-        out, alpha, info = render(g, poses[i], Ks[i], W, H, degree, with_depth=True)
-        img = out[..., :3] * torch.exp(exposure[i, 0]) + exposure[i, 1]
-        gt = images[i].float() / 255
-        keep = ~masks[i][..., None]
-        pred = torch.where(keep, img, gt)  # moving things: no gradient
-        l1 = (pred - gt).abs().mean()
-        loss = 0.8 * l1 + 0.2 * (1 - ssim(pred.permute(2, 0, 1)[None], gt.permute(2, 0, 1)[None]))
-        if masks[i].any():  # where people stood: empty unless other frames show what's there
-            loss = loss + empty_weight * alpha[masks[i]].mean()
-        d_ref = target_depth[i]
-        sure = d_ref > 0
-        if sure.any():
-            loss = loss + depth_weight * ((out[..., 3][sure] - d_ref[sure]).abs() / d_ref[sure]).mean()
+        if step % 50 == 0:
+            checkpoint()
+        idx = order[step]
+        degree = min(sh_degree, step // sh_at) if sh_at else sh_degree
+        colors_sh = torch.cat([params["sh0"], params["shN"]], 1)
+        out, alpha, info = rasterization(
+            params["means"], F.normalize(params["quats"], dim=-1), torch.exp(params["scales"]),
+            torch.sigmoid(params["opacities"]), colors_sh, viewmats(poses[idx]), Ks[idx], W, H,
+            sh_degree=degree, packed=False, rasterize_mode="antialiased", render_mode="RGB+ED")
+        e = exposure[idx]
+        img = out[..., :3].clamp(0, 1) * torch.exp(e[:, 0])[:, None, None, :] + e[:, 1][:, None, None, :]
+        gt = images[idx].float() / 255
+        m = masks[idx]
+        pred = torch.where(m[..., None], gt, img)  # moving things: no gradient
+        loss = 0.8 * (pred - gt).abs().mean() + 0.2 * (1 - ssim_fn(pred.permute(0, 3, 1, 2), gt.permute(0, 3, 1, 2)))
+        mf = m.float()
+        loss = loss + empty_weight * (alpha[..., 0] * mf).sum() / mf.sum().clamp_min(1)
+        d_ref = depths[idx]
+        sure = (d_ref > 0).float()
+        ed = out[..., 3][:, iv][:, :, iu]
+        loss = loss + depth_weight * ((ed - d_ref).abs() / d_ref.clamp_min(1e-3) * sure).sum() / sure.sum().clamp_min(1)
         # MCMC's regularisers (prefer few, small Gaussians), plus no needles: a Gaussian may be at
         # most 10 times longer than it is wide.
         scales = torch.exp(params["scales"])
@@ -206,37 +251,97 @@ def train(points: torch.Tensor, colors: torch.Tensor, images: torch.Tensor, mask
             opt.zero_grad(set_to_none=True)
         means_decay.step()
         strategy.step_post_backward(params, optimizers, state, step, info, lr=means_decay.get_last_lr()[0])
-        if step % 1000 == 0 or step == steps - 1:
+        if step % log_every == 0 or step == steps - 1:
             log(f"    step {step:5d}  loss {loss.item():.4f}  gaussians {len(params['means']):,}")
 
-    with torch.no_grad():
-        g = {"means": params["means"], "scales": params["scales"], "quats": params["quats"],
-             "opacities": params["opacities"], "sh": torch.cat([params["sh0"], params["shN"]], 1)}
-        alive = (torch.sigmoid(params["opacities"]) > 0.005) & seen(g, masks, poses, Ks, sh_degree)
-        log(f"    kept {int(alive.sum()):,} of {len(alive):,} Gaussians (the rest no frame saw)")
-        out = {k: v[alive] for k, v in g.items()}
-        out["quats"] = F.normalize(out["quats"], dim=-1)
-    return {k: v.detach().float().cpu().numpy() for k, v in out.items()}
+    g = {"means": params["means"].detach(), "scales": params["scales"].detach(),
+         "quats": F.normalize(params["quats"].detach(), dim=-1), "opacities": params["opacities"].detach(),
+         "sh": torch.cat([params["sh0"], params["shN"]], 1).detach()}
+    return g
 
 
-def seen(g: dict[str, torch.Tensor], masks: torch.Tensor, poses: torch.Tensor, Ks: torch.Tensor,
-         sh_degree: int, slack: float = 0.05) -> torch.Tensor:
-    """Which Gaussians some training frame actually saw: the centre lands inside the frame, on a
-    pixel that isn't a person or pet, and isn't hidden behind the rendered surface there (within
-    `slack`). The rest were never checked against the video (behind people who never moved, or
-    outside every frame) and are dropped instead of shown as smears."""
+def contributions(g: dict[str, torch.Tensor], poses: torch.Tensor, Ks: torch.Tensor, masks: torch.Tensor,
+                  batch: int = 4) -> torch.Tensor:
+    """How much each Gaussian shows in the training frames: the sum, over every pixel that isn't a
+    person or pet, of its blending weight there (exact: the gradient of the rendered image with
+    respect to a per-Gaussian colour of 1). 0 for Gaussians no frame saw, or saw only behind people."""
+    from gsplat import rasterization
+
     n, H, W = masks.shape
-    ok = torch.zeros(len(g["means"]), dtype=torch.bool, device=masks.device)
-    for i in range(n):
-        out, alpha, _ = render(g, poses[i], Ks[i], W, H, sh_degree, with_depth=True)
-        depth = out[..., 3]
-        cam = (g["means"] - poses[i][:3, 3]) @ poses[i][:3, :3]  # world -> capture camera
-        z = -cam[:, 2]
-        zs = z.clamp_min(1e-6)
-        u = (Ks[i][0, 0] * cam[:, 0] / zs + Ks[i][0, 2]).round().long()
-        v = (-Ks[i][1, 1] * cam[:, 1] / zs + Ks[i][1, 2]).round().long()
-        inside = (z > 0) & (u >= 0) & (u < W) & (v >= 0) & (v < H)
-        uc, vc = u.clamp(0, W - 1), v.clamp(0, H - 1)
-        in_front = (alpha[vc, uc] < 0.5) | (z <= depth[vc, uc] * (1 + slack))  # nothing solid in front of it
-        ok |= inside & ~masks[i][vc, uc] & in_front
-    return ok
+    ones = torch.ones((len(g["means"]), 3), device=masks.device, requires_grad=True)
+    for s in range(0, n, batch):
+        img, _, _ = rasterization(g["means"], g["quats"], torch.exp(g["scales"]), torch.sigmoid(g["opacities"]), ones,
+                                  viewmats(poses[s:s + batch]), Ks[s:s + batch], W, H, sh_degree=None, packed=False,
+                                  rasterize_mode="antialiased")
+        (img[..., 0] * (~masks[s:s + batch]).float()).sum().backward()
+    return ones.grad[:, 0].detach()
+
+
+def prune(g: dict[str, torch.Tensor], contrib: torch.Tensor, keep_max: int, min_contrib: float = 0.5) -> dict[str, torch.Tensor]:
+    """Drop Gaussians no frame showed (less than `min_contrib` of a pixel in total), then keep
+    the `keep_max` that show the most."""
+    alive = torch.nonzero(contrib >= min_contrib)[:, 0]
+    if len(alive) > keep_max:
+        alive = alive[torch.topk(contrib[alive], keep_max).indices]
+    alive = alive.sort().values
+    return {k: v[alive] for k, v in g.items()}
+
+
+def train_from_package(capture: Path, masks_model, device: str, holdout_frames: list[int] | None = None,
+                       passes: float = 30, batch: int = 4, width: int = 1280, cap: int = 800_000,
+                       keep_max: int = 500_000, sh_degree: int = 1, log=print, checkpoint=lambda: None,
+                       timings: dict | None = None) -> dict[str, np.ndarray]:
+    """Train the room splat from a capture package on disk (video.mp4, frames.jsonl, depth,
+    room.bin): the model frames (lines with `d`) minus `holdout_frames`. Same inputs whether it
+    runs right after the conversion or as the GPU worker's separate splat job."""
+    import json
+    import time
+
+    import decode
+    import fusion
+    import package
+
+    t0 = time.perf_counter()
+    timings = timings if timings is not None else {}
+    dev = torch.device(device)
+    manifest = json.loads((capture / "manifest.json").read_text())
+    lines = [l for l in package.read_frames(capture / "frames.jsonl") if l.get("d") is not None]
+    skip = set(holdout_frames or [])
+    lines = [l for l in lines if l["i"] not in skip]
+    if len(lines) < 2:
+        raise decode.ConvertError("Fewer than two frames with depth to train the splat on.")
+    info = decode.probe(capture / manifest["video"]["file"])
+    dec = decode.decode(info, [l["i"] for l in lines], width, None, checkpoint=checkpoint)
+    images_cpu = torch.from_numpy(np.stack([dec.frames[l["i"]] for l in lines]))
+    _, H, W, _ = images_cpu.shape
+    masks = masks_model(images_cpu).to(dev)
+    images = images_cpu.to(dev)
+    mm = package.read_depth(capture, manifest)
+    depths = torch.from_numpy(np.stack([mm[l["d"]] for l in lines]).astype(np.float32) / 1000).to(dev)
+    depths = torch.where(fusion.resize_mask(masks, *depths.shape[1:]), torch.zeros_like(depths), depths)
+    poses, Ks = [], []
+    for l in lines:
+        T, K = package.pose_of(l)
+        poses.append(T)
+        Ks.append(fusion.scale_K(torch.tensor(K, dtype=torch.float32), W / info.width, H / info.height))
+    poses_t = torch.tensor(np.stack(poses), dtype=torch.float32, device=dev)
+    Ks_t = torch.stack(Ks).to(dev)
+    pts, cols = package.read_room_bin(capture / manifest["room"]["bin"])
+    if device == "cuda":
+        torch.cuda.synchronize()
+    timings["splat prep"] = round(time.perf_counter() - t0, 2)
+    t0 = time.perf_counter()
+    log(f"    training on {len(lines)} frames at {W}x{H}, starting from {len(pts):,} points")
+    g = train(torch.from_numpy(pts).to(dev), torch.from_numpy(cols).to(dev), images, masks, poses_t, Ks_t, depths,
+              passes=passes, batch=batch, sh_degree=sh_degree, cap=cap, log=log, checkpoint=checkpoint)
+    if device == "cuda":
+        torch.cuda.synchronize()
+    timings["splat train"] = round(time.perf_counter() - t0, 2)
+    t0 = time.perf_counter()
+    contrib = contributions(g, poses_t, Ks_t, masks)
+    before = len(g["means"])
+    g = prune(g, contrib, keep_max)
+    log(f"    kept {len(g['means']):,} of {before:,} Gaussians (the rest no frame showed, or showed least)")
+    out = {k: v.float().cpu().numpy() for k, v in g.items()}
+    timings["splat prune"] = round(time.perf_counter() - t0, 2)
+    return out
