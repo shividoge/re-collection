@@ -16,7 +16,7 @@ export function RoomFile() {
     return (
       <div className="center-message">
         <p>
-          No room file is open in this tab. <a href="#/">Choose one on the captures page.</a>
+          No room file is open in this tab. <a href="#/captures">Choose one on the captures page.</a>
         </p>
       </div>
     )
@@ -24,7 +24,7 @@ export function RoomFile() {
   return (
     <div className="page">
       <header className="bar">
-        <a href="#/" className="back">
+        <a href="#/captures" className="back">
           ← Captures
         </a>
         <div className="bar-title">

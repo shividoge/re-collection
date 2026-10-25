@@ -23,3 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 
+
+# Copied from node_modules by scripts/copy-mediapipe.mjs
+public/mediapipe/

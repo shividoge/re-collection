@@ -30,7 +30,7 @@
   font: inherit;
   font-size: 12px;
   color: var(--bd-fg);
-  background: rgba(10, 16, 26, 0.8);
+  background: rgba(17, 19, 23, 0.8);
   border: 1px solid var(--bd-line);
   padding: 6px 12px;
   cursor: pointer;
@@ -79,7 +79,7 @@ button.link:hover {
 }
 .gallery.dragging .dropzone {
   border-color: var(--bd-accent);
-  background: rgba(110, 231, 255, 0.08);
+  background: rgba(255, 92, 58, 0.08);
 }
 .drop-title {
   margin: 0;
@@ -143,7 +143,7 @@ button.link:hover {
   aspect-ratio: 4 / 3;
   object-fit: cover;
   display: block;
-  background: #0d121b;
+  background: #15181d;
 }
 .card-body {
   padding: 10px 12px 12px;
@@ -166,7 +166,7 @@ button.link:hover {
 }
 .badge.working {
   color: var(--bd-accent);
-  border-color: rgba(110, 231, 255, 0.4);
+  border-color: rgba(255, 92, 58, 0.4);
 }
 .badge.failed {
   color: var(--bd-error);
@@ -520,7 +520,7 @@ blockquote {
   line-height: 1.3;
   text-align: center;
   color: #fff;
-  background: rgba(5, 6, 10, 0.72);
+  background: rgba(7, 8, 10, 0.72);
   border-radius: 10px;
 }
 .visit-dock {
@@ -534,7 +534,7 @@ blockquote {
   font: inherit;
   font-size: 15px;
   color: var(--bd-fg);
-  background: rgba(10, 16, 26, 0.85);
+  background: rgba(17, 19, 23, 0.85);
   border: 1px solid var(--bd-line);
   border-radius: 999px;
   padding: 10px 18px;
@@ -549,7 +549,7 @@ blockquote {
   min-width: 180px;
   min-height: 56px;
   background: var(--bd-accent);
-  color: #05060a;
+  color: #07080a;
   border: none;
 }
 .visit-dock .visit-talk.live {
@@ -568,7 +568,7 @@ blockquote {
   flex: 1;
   font: inherit;
   color: var(--bd-fg);
-  background: rgba(10, 16, 26, 0.9);
+  background: rgba(17, 19, 23, 0.9);
   border: 1px solid var(--bd-line);
   border-radius: 8px;
   padding: 8px 10px;
@@ -576,7 +576,7 @@ blockquote {
 .visit-type button {
   font: inherit;
   color: var(--bd-fg);
-  background: rgba(10, 16, 26, 0.9);
+  background: rgba(17, 19, 23, 0.9);
   border: 1px solid var(--bd-line);
   border-radius: 8px;
   padding: 8px 12px;
@@ -585,6 +585,6 @@ blockquote {
   margin: 0;
   padding: 6px 12px;
   color: var(--bd-error);
-  background: rgba(5, 6, 10, 0.8);
+  background: rgba(7, 8, 10, 0.8);
   border-radius: 8px;
 }

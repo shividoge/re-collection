@@ -18,7 +18,7 @@ import { selectAlongRay, useRoomIndex, type Selection } from './useRoomIndex'
 import './viewer.css'
 
 const NO_FRAMES: FrameRecord[] = []
-const ACCENT = '#6ee7ff'
+const ACCENT = '#ff5c3a'
 const IS_WINDOWS = typeof navigator !== 'undefined' && /win/i.test(navigator.platform)
 
 export type { NavMode }
@@ -218,7 +218,7 @@ export function SceneViewer({ capture, initialMode = 'orbit', rate = 1, showVide
                 if (import.meta.env.DEV) Object.assign(window, { __bdCamera: s.camera, __bdState: s.get })
               }}
             >
-              <color attach="background" args={['#05060a']} />
+              <color attach="background" args={['#07080a']} />
               <HoleFill />
               <StaticCloud cloud={cloud} sizes={sizes} dim={selection ? 0.45 : canReplayPeople && playback.playing ? 0.55 : 1} />
               {selection && (

@@ -16,12 +16,14 @@ export interface LoadedCapture {
   /** The recorded video. Its frames are stored sensor-landscape; the viewer turns them upright. */
   videoUrl: string | null
   errors: string[]
+  /** True when the family marked this capture public (only meaningful for guide captures). */
+  isPublic: boolean
 }
 
 const FRAMES_FILE = 'frames.jsonl'
 
 export async function loadGuideCapture(id: string): Promise<LoadedCapture> {
-  const { manifest } = await guide.capture(id)
+  const { manifest, status } = await guide.capture(id)
   const errors: string[] = []
   const attempt = async <T>(what: string, load: () => Promise<T>): Promise<T | null> => {
     try {
@@ -45,6 +47,7 @@ export async function loadGuideCapture(id: string): Promise<LoadedCapture> {
     frames,
     videoUrl: manifest.video?.file ? captureFileUrl(id, manifest.video.file) : null,
     errors,
+    isPublic: status.public === true,
   }
 }
 
@@ -58,5 +61,6 @@ export async function loadRoomFile(file: File): Promise<LoadedCapture> {
     frames: null,
     videoUrl: null,
     errors: [],
+    isPublic: false,
   }
 }
