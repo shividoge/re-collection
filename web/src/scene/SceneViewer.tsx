@@ -75,8 +75,8 @@ interface ViewerOptions {
  * done it shows the capture's processing status. Areas without data stay empty.
  */
 export function SceneViewer({ assets, ...options }: ViewerOptions & { assets: CaptureAssets }) {
-  // A splat capture shows its splat; its points load only when asked for (Points, or a click).
-  const [pointsWanted, setPointsWanted] = useState(false)
+  // The room opens as Dots, so its points load straight away; asking again is harmless.
+  const [pointsWanted, setPointsWanted] = useState(true)
   const hasSplat = Boolean(assets.manifest.room?.splat)
   const state = useCaptureScene(assets, { points: !hasSplat || pointsWanted })
   const requestPoints = useCallback(() => setPointsWanted(true), [])
@@ -104,6 +104,9 @@ function ViewerMessage({ children, error }: { children: ReactNode; error?: boole
   )
 }
 
+/** How the viewer's buttons draw the room. */
+type RoomChoice = 'dots' | 'splat' | 'points'
+
 type ViewerRoom = { kind: 'capture'; scene: CaptureScene; requestPoints: () => void } | { kind: 'file'; cloud: PointCloud }
 
 const HELP: Record<NavMode, string> = {
@@ -120,14 +123,14 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
   const [showPath, setShowPath] = useState(true)
   // The room as one connected surface (fused from the scan's depth frames), or as raw points.
   const [showSurface, setShowSurface] = useState(true)
-  // The splat when there is one; the points (what was measured or estimated) are always a click away.
-  const [chosenView, setRoomView] = useState<'splat' | 'points'>('splat')
+  // Dots first (every point a small dot, like a phone LiDAR scan); the splat and the closed-up points a click away.
+  const [chosenView, setRoomView] = useState<RoomChoice>('dots')
   const [splatStatus, setSplatStatus] = useState<SplatStatus>({ state: 'loading' })
   // Problems the room and the replay report while drawing (photos, depth frames).
   const [liveNotes, onNote] = useSceneNotes()
   // A splat that fails says so, and the measured points take its place.
   const splatFailed = splatStatus.state === 'failed'
-  const roomView = splatFailed ? 'points' : chosenView
+  const roomView: RoomChoice = splatFailed && chosenView === 'splat' ? 'points' : chosenView
   useEffect(() => {
     if (splatFailed && room.kind === 'capture') room.requestPoints()
   }, [splatFailed, room])
@@ -176,7 +179,7 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
   }, [startAt, hasVideo, videoDuration, duration, playback])
 
   // The room as drawn now, and the points behind selection.
-  const view: RoomView = scene?.splat && roomView === 'splat' ? 'splat' : showSurface ? 'surface' : 'points'
+  const view: RoomView = roomView === 'dots' ? 'dots' : scene?.splat && roomView === 'splat' ? 'splat' : showSurface ? 'surface' : 'points'
   const shown = scene ? shownRoom(scene, view, splatStatus) : 'points'
   const points = scene?.points?.status === 'ready' ? scene.points.data : null
   const fileCloud = room.kind === 'file' ? room.cloud : null
@@ -390,23 +393,35 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
 
       <div className="viewer-timeline">
         <PlayBar playback={playback} duration={duration} selection={selection} />
-        {scene?.splat && (
+        {scene && (
           <div className="room-view" role="group" aria-label="How to draw the room">
             <button
-              className={roomView === 'splat' ? 'on' : ''}
-              onClick={() => setRoomView('splat')}
-              disabled={splatFailed}
-              title={splatFailed ? "The splat didn't load" : 'The room as 3D Gaussians, fitted to the recording'}
+              className={roomView === 'dots' ? 'on' : ''}
+              onClick={() => {
+                setRoomView('dots')
+                if (room.kind === 'capture') room.requestPoints()
+              }}
+              title="Every point of the room as a small dot, like a phone LiDAR scan"
             >
-              Splat
+              Dots
             </button>
+            {scene.splat && (
+              <button
+                className={roomView === 'splat' ? 'on' : ''}
+                onClick={() => setRoomView('splat')}
+                disabled={splatFailed}
+                title={splatFailed ? "The splat didn't load" : 'The room as 3D Gaussians, fitted to the recording'}
+              >
+                Splat
+              </button>
+            )}
             <button
               className={roomView === 'points' ? 'on' : ''}
               onClick={() => {
                 setRoomView('points')
                 if (room.kind === 'capture') room.requestPoints()
               }}
-              title="The room as it came out of the capture: the surface, or the raw points"
+              title="The room as it came out of the capture: the surface, or the raw points closed up"
             >
               Points
             </button>
@@ -478,14 +493,14 @@ function ViewerScene({
 }
 
 /** The footer's notes about the room: what's drawn and what's still loading or failed. */
-function FootNotes({ room, shown, splatStatus, roomView }: { room: ViewerRoom; shown: ReturnType<typeof shownRoom>; splatStatus: SplatStatus; roomView: 'splat' | 'points' }) {
+function FootNotes({ room, shown, splatStatus, roomView }: { room: ViewerRoom; shown: ReturnType<typeof shownRoom>; splatStatus: SplatStatus; roomView: RoomChoice }) {
   if (room.kind === 'file') return <span>{room.cloud.count.toLocaleString()} points</span>
   const { scene } = room
   const part = (a: CaptureScene['points'] | CaptureScene['surface'] | CaptureScene['timeline'], what: string) =>
     a?.status === 'loading' ? <span>Loading the {what}…</span> : a?.status === 'failed' ? <span className="err">The {what} didn't load: {a.message}</span> : null
   return (
     <>
-      {shown === 'points' && scene.points?.status === 'ready' && <span>{scene.points.data.count.toLocaleString()} points</span>}
+      {(shown === 'points' || shown === 'dots') && scene.points?.status === 'ready' && <span>{scene.points.data.count.toLocaleString()} points</span>}
       {shown === 'splat' && scene.splat && (
         <span>
           {scene.splat.count.toLocaleString()} Gaussians, {SPLAT_SOURCE[scene.splat.source] ?? scene.splat.source}

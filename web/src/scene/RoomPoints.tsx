@@ -15,6 +15,7 @@ const vertexShader = /* glsl */ `
   uniform vec3 uTint;
   uniform float uTintMix;
   uniform float uDim;
+  uniform float uDotFill;    // > 0: points this fraction of the size that closes the gaps (the "Dots" look)
   varying vec3 vColor;
   void main() {
     vColor = mix(color, uTint, uTintMix) * uDim;
@@ -22,7 +23,8 @@ const vertexShader = /* glsl */ `
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
     float size = (uSizeMin + aSize * uSizeRange) * uScale;
-    gl_PointSize = clamp(size * projectionMatrix[1][1] * uViewportH * 0.5 / max(-mv.z, 0.01), 1.0, 128.0);
+    float px = size * projectionMatrix[1][1] * uViewportH * 0.5 / max(-mv.z, 0.01);
+    gl_PointSize = uDotFill > 0.0 ? clamp(px * uDotFill, 1.0, 4.0) : clamp(px, 1.0, 128.0);
   }
 `
 
@@ -45,6 +47,12 @@ interface Props {
   tint?: string
   tintMix?: number
   visible?: boolean
+  /**
+   * Dots: each point drawn at this fraction (0..1) of the size that would close it up with its
+   * neighbors, so the dark background shows between small hard dots (how a phone LiDAR scan
+   * looks) instead of the points reading as one surface.
+   */
+  dots?: number
 }
 
 /**
@@ -54,7 +62,7 @@ interface Props {
  * sample of the room, with sizes scaled up so it closes the same way. Positions stay quantized
  * on the GPU and are decoded in the vertex shader.
  */
-export function RoomPoints({ points, budget, pointSize = 1, dim = 1, tint = '#ffffff', tintMix = 0, visible = true }: Props) {
+export function RoomPoints({ points, budget, pointSize = 1, dim = 1, tint = '#ffffff', tintMix = 0, visible = true, dots }: Props) {
   const width = useThree((s) => s.size.width)
   const height = useThree((s) => s.size.height)
   const dpr = useThree((s) => s.viewport.dpr)
@@ -87,6 +95,7 @@ export function RoomPoints({ points, budget, pointSize = 1, dim = 1, tint = '#ff
           uDim: { value: 1 },
           uTint: { value: new THREE.Color() },
           uTintMix: { value: 0 },
+          uDotFill: { value: 0 },
         },
       }),
     [],
@@ -104,9 +113,10 @@ export function RoomPoints({ points, budget, pointSize = 1, dim = 1, tint = '#ff
     u.uDim.value = dim
     u.uTint.value.set(tint)
     u.uTintMix.value = tintMix
+    u.uDotFill.value = dots ?? 0
     geometry.setDrawRange(0, points.levels[level].count)
     invalidate()
-  }, [material, geometry, points, level, pointSize, dim, tint, tintMix, invalidate])
+  }, [material, geometry, points, level, pointSize, dim, tint, tintMix, dots, invalidate])
 
   return (
     <points

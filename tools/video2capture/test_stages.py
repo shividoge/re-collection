@@ -161,6 +161,34 @@ class Decode(unittest.TestCase):
         self.assertEqual(decode.created_at({"creation_time": "2026-10-24T22:32:29.000000Z"}), "2026-10-24T22:32:29Z")
 
 
+class Upright(unittest.TestCase):
+    def test_choose_turns_needs_a_clear_winner(self):
+        import upright
+
+        # Detector scores per counter-clockwise quarter turn, measured on real videos.
+        self.assertEqual(upright.choose_turns([3.5, 3.1, 4.0, 10.7]), 3)   # phone held upright, sideways frames
+        self.assertEqual(upright.choose_turns([25.9, 16.3, 53.7, 20.2]), 2)  # stored upside down
+        self.assertEqual(upright.choose_turns([221.8, 8.9, 8.1, 37.1]), 0)   # already upright
+        self.assertEqual(upright.choose_turns([3.0, 1.0, 4.0, 1.0]), 0)      # not clearly better: trust the file
+        self.assertEqual(upright.choose_turns([0.0, 2.0, 0.0, 0.0]), 0)      # too little evidence
+
+    def test_turned_orientation_matches_rot90(self):
+        import itertools
+
+        a = np.arange(12).reshape(3, 4)
+        for t, r, c in itertools.product([False, True], repeat=3):
+            o = decode.Orientation(t, r, c)
+            for k in range(4):
+                np.testing.assert_array_equal(o.turned(k).apply(a), np.rot90(o.apply(a), k))
+
+    def test_turned_video_swaps_its_size(self):
+        info = decode.VideoInfo(path=Path("v.mp4"), times=np.arange(3) / 30, width=1920, height=1440,
+                                orientation=decode.Orientation(), has_audio=False, created=None, codec="h264",
+                                coded_size=(1920, 1440))
+        self.assertEqual((info.turned(3).width, info.turned(3).height), (1440, 1920))
+        self.assertEqual((info.turned(2).width, info.turned(2).height), (1920, 1440))
+
+
 class Package(unittest.TestCase):
     def test_depth_grid_never_invents_values(self):
         d = np.full((378, 504), 2.0, np.float32)
@@ -221,6 +249,54 @@ class TorchParts(unittest.TestCase):
         self.assertAlmostEqual(float(pts[0, 0]), 0.0025, places=6)
         self.assertEqual(sorted(w.tolist()), [1.0, 4.0])
 
+    def test_transfer_detail_takes_shape_from_coarse_and_detail_from_fine(self):
+        import torch.nn.functional as F
+
+        import fusion
+
+        # Truth: a wall at 3 m with a 20 cm deep box in front of it, and a 1 cm groove too thin
+        # for the coarse grid. The fine depth has the box and groove but a wrong scale (x1.5).
+        H, W, h, w = 96, 128, 24, 32
+        truth = torch.full((H, W), 3.0)
+        truth[30:60, 40:80] = 2.8
+        truth[:, 100:102] = 3.01
+        fine = truth * 1.5
+        coarse = F.interpolate(truth.clone()[None, None], size=(h, w), mode="nearest")[0, 0]
+        coarse[:, 25] = 3.0  # the groove is lost at the coarse resolution
+        out = fusion.transfer_detail(coarse, coarse > 0, fine)
+        err = (out - truth).abs()
+        self.assertLess(float(err[:, :96].median()), 1e-3)
+        self.assertLess(float(err[35:55, 45:75].max()), 0.01)  # the box keeps its own depth
+        self.assertLess(float(err[5:25, 5:35].max()), 0.01)    # the wall isn't pulled towards the box
+        self.assertAlmostEqual(float(out[48, 100] - out[48, 96]), 0.01, delta=0.003)  # the groove survives
+
+    def test_transfer_detail_thin_things_take_their_surroundings_correction(self):
+        import fusion
+
+        H, W, h, w = 96, 128, 24, 32
+        truth = torch.full((H, W), 3.0)
+        truth[:, 60:62] = 2.5  # a lamp arm thinner than one coarse pixel
+        fine = truth * 0.8
+        coarse = torch.full((h, w), 3.0)
+        out = fusion.transfer_detail(coarse, coarse > 0, fine)
+        self.assertAlmostEqual(float(out[48, 60]), 2.5, delta=0.02)
+        self.assertEqual(float(fusion.transfer_detail(coarse, torch.zeros_like(coarse, dtype=torch.bool), fine).abs().max()), 0.0)
+
+    def test_voxel_grid_limit_coarsens_without_losing_weight(self):
+        import fusion
+
+        g = torch.Generator().manual_seed(0)
+        p = torch.rand((20_000, 3), generator=g)
+        grid = fusion.VoxelGrid(0.01, p.device, limit=1000)
+        for chunk in p.split(5000):
+            grid.add(chunk, torch.full((len(chunk), 3), 50.0), torch.ones(len(chunk)))
+        pts, cols, w = grid.result()
+        self.assertLessEqual(len(pts), 1000)
+        self.assertGreater(grid.voxel, 0.01)
+        self.assertAlmostEqual(float(w.sum()), 20_000, places=3)
+        self.assertTrue(torch.allclose((pts * w[:, None]).sum(0) / w.sum(), p.mean(0), atol=1e-5))
+        self.assertTrue((cols == 50).all())
+
     def test_voxel_keys_handle_negative_coordinates(self):
         import fusion
 
@@ -236,7 +312,7 @@ class TorchParts(unittest.TestCase):
         keep = torch.ones_like(depth, dtype=torch.bool)
         Ks = torch.tensor(K, dtype=torch.float32).expand(2, 3, 3)
         poses = torch.tensor(np.stack([pose([0, 0, 0]), pose([0, 0, 0])]), dtype=torch.float32)
-        pts, cols, w = fusion.fuse_room(depth, keep, Ks, poses, lambda k: torch.full((48, 64, 3), 128.0), [0, 1], 0.0001)
+        pts, cols, w, _ = fusion.fuse_room(depth, keep, Ks, poses, lambda k: torch.full((48, 64, 3), 128.0), [0, 1], 0.0001)
         self.assertEqual(len(pts), 48 * 64)  # one point per pixel, no upsampling
         self.assertTrue(torch.all(w == 2))
 

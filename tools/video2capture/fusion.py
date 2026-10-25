@@ -8,8 +8,10 @@ on torch tensors so the same code works on CUDA, MPS or CPU.
 
 from __future__ import annotations
 
+import math
 from typing import Callable
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -109,10 +111,13 @@ def voxel_keys(points: torch.Tensor, voxel: float) -> torch.Tensor:
 
 class VoxelGrid:
     """Running weighted sums of positions and colours per voxel, so a long video's frames can be
-    fused a batch at a time instead of all at once."""
+    fused a batch at a time instead of all at once. With a `limit`, the grid coarsens itself
+    whenever it holds more voxels than that (sums add up exactly, so merging voxels loses nothing
+    but resolution): memory stays bounded however much surface the video shows."""
 
-    def __init__(self, voxel: float, device: torch.device):
+    def __init__(self, voxel: float, device: torch.device, limit: int | None = None):
         self.voxel = voxel
+        self.limit = limit
         self.keys = torch.zeros(0, dtype=torch.long, device=device)
         self.sums = torch.zeros((0, 7), dtype=torch.float64, device=device)  # w·xyz, w·rgb, w
 
@@ -124,8 +129,17 @@ class VoxelGrid:
             points, colors, weights = points[ok], colors[ok], weights[ok]
         w = weights.double()[:, None]
         rows = torch.cat([points.double() * w, colors.double() * w, w], 1)
-        keys = torch.cat([self.keys, voxel_keys(points, self.voxel)])
-        rows = torch.cat([self.sums, rows])
+        self._merge(torch.cat([self.keys, voxel_keys(points, self.voxel)]), torch.cat([self.sums, rows]))
+        while self.limit is not None and len(self.keys) > self.limit:
+            self.coarsen(max(1.2, math.sqrt(len(self.keys) / self.limit)))
+
+    def coarsen(self, factor: float) -> None:
+        """Voxels `factor` times bigger; each old voxel goes where its centroid falls."""
+        self.voxel *= factor
+        centroids = self.sums[:, :3] / self.sums[:, 6:7].clamp_min(1e-12)
+        self._merge(voxel_keys(centroids.float(), self.voxel), self.sums)
+
+    def _merge(self, keys: torch.Tensor, rows: torch.Tensor) -> None:
         self.keys, inverse = torch.unique(keys, return_inverse=True)
         self.sums = torch.zeros((len(self.keys), 7), dtype=torch.float64, device=rows.device).index_add_(0, inverse, rows)
 
@@ -170,6 +184,14 @@ class MaskModel:
                         out[s + k] = (det["masks"][hit, 0] >= 0.5).any(0).cpu()
         return dilate(out, max(3, w // 100))
 
+    def confidence(self, frame: np.ndarray, score: float = 0.5) -> float:
+        """Summed confidence of everything (any COCO class) the detector finds at `score` or above in
+        one uint8 (H, W, 3) frame: higher when the frame is upright (upright.py)."""
+        img = torch.from_numpy(np.ascontiguousarray(frame)).to(self.device).permute(2, 0, 1).float() / 255
+        with torch.no_grad():
+            det = self.model([img])[0]
+        return float(det["scores"][det["scores"] >= score].sum())
+
 
 def moving_masks(frames: torch.Tensor, device: torch.device, score: float = 0.5, batch: int = 4) -> torch.Tensor:
     """One-off MaskModel (loads the model each call; keep a MaskModel to reuse it)."""
@@ -197,25 +219,95 @@ def resize_images(frames: torch.Tensor, h: int, w: int) -> torch.Tensor:
     return F.interpolate(x, size=(h, w), mode="area").permute(0, 2, 3, 1)
 
 
+def transfer_detail(coarse: torch.Tensor, coarse_ok: torch.Tensor, fine: torch.Tensor,
+                    sigma_px: float = 1.0, sigma_log: float = 0.02, radius: int = 2) -> torch.Tensor:
+    """Sharp, consistent depth for one frame: `fine` (H, W), a single-frame depth at a higher
+    resolution with sharp edges and small objects but a shape the frames don't agree on, takes its
+    large-scale shape from `coarse` (h, w), the multi-view depth, where `coarse_ok` is set.
+
+    The per-pixel ratio coarse / fine is measured on the coarse grid and brought up to the fine
+    grid with a joint bilateral upsampling guided by the fine depth (Kopf et al. 2007): each fine
+    pixel averages the ratios of the coarse pixels around it (Gaussian in distance, `sigma_px`
+    coarse pixels) that sit at a similar fine depth (Gaussian in log depth, `sigma_log`), so the
+    correction doesn't bleed across an object's edge. Pixels with no usable ratio nearby get the
+    frame's median ratio. Returns depth (H, W), 0 where `fine` has none."""
+    h, w = coarse.shape
+    H, W = fine.shape
+    fine_ok = fine > 0
+    fine_lo = F.interpolate(fine[None, None], size=(h, w), mode="area")[0, 0]
+    ok_lo = coarse_ok & (coarse > 0) & (fine_lo > 0)
+    ok_lo &= ~depth_edges(coarse[None])[0] & ~depth_edges(fine_lo[None])[0]
+    if not ok_lo.any():
+        return torch.zeros_like(fine)
+    log_ratio = torch.where(ok_lo, coarse.clamp_min(1e-6).log() - fine_lo.clamp_min(1e-6).log(), 0)
+    median = log_ratio[ok_lo].median()
+    guide_lo = fine_lo.clamp_min(1e-6).log()
+
+    k = 2 * radius + 1
+    def neighbours(x: torch.Tensor) -> torch.Tensor:  # (h, w) -> (k*k, h, w)
+        return F.unfold(x[None, None].float(), k, padding=radius)[0].reshape(k * k, h, w)
+    nb_ratio, nb_guide, nb_ok = neighbours(log_ratio), neighbours(guide_lo), neighbours(ok_lo)
+
+    # Each fine pixel's position on the coarse grid (pixel centres at integers) and nearest coarse pixel.
+    fy = (torch.arange(H, device=fine.device, dtype=torch.float32) + 0.5) * h / H - 0.5
+    fx = (torch.arange(W, device=fine.device, dtype=torch.float32) + 0.5) * w / W - 0.5
+    cy, cx = fy.round().clamp(0, h - 1).long(), fx.round().clamp(0, w - 1).long()
+    off = torch.arange(-radius, radius + 1, device=fine.device, dtype=torch.float32)
+    dy = (cy.float() - fy)[None, :] + off[:, None]  # (k, H): row offset of each neighbour
+    dx = (cx.float() - fx)[None, :] + off[:, None]  # (k, W)
+    spatial = torch.exp(-(dy[:, None, :, None] ** 2 + dx[None, :, None, :] ** 2) / (2 * sigma_px ** 2)).reshape(k * k, H, W)
+    guide_hi = fine.clamp_min(1e-6).log()
+    g = nb_guide[:, cy][:, :, cx]
+    weight = spatial * nb_ok[:, cy][:, :, cx] * torch.exp(-(g - guide_hi[None]) ** 2 / (2 * sigma_log ** 2))
+    total = weight.sum(0)
+    ratio = (weight * nb_ratio[:, cy][:, :, cx]).sum(0) / total.clamp_min(1e-12)
+    # Thin things (a lamp arm) have no coarse pixel of their own: they take the correction of what
+    # surrounds them, a wider average that ignores depth, and the frame's median only if nothing does.
+    wide = blur_masked(log_ratio, ok_lo, sigma=6 * sigma_px)
+    wide = torch.where(torch.isfinite(wide), wide, median)
+    wide = F.interpolate(wide[None, None], size=(H, W), mode="bilinear", align_corners=False)[0, 0]
+    ratio = torch.where(total > 1e-3, ratio, wide)
+    return torch.where(fine_ok, fine * ratio.exp(), torch.zeros_like(fine))
+
+
+def blur_masked(x: torch.Tensor, ok: torch.Tensor, sigma: float) -> torch.Tensor:
+    """Gaussian average (h, w) of `x` over the pixels where `ok`; NaN where none is near."""
+    r = max(1, int(3 * sigma))
+    t = torch.arange(-r, r + 1, device=x.device, dtype=torch.float32)
+    g = torch.exp(-t ** 2 / (2 * sigma ** 2))
+    def sep(y: torch.Tensor) -> torch.Tensor:
+        y = F.conv2d(y[None, None], g.view(1, 1, 1, -1), padding=(0, r))
+        return F.conv2d(y, g.view(1, 1, -1, 1), padding=(r, 0))[0, 0]
+    num, den = sep(torch.where(ok, x, 0).float()), sep(ok.float())
+    return torch.where(den > 1e-3, num / den.clamp_min(1e-12), torch.full_like(num, float("nan")))
+
+
 def fuse_room(depth: torch.Tensor, keep: torch.Tensor, Ks: torch.Tensor, poses: torch.Tensor,
               colors: Callable[[int], torch.Tensor], frames: list[int], voxel: float, weights: torch.Tensor | None = None,
-              batch: int = 16) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Fuse the kept pixels of `frames` into one coloured cloud at the depth maps' own resolution
-    (no upsampling: at 1.5 cm voxels several frames already land in every voxel). Each voxel is the
-    `weights`-weighted average (the model's confidence) of the pixels that fall in it. `colors(k)` is
-    frame k's float RGB (h, w, 3), made on demand so a long video never holds them all. Returns points, uint8 colours and each voxel's total weight."""
+              limit: int | None = None, batch_rows: int = 4_000_000) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
+    """Fuse the kept pixels of `frames` into one coloured cloud at the depth maps' own resolution.
+    Each voxel is the `weights`-weighted average (the model's confidence) of the pixels that fall in
+    it. `colors(k)` is frame k's float RGB (h, w, 3), made on demand so a long video never holds
+    them all. Frames are added about `batch_rows` pixels at a time; with a `limit` the voxels grow
+    whenever there would be more than that (VoxelGrid). Returns points, uint8 colours, each
+    voxel's total weight and the voxel size it ended at."""
     if not frames:
         raise ValueError("no frames to fuse")
-    grid = VoxelGrid(voxel, depth.device)
-    for s in range(0, len(frames), batch):
-        pts, cols, ws = [], [], []
-        for k in frames[s:s + batch]:
-            m = keep[k]
-            pts.append(unproject(depth[k], Ks[k], poses[k])[m])
-            cols.append(colors(k)[m])
-            ws.append(weights[k][m] if weights is not None else torch.ones(int(m.sum()), device=depth.device))
-        grid.add(torch.cat(pts), torch.cat(cols), torch.cat(ws))
-    points, cols, weight = grid.result()
+    grid = VoxelGrid(voxel, depth.device, limit)
+    pts: list[torch.Tensor] = []
+    cols: list[torch.Tensor] = []
+    ws: list[torch.Tensor] = []
+    rows = 0
+    for i, k in enumerate(frames):
+        m = keep[k]
+        pts.append(unproject(depth[k], Ks[k], poses[k])[m])
+        cols.append(colors(k)[m])
+        ws.append(weights[k][m] if weights is not None else torch.ones(int(m.sum()), device=depth.device))
+        rows += len(pts[-1])
+        if rows >= batch_rows or i == len(frames) - 1:
+            grid.add(torch.cat(pts), torch.cat(cols), torch.cat(ws))
+            pts, cols, ws, rows = [], [], [], 0
+    points, colours, weight = grid.result()
     if len(points) == 0:
         raise ConvertError("No pixel had usable depth and confidence, so there is no room to build.")
-    return points, cols, weight
+    return points, colours, weight, grid.voxel

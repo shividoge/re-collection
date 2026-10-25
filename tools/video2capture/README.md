@@ -27,7 +27,14 @@ the same code, and the worker keeps the models loaded between jobs.
 4. Decides which pixels may become part of the **static room**. It drops pixels at depth jumps,
    pixels neighbouring frames contradict, the least confident 5%, sky, and people and pets
    (torchvision Mask R-CNN).
-5. Fuses the rest into `room.bin` at 1.5 cm at the model's own resolution, each voxel the
+5. Sharpens the depth (`--detail-res`, default 1008): DA3 runs once more on each model frame on
+   its own at 1008 px, which keeps thin and small things (chair legs, a lamp arm, things on a
+   desk) that the 504 px multi-view pass blurs away, but whose scale and shape the frames don't
+   agree on. `fusion.transfer_detail` gives each sharp map the multi-view depth's shape: the ratio
+   between the two, measured on the coarse grid and brought up with a joint bilateral upsampling
+   guided by the sharp depth, so the correction doesn't bleed across an object's edge; thin things
+   take the correction of what surrounds them. The cleaning below runs at this resolution.
+   Fuses the rest into `room.bin` at 5 mm (up to 6 million points), each voxel the
    confidence-weighted average of the pixels in it, coloured from the video.
 6. Writes depth for the people replay from every model frame on the 256×192 grid (people kept,
    depth edges removed, nearest sampling only), `frames.jsonl` with each video frame's real
@@ -187,14 +194,27 @@ capture right away (viewer, Memory Window, museum), but only queues fact extract
 to start it.
 
 Options: `--out` (default `out`), `--format v1|v3`, `--sample-fps` (default 10), `--max-frames`
-(frames per model pass; default what fits), `--overlap`, `--voxel` (default 0.015 m), `--max-points`
-(default 2,000,000), `--splat train|none`, `--splat-passes` (30), `--splat-batch` (4), `--splat-max`
+(frames per model pass; default what fits), `--overlap`, `--voxel` (default 0.005 m), `--max-points`
+(default 6,000,000), `--detail-res` (default 1008; 0 = multi-view depth only), `--splat train|none`, `--splat-passes` (30), `--splat-batch` (4), `--splat-max`
 (800,000 while training), `--splat-keep` (500,000 in the file), `--splat-width` (1280),
 `--device mps|cuda|cpu`, `--model <folder>`.
 
 Speed on the team clips (3–10 s), end to end with the splat: 50–150 s on the RTX 5060 Ti and
 43–132 s on the GX10 (was about 6 minutes, nearly all of it 7000 single-frame training steps).
 The splat file is SPZ, about 8 MB (the PLY was 42–77 MB).
+
+## Upright
+
+The video's orientation tag (display matrix) turns frames upright. Some files have none or a
+wrong one: the Braindance phone app stores video the way the sensor sees it, so a phone held
+upright gives sideways frames, and the depth model, the people masks, the room's leveling and the
+keyframes would all be turned 90°. `upright.py` scores 12 frames in all four quarter turns with
+the Mask R-CNN detector already loaded for the people masks (it finds more, more confidently, in
+upright frames) and adds a turn only when it clearly wins (`choose_turns`: at least 1.5 times the
+runner-up). The manifest's warnings say when it did. Checked against ARKit's gravity on three phone
+captures (all a quarter turn right, as the phone's own poses say) and the team clips (unchanged).
+A single-image gravity model (GeoCalib) was tried first and can't tell quarter turns apart: a
+room's lines look level in all four. `--no-upright` trusts the tag.
 
 ## Checking quality
 
@@ -217,6 +237,21 @@ On the three team clips (`team-data-1`), against the captures this script made b
 | IMG_9516 (bedroom, camera almost still) | 11.8 dB, 64% | 17.9 dB, 91% | 31.4 dB, 96% |
 | IMG_9518 (concert hall, many people) | 6.9 dB, 64% | 19.1 dB, 97% | 23.4 dB, 88% |
 | EEC77133 (lab, camera moving) | 11.2 dB, 76% | 18.6 dB, 97% | 21.9 dB, 93% |
+
+**Sharper depth (`--detail-res 1008`, 5 mm voxels)** against the same script with the multi-view
+depth only (1.5 cm voxels), same held-out frames:
+
+| Clip | Points before | Points after | Splat before | Splat after |
+|---|---|---|---|---|
+| IMG_9516 | 18.4 dB, 232 K points | 20.1 dB, 4.2 M points | 29.8 dB | 30.5 dB |
+| IMG_9518 | 18.7 dB, 1.6 M points | 20.3 dB, 5.2 M points | 25.0 dB | 25.0 dB |
+| EEC77133 | 20.0 dB, 557 K points | 20.2 dB, 4.4 M points | 22.1 dB | 22.2 dB |
+
+It costs about 0.55 s per model frame on the RTX 5060 Ti (55 s for a 10 s clip). The splat barely
+changes (it is capped at 500,000 Gaussians and fitted to the frames either way); the points view
+is where it shows. `points.pack` for 4 M points is about 40 MB gzipped (the bake takes 3 s).
+Known limit: DA3 sometimes lifts high-contrast flat decals (wall tiles) off the wall at 1008 px;
+the edge check then drops their outlines, which leaves small holes there.
 
 The splat scores would be higher (31 and 28 dB for the last two) if it were allowed to guess:
 it leaves empty what no frame saw, such as the room behind people who never moved, instead of

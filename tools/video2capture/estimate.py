@@ -126,6 +126,15 @@ class DepthModel:
         sky = (np.asarray(pred.sky) > 0.5) if pred.sky is not None else None
         return Estimate(depth, conf, poses, Ks, sky, bool(pred.is_metric), [(0, len(depth))], [])
 
+    def infer_fine(self, image: np.ndarray, res: int) -> np.ndarray:
+        """One frame on its own at `res` (long side): sharper edges and small objects than the
+        multi-view pass, but its scale and shape aren't tied to the other frames, so it is only
+        used through fusion.transfer_detail. Returns depth (h, w) float32, 0 = none."""
+        with self.torch.no_grad():
+            pred = self.model.inference([image], process_res=res)
+        d = np.asarray(pred.depth[0], dtype=np.float32)
+        return np.where(np.isfinite(d) & (d > 0), d, 0).astype(np.float32)
+
 
 def merge(a: Estimate, b: Estimate, b_start: int, a_end: int, max_residual: float | None = None) -> Estimate:
     """Append window b (covering frames from `b_start`) to the chain a (frames up to `a_end`),

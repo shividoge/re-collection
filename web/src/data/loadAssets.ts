@@ -7,6 +7,7 @@ import { errorMessage } from './errors'
 import { dataMode } from './mode'
 import { readStaticJson } from './public'
 import { useLive } from './useLive'
+import { localAssetsFromQuery } from '../scene/dev/localAssets'
 import type { PublicCaptureDetail } from './types'
 
 export type AssetsState = { status: 'loading' } | { status: 'ready'; assets: CaptureAssets } | { status: 'missing' } | { status: 'error'; message: string }
@@ -81,9 +82,30 @@ function useStaticCaptureAssets(id: string | null): AssetsState {
   return state && state.id === id ? state.state : { status: 'loading' }
 }
 
+/** Dev only: a capture folder on this machine (`?local=<dir>&baked=<dir>`, scene/dev/localAssets.ts). */
+function useLocalCaptureAssets(id: string | null): AssetsState {
+  const [state, setState] = useState<{ id: string; state: AssetsState } | null>(null)
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    localAssetsFromQuery(id)
+      .then((assets) => !cancelled && setState({ id, state: assets ? { status: 'ready', assets } : { status: 'missing' } }))
+      .catch((e: unknown) => !cancelled && setState({ id, state: { status: 'error', message: errorMessage(e) } }))
+    return () => {
+      cancelled = true
+    }
+  }, [id])
+  return state && state.id === id ? state.state : { status: 'loading' }
+}
+
+const localDev =
+  import.meta.env.DEV && typeof location !== 'undefined' && new URLSearchParams(location.search).has('local')
+
 /**
  * One capture's assets, kept up to date in live mode (a finished bake swaps in `derived`).
  * `assets.status` is the status when the content last changed; for live pipeline status use
  * useCaptureStatus.
  */
-export const useCaptureAssets: (id: string | null, opts?: Opts) => AssetsState = dataMode === 'live' ? useLiveCaptureAssets : useStaticCaptureAssets
+export const useCaptureAssets: (id: string | null, opts?: Opts) => AssetsState = localDev
+  ? useLocalCaptureAssets
+  : dataMode === 'live' ? useLiveCaptureAssets : useStaticCaptureAssets

@@ -14,12 +14,16 @@ import type { CaptureScene, SceneNote } from './useCaptureScene'
 // Spark is big; only captures with a splat load it.
 const SplatRoom = lazy(() => import('./SplatRoom'))
 
-export type RoomView = 'auto' | 'surface' | 'points' | 'splat'
+export type RoomView = 'auto' | 'surface' | 'points' | 'dots' | 'splat'
+
+/** Dots view: each dot this fraction of the size that would close the gaps to its neighbors. */
+const DOT_FILL = 0.4
 
 const ready = <T,>(a: Async<T> | null): T | null => (a?.status === 'ready' ? a.data : null)
 
 /** What a room view resolves to with what's loaded now. */
-export function shownRoom(scene: CaptureScene, view: RoomView, splatStatus: SplatStatus): 'surface' | 'points' | 'splat' | null {
+export function shownRoom(scene: CaptureScene, view: RoomView, splatStatus: SplatStatus): 'surface' | 'points' | 'dots' | 'splat' | null {
+  if (view === 'dots') return ready(scene.points) ? 'dots' : null
   const splatUsable = Boolean(scene.splat) && splatStatus.state !== 'failed'
   const want = view === 'auto' ? (splatUsable ? 'splat' : 'surface') : view
   if (want === 'splat' && splatUsable && splatStatus.state === 'ready') return 'splat'
@@ -72,7 +76,9 @@ export function SceneRoom({ scene, view = 'auto', dim = 1, selection = null, bud
     <>
       {holeFill && shown === 'points' && <HoleFill />}
       {surface && <RoomSurfaceMesh surface={surface} keyframeUrls={keyframeUrls} selection={selection} dim={dim} visible={shown === 'surface'} onNote={onNote} />}
-      {points && <RoomPoints points={points} budget={budget} dim={dim} visible={shown === 'points'} />}
+      {points && (
+        <RoomPoints points={points} budget={budget} dim={dim} visible={shown === 'points' || shown === 'dots'} dots={shown === 'dots' ? DOT_FILL : undefined} />
+      )}
       {scene.splat && splatStatus.state !== 'failed' && (
         <Suspense fallback={null}>
           <SplatRoom url={scene.splat.url} format={scene.splat.format} visible={shown === 'splat'} dim={selection ? 0.45 * dim : dim} onStatus={onStatus} />
