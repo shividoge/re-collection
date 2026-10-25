@@ -48,9 +48,9 @@ function view(hash: string): React.ReactNode {
   const visitor = /^#\/p\/([0-9a-f-]{36})$/i.exec(hash)
   if (visitor) return <PublicView key={visitor[1]} id={visitor[1]} />
   const front = !hash.startsWith('#/') || hash === '#/'
-  // A static site has no family tools: everything but the museum and its Memory Windows lands
-  // on the front page. (Visit together needs the live backend.)
-  const staticPage = /^#\/(museum(\/[\w-]+)?|window\/[0-9a-f-]{36}(\?from=museum)?)$/i.test(hash)
+  // A static site has no family tools: everything but the palace (#/palace, or #/museum from before)
+  // and its Memory Windows lands on the front page. (Visit together needs the live backend.)
+  const staticPage = /^#\/((?:museum|palace)(\/[\w-]+)?|window\/[0-9a-f-]{36}(\?from=museum)?)$/i.test(hash)
   if (front || (dataMode === 'static' && !staticPage)) return <Showcase />
 
   let page: React.ReactNode = <Gallery />
