@@ -262,7 +262,7 @@ POST /api/palace/live/leave    ← { id }                                       
 GET  /api/palace/live?id=&since=&audioAfter=                                       → Live & { signals, audio }, or 204 when nothing changed
 POST /api/palace/live/view     ← { id, view: View }   (the patient only)            → { ok: true, rev }
 POST /api/palace/live/signal   ← { id, to, data }     (WebRTC call setup)            → { ok: true }
-POST /api/palace/live/audio?id=&seq=  ← audio bytes (application/octet-stream)       → { ok: true, seq }
+POST /api/palace/live/audio?id=      ← audio bytes (application/octet-stream)       → { ok: true, seq }
 ```
 
 ```ts
