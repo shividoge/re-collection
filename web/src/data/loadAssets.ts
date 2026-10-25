@@ -24,7 +24,10 @@ async function staticSource(id: string): Promise<AssetsSource | null> {
   const found = await readStaticJson<PublicCaptureDetail>(staticPaths.capture(id))
   if (!found) return null
   const { body, url } = found
-  return { ...body, files: resolveFiles(body.files, url), derivedFiles: resolveFiles(body.derivedFiles, url) }
+  return {
+    ...body, files: resolveFiles(body.files, url), derivedFiles: resolveFiles(body.derivedFiles, url),
+    ...(body.reconstruction ? { reconstruction: { ...body.reconstruction, files: resolveFiles(body.reconstruction.files, url), derivedFiles: resolveFiles(body.reconstruction.derivedFiles, url) } } : {}),
+  }
 }
 
 async function liveSource(id: string, opts: Opts): Promise<AssetsSource | null> {

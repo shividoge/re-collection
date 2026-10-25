@@ -97,7 +97,7 @@ function PublicFact({ assets, fact, seek }: { assets: CaptureAssets; fact: Fact;
         {fact.evidence.map((e, k) =>
           e.type === 'frame' ? (
             <button key={k} className="frame" onClick={() => seek(e.t)} title={`Show ${fmt(e.t)}`}>
-              {assets.rawUrl(e.keyframe) ? <img src={assets.rawUrl(e.keyframe)!} alt={`Keyframe at ${fmt(e.t)}`} loading="lazy" /> : null}
+              {assets.rawUrl(e.keyframe) ? <img crossOrigin="anonymous" src={assets.rawUrl(e.keyframe)!} alt={`Keyframe at ${fmt(e.t)}`} loading="lazy" /> : null}
               <span>{fmt(e.t)}</span>
             </button>
           ) : (

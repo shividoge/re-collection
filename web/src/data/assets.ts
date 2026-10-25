@@ -19,6 +19,8 @@ export interface CaptureAssets {
   derivedUrl(name: string): string | null
   /** Whether the family shared it on the public site (family view only; absent elsewhere). */
   public?: boolean
+  /** The selected dense scene; the memory's original files and identity stay above. */
+  reconstruction?: CaptureAssets
 }
 
 /**

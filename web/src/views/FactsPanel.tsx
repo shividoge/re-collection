@@ -195,7 +195,7 @@ function FactCard({ keyframeUrl, fact, onChange, onSeek }: { keyframeUrl: (name:
         {fact.evidence.map((e, k) =>
           e.type === 'frame' ? (
             <button key={k} className="frame" onClick={() => onSeek(e.t)} title={`Show ${formatTime(e.t)}`}>
-              {keyframeUrl(e.keyframe) ? <img src={keyframeUrl(e.keyframe)!} alt={`Keyframe at ${formatTime(e.t)}`} loading="lazy" /> : <span className="thumb-missing" />}
+              {keyframeUrl(e.keyframe) ? <img crossOrigin="anonymous" src={keyframeUrl(e.keyframe)!} alt={`Keyframe at ${formatTime(e.t)}`} loading="lazy" /> : <span className="thumb-missing" />}
               <span>{formatTime(e.t)}</span>
             </button>
           ) : (

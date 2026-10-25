@@ -148,7 +148,8 @@ export type Download = { url: string; path: string; bytes: number }
  * Raw files go to data/files/<id>/<name>, derived ones to data/files/<id>/derived/<name>
  * (derived depth.bin would otherwise collide with a raw one).
  */
-export function exportCapture(capture: { id: string; manifestJson: string; files: NamedFile[]; derived: unknown; derivedFiles: NamedFile[] }) {
+type ExportAssets = { id: string; manifestJson: string; files: NamedFile[]; derived: unknown; derivedFiles: NamedFile[]; reconstruction?: ExportAssets }
+export function exportCapture(capture: ExportAssets): { json: ExportAssets; downloads: Download[] } {
   const keep = staticRawFiles(obj(JSON.parse(capture.manifestJson)))
   const downloads: Download[] = []
   const place = (f: NamedFile, sub: string) => {
@@ -156,10 +157,13 @@ export function exportCapture(capture: { id: string; manifestJson: string; files
     downloads.push({ url: f.url, path, bytes: f.bytes })
     return { ...f, url: `../${path}` }
   }
+  const reconstruction = capture.reconstruction ? exportCapture(capture.reconstruction) : null
+  if (reconstruction) downloads.push(...reconstruction.downloads)
   const json = {
     ...capture,
     files: capture.files.filter((f) => keep.has(f.name) || f.name.startsWith('keyframes/')).map((f) => place(f, '')),
     derivedFiles: capture.derivedFiles.map((f) => place(f, 'derived/')),
+    ...(reconstruction ? { reconstruction: reconstruction.json } : {}),
   }
   return { json, downloads }
 }

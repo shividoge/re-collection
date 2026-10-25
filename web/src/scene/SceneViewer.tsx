@@ -75,7 +75,7 @@ interface ViewerOptions {
  * done it shows the capture's processing status. Areas without data stay empty.
  */
 export function SceneViewer({ assets, ...options }: ViewerOptions & { assets: CaptureAssets }) {
-  // The room opens as Dots, so its points load straight away; asking again is harmless.
+  // The dense room points are the default; Dots and Splat remain optional views.
   const [pointsWanted, setPointsWanted] = useState(true)
   const hasSplat = Boolean(assets.manifest.room?.splat)
   const state = useCaptureScene(assets, { points: !hasSplat || pointsWanted })
@@ -123,8 +123,7 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
   const [showPath, setShowPath] = useState(true)
   // The room as one connected surface (fused from the scan's depth frames), or as raw points.
   const [showSurface, setShowSurface] = useState(true)
-  // Dots first (every point a small dot, like a phone LiDAR scan); the splat and the closed-up points a click away.
-  const [chosenView, setRoomView] = useState<RoomChoice>('dots')
+  const [chosenView, setRoomView] = useState<RoomChoice>('points')
   const [splatStatus, setSplatStatus] = useState<SplatStatus>({ state: 'loading' })
   // Problems the room and the replay report while drawing (photos, depth frames).
   const [liveNotes, onNote] = useSceneNotes()
@@ -428,7 +427,7 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
           </div>
         )}
         <div className="layers">
-          <Layer label="Surface" on={showSurface} disabled={scene?.surface?.status !== 'ready'} set={setShowSurface} />
+          <Layer label="Surface" on={showSurface && roomView === 'points' && scene?.surface?.status === 'ready'} disabled={roomView !== 'points' || scene?.surface?.status !== 'ready'} set={setShowSurface} />
           <Layer label="Path" on={showPath} disabled={!canFollow} set={setShowPath} />
         </div>
         {showVideo && (
@@ -500,6 +499,7 @@ function FootNotes({ room, shown, splatStatus, roomView }: { room: ViewerRoom; s
     a?.status === 'loading' ? <span>Loading the {what}…</span> : a?.status === 'failed' ? <span className="err">The {what} didn't load: {a.message}</span> : null
   return (
     <>
+      {scene.estimated && <span>Estimated from a video, not measured</span>}
       {(shown === 'points' || shown === 'dots') && scene.points?.status === 'ready' && <span>{scene.points.data.count.toLocaleString()} points</span>}
       {shown === 'splat' && scene.splat && (
         <span>
@@ -511,11 +511,12 @@ function FootNotes({ room, shown, splatStatus, roomView }: { room: ViewerRoom; s
       {part(scene.points, "room's points")}
       {part(scene.surface, "room's surface")}
       {part(scene.timeline, "visit's timeline")}
-      {scene.notes.map((n) => (
-        <span key={n} className="err">
-          {n}
-        </span>
-      ))}
+      {scene.notes.length > 0 && (
+        <details className="scene-notes">
+          <summary>Capture notes</summary>
+          <div>{scene.notes.map((n) => <p key={n}>{n}</p>)}</div>
+        </details>
+      )}
     </>
   )
 }

@@ -4,7 +4,7 @@
 import { v } from 'convex/values'
 import type { Doc } from './_generated/dataModel'
 import { query, type QueryCtx } from './_generated/server'
-import { namedFile, signFiles, thumbUrl } from './captures'
+import { namedFile, preferredReconstruction, reconstructionAssets, signFiles, thumbUrl } from './captures'
 import { getCapture, getMomentDoc, listFiles, momentOf } from './lib/data'
 import { allowedFacts } from './lib/grounding'
 import { publicArrangement } from './lib/museum'
@@ -21,7 +21,7 @@ async function visibleCapture(ctx: QueryCtx, captureId: string): Promise<Doc<'ca
 }
 
 async function publicCaptures(ctx: QueryCtx): Promise<Doc<'captures'>[]> {
-  return (await ctx.db.query('captures').withIndex('by_createdAt').order('desc').collect()).filter((c) => c.public && !c.deleting)
+  return (await ctx.db.query('captures').withIndex('by_createdAt').order('desc').collect()).filter((c) => c.public && !c.deleting && !c.reconstructionOf)
 }
 
 export const captures = query({
@@ -49,7 +49,7 @@ export const captures = query({
 export const capture = query({
   args: { captureId: v.string() },
   returns: v.union(
-    v.object({ id: v.string(), manifestJson: v.string(), files: v.array(namedFile), derived: v.union(derived, v.null()), derivedFiles: v.array(namedFile) }),
+    v.object({ id: v.string(), manifestJson: v.string(), files: v.array(namedFile), derived: v.union(derived, v.null()), derivedFiles: v.array(namedFile), reconstruction: v.optional(reconstructionAssets) }),
     v.null(),
   ),
   handler: async (ctx, { captureId }) => {
@@ -67,6 +67,7 @@ export const capture = query({
       files: cfg ? signFiles(cfg, raw) : [],
       derived: c.derived,
       derivedFiles: cfg ? signFiles(cfg, derivedRows) : [],
+      reconstruction: await preferredReconstruction(ctx, c),
     }
   },
 })

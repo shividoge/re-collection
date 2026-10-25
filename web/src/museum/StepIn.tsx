@@ -254,6 +254,6 @@ function Room({ assets, startAt, onReady, onError }: { assets: CaptureAssets; st
   if (status !== 'ready') return null
   return (
     // The same player as the capture page: its video, sound and people replayed in 3D.
-    <SceneViewer assets={assets} startAt={startAt} overlay={(controls) => <VisitDock captureId={assets.id} controls={controls} />} />
+    <SceneViewer assets={assets} initialMode="follow" startAt={startAt} overlay={(controls) => <VisitDock captureId={assets.id} controls={controls} />} />
   )
 }

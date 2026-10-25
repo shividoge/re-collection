@@ -28,6 +28,8 @@ export default defineSchema({
     status: captureStatus,
     public: v.boolean(),
     derived: v.union(derived, v.null()),
+    /** Alternate scene package for this memory; excluded from memory lists. */
+    reconstructionOf: v.optional(v.string()),
     /**
      * Set when the capture is being deleted: everything ignores it from then on, and `begin` for
      * the same id is refused until the purge has deleted its objects and then this row.
@@ -35,6 +37,7 @@ export default defineSchema({
     deleting: v.optional(v.boolean()),
   })
     .index('by_captureId', ['captureId'])
+    .index('by_reconstructionOf', ['reconstructionOf'])
     .index('by_createdAt', ['createdAt']),
 
   files: defineTable({

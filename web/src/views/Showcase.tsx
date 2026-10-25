@@ -219,7 +219,7 @@ function RoomGroup({ title, how, entries }: { title: string; how: string; entrie
       <div className="moment-grid">
         {entries.map((e, n) => (
           <a key={e.capture.id} className="moment-card" href={`#/p/${e.capture.id}`}>
-            {e.capture.thumbUrl ? <img src={e.capture.thumbUrl} alt="" loading="lazy" /> : <div className="no-thumb" />}
+            {e.capture.thumbUrl ? <img crossOrigin="anonymous" src={e.capture.thumbUrl} alt="" loading="lazy" /> : <div className="no-thumb" />}
             <div>
               <span className="made">{isVideo(e) ? 'Rebuilt from video' : 'LiDAR scan'}</span>
               <strong>{roomTitle(e, n)}</strong>
@@ -410,7 +410,7 @@ function FactsStep({ entry }: { entry: Entry }) {
           const fr = frameOf(f);
           return (
             <li key={f.id}>
-              {fr && fr.type === 'frame' && entry.assets.rawUrl(fr.keyframe) && <img src={entry.assets.rawUrl(fr.keyframe)!} alt="" loading="lazy" />}
+              {fr && fr.type === 'frame' && entry.assets.rawUrl(fr.keyframe) && <img crossOrigin="anonymous" src={entry.assets.rawUrl(fr.keyframe)!} alt="" loading="lazy" />}
               <div>
                 <p>{f.text}</p>
                 <span className="muted small">{fr && fr.type === 'frame' ? `evidence: frame at ${Math.round(fr.t)} s` : ''} · {f.kind}</span>

@@ -51,3 +51,16 @@ bun scripts/smoke-claude.ts                                   # one real narrate
 ```
 
 You can rerun the import safely: files already stored with the same size are skipped, and the review state is restored before any file is registered, so imported captures never re-extract facts.
+
+## Dense scene for an existing memory
+
+`bun scripts/import-reconstruction.ts <original capture ID> <completed capture folder>` uploads
+an alternate package without creating another memory or replacing the original's facts, sessions
+or files. Once baked, the package with the most room points is selected by the family and public
+viewers, the palace and the Memory Window. An unfinished package leaves the original scene active.
+Use a new capture ID for changed packages. Deleting the memory also deletes its alternate packages.
+
+For a reconstruction of a phone video whose world is tilted, first run
+`tools/video2capture/align_capture.py <converted folder> --reference <phone folder> --out <new folder>`
+in the converter environment. This applies one rigid transform to the room, camera poses and
+splat, preserves every point and writes a new package. Both inputs must use the same video orientation.

@@ -66,7 +66,7 @@ function WindowStage({ scene, back, room }: { scene: CaptureScene; back: string;
   )
   // Like the viewer: only the surface has a mask for the replay; over points or a splat the whole
   // frame replays.
-  const masked = shownRoom(scene, 'auto', splatStatus) === 'surface'
+  const masked = shownRoom(scene, 'surface', splatStatus) === 'surface'
 
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null)
   const [videoError, setVideoError] = useState(false)
@@ -177,7 +177,7 @@ function WindowStage({ scene, back, room }: { scene: CaptureScene; back: string;
         flat dpr={[1, 2]} camera={{ near: 0.02, far: 60 }} gl={{ antialias: true }} className="window-canvas">
         <color attach="background" args={['#07080a']} />
         <PlaybackDriver playback={playback} />
-        <SceneRoom scene={scene} dim={canReplayPeople && playing ? 0.6 : 1} onSplatStatus={onSplatStatus} onNote={onNote} />
+        <SceneRoom scene={scene} view="surface" dim={canReplayPeople && playing ? 0.6 : 1} onSplatStatus={onSplatStatus} onNote={onNote} />
         {canReplayPeople && started && video && <SceneReplay scene={scene} video={video} timeRef={playback.timeRef} masked={masked} onNote={onNote} />}
         <WindowCamera
           frames={frames}

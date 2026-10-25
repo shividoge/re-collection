@@ -38,7 +38,7 @@ export type NamedFile = Infer<typeof namedFile>
 /** public.captures (backend/convex/public.ts). */
 export type PublicCapture = { id: string; title: string; summary: string; createdAt: string; durationSec: number; thumbUrl: string | null; facts: number }
 /** public.capture: captures.get without status or the public flag. */
-export type PublicCaptureDetail = { id: string; manifestJson: string; files: NamedFile[]; derived: Derived | null; derivedFiles: NamedFile[] }
+export type PublicCaptureDetail = { id: string; manifestJson: string; files: NamedFile[]; derived: Derived | null; derivedFiles: NamedFile[]; reconstruction?: Omit<PublicCaptureDetail, 'reconstruction'> }
 export type WorkerInfo = { workerId: string; kinds: string[]; gpu: boolean; maxFrames: number | null; lastSeen: number }
 /** system.health (backend/convex/system.ts). */
 export type Health = { ok: true; mock: boolean; models: { offline: string; live: string }; workers: WorkerInfo[] }

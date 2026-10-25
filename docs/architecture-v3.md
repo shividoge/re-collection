@@ -18,6 +18,21 @@ Rule of thumb: **raw** files are what a capture source uploads (the phone, or th
 
 Workers only make outbound calls (to Convex and R2), so no tunnel, open port or same-network requirement.
 
+### Dense reconstructions of an existing memory
+
+A capture may have separate reconstructed packages linked by `reconstructionOf` to its original
+capture ID. They are not additional memories: lists and museum arrangements keep the original
+ID, facts, review, sessions and source media. `captures.get` and `public.capture` include an optional
+`reconstruction` asset bundle for the linked, fully baked package with the most room points,
+provided it has more points than the original. The scene uses that package's video, poses, depth
+and points together; coordinate systems are never mixed. Public sharing of the original includes
+its selected reconstruction. The original package remains available in the top-level file list.
+An unavailable or unfinished reconstruction leaves the original scene in place.
+
+New video uploads use the converter's dense defaults: 10 sampled frames/s, the 1008 px detail
+pass, 5 mm voxels and a six-million-point ceiling. The viewer opens the connected points rather
+than the deliberately sparse Dots style. The palace starts at the recorded camera viewpoint.
+
 ## 2. Storage layout (R2 keys)
 
 ```
