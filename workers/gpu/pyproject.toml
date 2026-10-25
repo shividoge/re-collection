@@ -1,0 +1,18 @@
+[project]
+name = "braindance-gpu-worker"
+version = "0.1.0"
+description = "Braindance GPU worker: old video to capture package, then the Gaussian splat"
+requires-python = ">=3.12"
+# torch, torchvision, gsplat and Depth Anything 3 are installed into the same environment
+# separately (see README.md): they depend on the machine's CUDA version.
+# Convex is reached over its HTTP API with the stdlib (see client.py for why not the `convex` package).
+dependencies = [
+    "numpy",
+    "av",
+]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+package = false

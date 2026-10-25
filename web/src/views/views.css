@@ -100,19 +100,29 @@ button.link:hover {
   width: min(420px, 100%);
   accent-color: var(--bd-accent);
 }
-.key-form {
+.person-form {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: end;
   margin-bottom: 20px;
 }
-.key-form label {
+.person-form label,
+.video-form label {
   display: grid;
   gap: 6px;
   color: var(--bd-muted);
   font-size: 12px;
 }
-.key-form input {
+.video-form {
+  display: grid;
+  gap: 12px;
+  max-width: 420px;
+  margin: 0 auto;
+  text-align: left;
+}
+.person-form input,
+.video-form input {
   font: inherit;
   color: var(--bd-fg);
   background: var(--bd-panel);
@@ -662,4 +672,36 @@ blockquote {
   display: inline-block;
   margin: -12px 0 24px;
   text-decoration: none;
+}
+
+.mock-banner {
+  background: #c62828;
+  color: #fff;
+  font-weight: 700;
+  text-align: center;
+  padding: 6px 12px;
+  letter-spacing: 0.04em;
+}
+.stage-lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.upload-files {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  text-align: left;
+}
+.upload-files li {
+  display: grid;
+  grid-template-columns: 1fr 120px 48px;
+  gap: 8px;
+  align-items: center;
+}
+.upload-files li.failed {
+  color: var(--bd-error);
 }

@@ -7,6 +7,8 @@ export type SplatStatus = { state: 'loading' } | { state: 'ready' } | { state: '
 
 interface Props {
   url: string
+  /** manifest room.splat.format: SPZ (what the GPU worker writes) or a 3DGS PLY (older captures). */
+  format: 'spz' | '3dgs-ply'
   /** Hidden but kept loaded, so switching back from the points is instant. */
   visible?: boolean
   /** Brightness multiplier, like StaticCloud's `dim`. */
@@ -23,13 +25,15 @@ interface Props {
  *
  * Loaded lazily (Spark is ~3 MB with its inlined WASM), so captures without a splat never pay for it.
  */
-export default function SplatRoom({ url, visible = true, dim = 1, onStatus }: Props) {
+export default function SplatRoom({ url, format, visible = true, dim = 1, onStatus }: Props) {
   const gl = useThree((s) => s.gl)
+  const invalidate = useThree((s) => s.invalidate)
   const [objects, setObjects] = useState<{ spark: SparkRenderer; mesh: SplatMesh } | null>(null)
 
   useEffect(() => {
-    const spark = new SparkRenderer({ renderer: gl })
-    const mesh = new SplatMesh({ url, fileType: SplatFileType.PLY })
+    // The canvas renders on demand; Spark says when a sort or load finished and it needs a frame.
+    const spark = new SparkRenderer({ renderer: gl, onDirty: () => invalidate() })
+    const mesh = new SplatMesh({ url, fileType: format === 'spz' ? SplatFileType.SPZ : SplatFileType.PLY })
     let live = true
     onStatus({ state: 'loading' })
     mesh.initialized.then(
@@ -37,6 +41,7 @@ export default function SplatRoom({ url, visible = true, dim = 1, onStatus }: Pr
         if (!live) return
         setObjects({ spark, mesh })
         onStatus({ state: 'ready' })
+        invalidate()
       },
       (e: unknown) => live && onStatus({ state: 'failed', message: e instanceof Error ? e.message : String(e) }),
     )
@@ -46,10 +51,11 @@ export default function SplatRoom({ url, visible = true, dim = 1, onStatus }: Pr
       mesh.dispose()
       spark.dispose()
     }
-  }, [gl, url, onStatus])
+  }, [gl, url, format, onStatus, invalidate])
 
   // Spark multiplies every splat's color by `recolor`.
   const recolor = useMemo(() => new THREE.Color(dim, dim, dim), [dim])
+  useEffect(() => invalidate(), [recolor, visible, invalidate])
 
   if (!objects) return null
   return (

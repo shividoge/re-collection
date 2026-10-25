@@ -1,4 +1,4 @@
-import { FaceDetector, FilesetResolver } from '@mediapipe/tasks-vision'
+import type { FaceDetector } from '@mediapipe/tasks-vision'
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react'
 import { headFromFace, headFromTilt, type Head } from './windowMath'
 
@@ -11,6 +11,13 @@ export type TrackerStatus =
 const BASE = import.meta.env.BASE_URL
 const MODEL = `${BASE}models/blaze_face_short_range.tflite`
 const WASM = `${BASE}mediapipe`
+/** Face detection rate; the camera smooths over 0.15 s anyway, so more is wasted work. */
+const DETECT_HZ = 15
+
+/** True when a new camera frame has arrived and enough time has passed since the last detection. */
+export function shouldDetect(frameTime: number, lastFrameTime: number, now: number, lastDetect: number, hz = DETECT_HZ): boolean {
+  return frameTime !== lastFrameTime && now - lastDetect >= 1000 / hz
+}
 
 /**
  * Where the viewer's head is, from the device's own front camera (laptop webcam, TV webcam,
@@ -58,6 +65,8 @@ export function useHeadTracker(): {
       return
     }
     try {
+      // Loaded only when someone asks for head tracking: the library is large.
+      const { FaceDetector, FilesetResolver } = await import('@mediapipe/tasks-vision')
       const files = await FilesetResolver.forVisionTasks(WASM)
       detector = await FaceDetector.createFromOptions(files, {
         baseOptions: { modelAssetPath: MODEL, delegate: 'GPU' },
@@ -80,15 +89,18 @@ export function useHeadTracker(): {
     let last: { cx: number; cy: number; size: number } | null = null
     let raf = 0
     let lastTime = -1
+    let lastDetect = -Infinity
     let faceVisible = false
     let stopped = false
 
     const tick = () => {
       if (stopped) return
       raf = requestAnimationFrame(tick)
-      if (video.readyState < 2 || video.currentTime === lastTime) return
+      const now = performance.now()
+      if (video.readyState < 2 || !shouldDetect(video.currentTime, lastTime, now, lastDetect)) return
       lastTime = video.currentTime
-      const result = detector.detectForVideo(video, performance.now())
+      lastDetect = now
+      const result = detector.detectForVideo(video, now)
       const box = result.detections[0]?.boundingBox
       const visible = Boolean(box && video.videoWidth)
       if (visible !== faceVisible) {

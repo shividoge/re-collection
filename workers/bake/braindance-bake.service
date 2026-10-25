@@ -1,0 +1,25 @@
+# systemd --user unit for the bake worker. Install:
+#   cp braindance-bake.service ~/.config/systemd/user/ && systemctl --user daemon-reload
+#   systemctl --user enable --now braindance-bake
+#   loginctl enable-linger "$USER"   # keep it running when logged out
+# Edit WorkingDirectory if the repo isn't at ~/braindance.
+[Unit]
+Description=Braindance bake worker (pulls bake jobs from Convex)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/braindance/workers/bake
+Environment=PATH=%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+# CONVEX_URL and WORKER_TOKEN are read from ~/.config/braindance/worker.env by the worker itself.
+ExecStart=/usr/bin/env bun src/worker.ts --concurrency 1
+# SIGTERM: stop claiming, let the running job finish (up to 90 s), then fail it as retryable.
+KillSignal=SIGTERM
+TimeoutStopSec=120
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=default.target

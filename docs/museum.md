@@ -24,7 +24,8 @@ side the picture's own world comes out of the blur (`StepIn.tsx`):
 - any other photo fills the view and drifts slowly; a video plays, its own sound rising gently.
 
 Every photo and video hangs in the museum as an old oil painting, so snapshots look at home in
-gilded frames (`web/src/museum/paint.ts`): soft brushwork that keeps edges, brush marks laid along
+gilded frames (`web/src/museum/paint.ts`, painted once into a texture by `painter.ts`; a video is
+repainted only when it shows a new frame): soft brushwork that keeps edges, brush marks laid along
 the picture's contours, rich but deep colour under warm varnish, a canvas weave and darkened
 edges. The painting stays on through the dive and the arrival; then it lifts away over a few
 seconds, leaving the photo or video exactly as it was taken, while the picture's own sound rises
@@ -43,6 +44,26 @@ browser once, offline (`web/src/museum/sound.ts`): rushing air climbing with the
 rumble, a soft shimmer rising an octave, and the air parting in a sweep at the crossing, in a
 wide hall. Stepping out plays it backwards. Nothing rings on at the end.
 
+## Visit together and the Memory Window
+
+On the iPad, **Visit together** shows a code and a link; a helper who opens
+`#/museum?join=CODE` on their phone walks the same museum: moving to a picture on either screen
+moves the other. Every picture from a visit has a **Memory Window** button (on the helper's phone:
+**Open on the iPad**) that opens the visit, head-tracked, on the iPad; **Back to the museum**
+returns both. The old hall's address, `#/memories` (and `#/memories?join=CODE`), now opens
+`#/museum`.
+
+## Keeping it light on a tablet
+
+The museum draws only when something changes (walking, looking, a dive, a video frame); between
+those the candles flicker at 20 frames a second for a minute after the last touch, then the room
+rests (`pace.ts`). Still furniture is merged into one mesh per shared material (`materials.ts`,
+`merge.ts`), the candle flames are two instanced meshes, and the floor's reflection is redrawn only
+when the view moves. Videos load nothing until they play, each file has one `<video>` element,
+and only the picture in focus and one neighbour play (`playback.ts`). `bun
+web/scripts/measure-museum.ts <url> <out dir>` measures all this at iPad-like settings in headless
+Chrome.
+
 ## Rooms
 
 One style: a classic picture gallery at a modest scale. Rose-red fabric walls, raised-panel
@@ -53,8 +74,9 @@ rosettes), three large ones per side wall above the panelling, in one row, under
 of the skylight.
 
 Rooms are added as an exhibition grows (up to 8 pieces per room, joined by doorways). Every
-surface is generated in code (`web/src/museum/textures.ts`), so nothing is downloaded and it
-works offline.
+surface is drawn in code (`web/src/museum/textureGen.ts`), once, at build time: `bun
+web/scripts/bake-museum-textures.ts` writes them as small WebP images to
+`web/public/museum/textures/` (committed; rerun it after changing a generator). No stock images.
 
 ## Furnishings
 
@@ -74,32 +96,15 @@ herati field, navy corner pieces, a layered medallion with pendants, a palmette-
 border on a gold vine, a cotton fringe) on the herringbone. Visitors walk around all
 of it, and guided walks step round it.
 
-## Putting things in an exhibition
+## What hangs in it
 
-1. **Drop** photos or videos anywhere on the museum page (or press "Add photos or videos" on an
-   iPad). They hang in the exhibition that's open and stay on that device (IndexedDB). "Take down"
-   removes one again.
-2. **Our visits** is what the caretaker set up in the editor (`#/museum/edit`: pictures, order, titles, captions), or, until they do, fills itself from the guide: each finished capture hangs once, as its video (a still
-   if it has none), with the title and date the family gave it, so every frame is a different
-   memory. Stepping into it opens the visit's 3D room.
-3. **Curated exhibitions** come from `web/public/museum/exhibitions.json`:
+The museum is the patient's page, so it changes nothing: no adding or taking down pictures, no
+other exhibitions and no link back to the rest of the site. Only music, previous / next, stepping
+into a picture, the Memory Window and Visit together.
 
-```json
-{
-  "exhibitions": [
-    {
-      "id": "grandma-80",
-      "title": "Grandma's 80th",
-      "subtitle": "The garden party, June 2024",
-      "items": [
-        { "kind": "photo", "src": "/museum/grandma-80/cake.jpg", "title": "The mango cake", "date": "June 14, 2024", "caption": "Priya baked it the night before." },
-        { "kind": "video", "src": "/museum/grandma-80/song.mp4", "poster": "/museum/grandma-80/song.jpg", "title": "Everyone singing" }
-      ]
-    }
-  ]
-}
-```
-
-Items hang in the order listed. Put the files under
-`web/public/museum/` (they're served from `/museum/...`). Only real photos and videos the family
-shared: nothing in the museum is invented.
+It shows **Our visits**: what the caretaker set up in the editor (`#/museum/edit`: pictures,
+order, titles, captions), or, until they do, an automatic arrangement from the finished
+captures: each visit hangs once, as its video (a still if it has none), with the title and date
+the family gave it, then stills from the visits fill a second room. Stepping into a visit's
+picture opens its 3D room. With no finished visits yet, the page says the museum is being set
+up. Only real visits the family filmed: nothing in the museum is invented.

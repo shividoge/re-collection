@@ -4,16 +4,17 @@ import { EffectComposer, SMAA, ToneMapping, Vignette } from '@react-three/postpr
 import { ToneMappingMode } from 'postprocessing'
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import * as THREE from 'three'
-import { publicGuide, type PublicCapture } from '../api'
+import type { PublicCapture } from '../api'
 import { Artwork } from '../museum/Artwork'
 import { Furniture, Sconces, Window } from '../museum/Classic'
 import type { Artwork as Art } from '../museum/exhibitions'
 import { fitPicture, planMuseum, route, type MuseumPlan } from '../museum/layout'
 import { LOOK } from '../museum/looks'
 import { Rooms } from '../museum/Rooms'
+import { useMuseumTextures } from '../museum/textures'
 import { EYE } from '../museum/Walker'
 import { coverDistance } from '../museum/warp'
-import { HeroCloud } from './Scenes'
+import { HeroCloud, WithCaptureAssets } from './Scenes'
 
 const FOV = 58
 /** Of each stretch of scroll between two pictures: the walk, then a pause in front of the picture. */
@@ -128,7 +129,7 @@ function hallItems(captures: PublicCapture[]): Art[] {
   return captures.map((c) => ({
     id: c.id,
     kind: 'photo' as const,
-    src: publicGuide.file(c.id, 'thumb.jpg'),
+    src: c.thumbUrl ?? '',
     title: c.title || 'A visit',
     date: c.createdAt ? new Date(c.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : '',
     captureId: c.id,
@@ -145,12 +146,14 @@ function hallItems(captures: PublicCapture[]): Art[] {
 export default function MemoryLane({ captures, diveId }: { captures: PublicCapture[]; diveId?: string }) {
   // Oldest first; the visit the page goes on to explain hangs last, so the walk ends by diving into it.
   const moments = useMemo(() => {
-    const sorted = captures.filter((c) => c.thumb).sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')))
+    const sorted = captures.filter((c) => c.thumbUrl).sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')))
     const k = sorted.findIndex((c) => c.id === diveId)
     return k >= 0 ? [...sorted.slice(0, k), ...sorted.slice(k + 1), sorted[k]] : sorted
   }, [captures, diveId])
   const items = useMemo(() => hallItems(moments), [moments])
   const plan = useMemo(() => planMuseum(items.length), [items.length])
+  // Rooms, furniture and frames read the baked museum textures synchronously.
+  const textures = useMuseumTextures()
   const look = LOOK
   const [sizes, setSizes] = useState<{ w: number; h: number }[]>([])
   const onMeasure = useCallback((slot: number, w: number, h: number) => {
@@ -280,15 +283,19 @@ export default function MemoryLane({ captures, diveId }: { captures: PublicCaptu
               <Lightformer key={i} form="rect" intensity={2.4} color={look.light} position={[0, plan.spec.height, (r.zFront + r.zBack) / 2]} rotation-x={Math.PI / 2} scale={[plan.spec.width * 0.5, plan.spec.depth * 0.6, 1]} />
             ))}
           </Environment>
-          <Rooms plan={plan} look={look} title="Her life, in moments" subtitle="Oldest first" reflections={512} />
-          {plan.features.length > 0 && (
+          {textures.ready && (
             <>
-              <Furniture plan={plan} />
-              <Sconces plan={plan} count={items.length} />
-              <Window plan={plan} />
+              <Rooms plan={plan} look={look} title="Her life, in moments" subtitle="Oldest first" reflections={512} />
+              {plan.features.length > 0 && (
+                <>
+                  <Furniture plan={plan} />
+                  <Sconces plan={plan} count={items.length} />
+                  <Window plan={plan} />
+                </>
+              )}
+              {items.map((art, i) => (plan.slots[i] ? <Artwork key={art.id} art={art} slot={plan.slots[i]} look={look} focused={i === at} onSelect={() => {}} onMeasure={onMeasure} /> : null))}
             </>
           )}
-          {items.map((art, i) => (plan.slots[i] ? <Artwork key={art.id} art={art} slot={plan.slots[i]} look={look} focused={i === at} onSelect={() => {}} onMeasure={onMeasure} /> : null))}
           <ScrollCamera stops={stops} progress={progress} />
           <EffectComposer multisampling={0} enableNormalPass={false}>
             <SMAA />
@@ -297,6 +304,7 @@ export default function MemoryLane({ captures, diveId }: { captures: PublicCaptu
           </EffectComposer>
         </Canvas>
 
+        {textures.error && <p className="lane-error">{textures.error}</p>}
         <div className="lane-copy" style={{ opacity: 1 - clamp01(shown * segments * 1.5) }}>
           <p className="eyebrow">The Memory Museum</p>
           <h2>Scroll through her life.</h2>
@@ -315,7 +323,7 @@ export default function MemoryLane({ captures, diveId }: { captures: PublicCaptu
 
         {last && push > 0.4 && (
           <div className="lane-end" style={{ opacity: reveal, pointerEvents: reveal > 0.9 ? 'auto' : 'none' }}>
-            {reveal > 0 && <HeroCloud id={last.id} />}
+            {reveal > 0 && <WithCaptureAssets id={last.id}>{(assets) => <HeroCloud assets={assets} />}</WithCaptureAssets>}
             <div className="lane-end-copy" style={{ opacity: clamp01(reveal * 2 - 1 + after), transform: `translateY(${(1 - Math.min(1, reveal + after)) * 16}px)` }}>
               <p className="eyebrow">You just stepped inside</p>
               <h2>{last.title || 'A visit'}</h2>

@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { visits, type Exhibition } from './exhibitions'
-import { planMuseum } from './layout'
+import type * as THREE from 'three'
+import { followIndex, visits, type Exhibition } from './exhibitions'
+import { planMuseum, walkTarget } from './layout'
 import { MuseumScene } from './MuseumScene'
+import { paintToCanvas } from './painter'
+import { roomHash } from './roomSync'
 import { MuseumSound } from './sound'
 import { StepIn, type Stage } from './StepIn'
 import { Streaks } from './Streaks'
+import { HelperTogether, PatientTogether } from './Together'
+import { useMuseumRoom } from './useMuseumRoom'
+// TEMPORARY: from '../data' once it exists.
+import { dataMode, loadCaptureAssets } from '../data'
 import type { WalkerHandle } from './Walker'
 import { IN_MS, LEAVE_MS, OUT_MS, type Dive } from './warp'
 import './museum.css'
@@ -14,8 +21,15 @@ import './museum.css'
  * any of them. This is the patient's page, so it changes nothing: no adding, no taking down, no
  * other exhibitions and no way out to the rest of the site. The caretaker arranges it at
  * `#/museum/edit` (MuseumEditor). `#/museum/<id>` links from before land here too.
+ *
+ * Visit together: the iPad opens a room; a helper who opens `#/museum?join=CODE` on their phone
+ * walks with them (`join` is set only on the helper's phone). Either can open a visit's Memory
+ * Window on the iPad.
  */
-export function MuseumPage(_props: { id?: string }) {
+export function MuseumPage({ join }: { id?: string; join?: string }) {
+  const helper = join !== undefined
+  const together = dataMode === 'live'
+  const room = useMuseumRoom(helper ? 'helper' : 'patient', { join, enabled: together })
   const [exhibition, setExhibition] = useState<Exhibition | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
   const [focus, setFocus] = useState(-1)
@@ -36,7 +50,18 @@ export function MuseumPage(_props: { id?: string }) {
   const [warp, setWarp] = useState<{ dir: 'in' | 'out'; cross: number } | null>(null)
   const pendingStep = useRef(-1)
   const sizes = useRef(new Map<number, { w: number; h: number }>())
+  // The museum's renderer paints a photo for stepping into it (painter.ts).
+  const renderer = useRef<THREE.WebGLRenderer | null>(null)
+  const onRenderer = useCallback((gl: THREE.WebGLRenderer) => {
+    renderer.current = gl
+  }, [])
+  const paint = useCallback(
+    (src: string, maxW: number, maxH: number) => (renderer.current ? paintToCanvas(renderer.current, src, maxW, maxH) : Promise.reject(new Error('The museum is not drawn yet.'))),
+    [],
+  )
   const sound = useMemo(() => new MuseumSound(), [])
+  // Leaving the museum stops its music and lets its audio engine go.
+  useEffect(() => () => sound.dispose(), [sound])
   const [musicOn, setMusicOn] = useState(sound.musicOn)
 
   useEffect(() => {
@@ -54,16 +79,60 @@ export function MuseumPage(_props: { id?: string }) {
     return () => clearTimeout(t)
   }, [])
 
-  const goTo = useCallback(
-    (i: number) => {
-      if (!exhibition || i < 0 || i >= exhibition.items.length) return
-      const slot = plan.slots[i]
+  // The last guided walk asked for in this exhibition. The walker may not be there yet (the
+  // shared walk can arrive before the museum is drawn) or may start again at the entrance (a new
+  // plan), so it's kept and given again when the walker is ready.
+  const destination = useRef<{ exhibition: string; index: number } | null>(null)
+  const walkToDestination = useCallback(() => {
+    const d = destination.current
+    const w = walker.current
+    const target = d && d.exhibition === exhibition?.id ? walkTarget(plan, d.index) : null
+    if (w && target) w.walkTo(target.to, target.look)
+  }, [exhibition?.id, plan])
+
+  /** Walks to piece `i` (−1: back to the entrance); `share` tells the other screen too. */
+  const walkTo = useCallback(
+    (i: number, share: boolean) => {
+      if (!exhibition || i < -1 || i >= exhibition.items.length) return
       setFocus(i)
       setArrived(false)
       setHint(false)
-      walker.current?.walkTo(slot.view, slot.center)
+      destination.current = { exhibition: exhibition.id, index: i }
+      walkToDestination()
+      if (share) room.setAt(i, i >= 0 ? (exhibition.items[i].captureId ?? null) : null)
     },
-    [exhibition, plan],
+    [exhibition, room, walkToDestination],
+  )
+  const goTo = useCallback((i: number) => walkTo(i, true), [walkTo])
+
+  // Visit together: both screens follow the shared walk.
+  const items = exhibition?.items
+  const followTo = room.state && items ? followIndex(items, room.state.at, room.state.atId) : null
+  const focusNow = useRef(focus)
+  useEffect(() => {
+    focusNow.current = focus
+  }, [focus])
+  useEffect(() => {
+    if (followTo !== null && followTo !== focusNow.current) walkTo(followTo, false)
+    // Only when the shared walk moves.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [followTo])
+
+  // Arriving at a visit's picture: fetch its files now, so stepping in (or the Memory Window) opens at once.
+  const arrivedAt = arrived && focus >= 0 ? exhibition?.items[focus]?.captureId : undefined
+  useEffect(() => {
+    if (arrivedAt) loadCaptureAssets(arrivedAt).catch(() => {})
+  }, [arrivedAt])
+
+  /** Opens piece `i`'s visit in the Memory Window on the iPad (from the iPad itself, or from the helper's phone). */
+  const openWindow = useCallback(
+    (i: number) => {
+      const captureId = exhibition?.items[i]?.captureId
+      if (!captureId) return
+      room.enter(captureId, i)
+      if (!helper) location.hash = roomHash(captureId)
+    },
+    [exhibition, room, helper],
   )
 
   const onMeasure = useCallback((slot: number, w: number, h: number) => {
@@ -83,6 +152,7 @@ export function MuseumPage(_props: { id?: string }) {
         pendingStep.current = i
         setFocus(i)
         setArrived(false)
+        destination.current = { exhibition: exhibition.id, index: i }
         walker.current?.walkTo(slot.view, slot.center)
         return
       }
@@ -198,9 +268,11 @@ export function MuseumPage(_props: { id?: string }) {
             onLook={onLook}
             onMeasure={onMeasure}
             walker={walker}
+            onWalkerReady={walkToDestination}
             frozen={Boolean(inside)}
             paused={covered}
             dive={dive}
+            onRenderer={onRenderer}
           />
         ) : null}
       </div>
@@ -212,6 +284,7 @@ export function MuseumPage(_props: { id?: string }) {
           stage={inside.stage}
           onBack={stepOut}
           onCovered={setCovered}
+          paint={paint}
           onGone={() => setInside((s) => (s ? { ...s, stage: 'surfacing' } : s))}
         />
       )}
@@ -256,11 +329,17 @@ export function MuseumPage(_props: { id?: string }) {
               <div key={current.id} className="museum-caption-body">
                 <strong>{current.title || 'Untitled'}</strong>
                 {current.date && <span className="museum-date">{current.date}</span>}
+                {current.estimated && <span className="estimated-badge">Estimated from a video</span>}
                 {current.caption && <p>{current.caption}</p>}
                 <div className="museum-actions">
                   <button className="museum-stepin" onClick={() => stepIn(focus)}>
                     Step in
                   </button>
+                  {current.captureId && (
+                    <button onClick={() => openWindow(focus)} title={helper ? 'Open this visit on the iPad, to look into with your head' : 'Look into this visit with your head'}>
+                      {helper ? 'Open on the iPad' : 'Memory Window'}
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
@@ -278,6 +357,12 @@ export function MuseumPage(_props: { id?: string }) {
         </footer>
       )}
 
+      {together &&
+        (helper ? (
+          <HelperTogether room={room} join={join} openTitle={room.state?.window ? (exhibition.items.find((a) => a.captureId === room.state?.window)?.title ?? null) : null} />
+        ) : (
+          !inside && <PatientTogether room={room} at={focus} />
+        ))}
     </div>
   )
 }

@@ -4,7 +4,7 @@ Compare reconstructions of one video on frames they never saw.
 Run video2capture.py with `--holdout 8`: every 8th model frame is left out of the room and the
 splat, and listed in `<out>/capture-<id>.holdout.json`. This script renders each capture's room
 (the room.bin points, drawn as round dots sized to their neighbours like the web viewer, and
-room.splat.ply if present) from those frames' camera poses, and scores the renders against the
+room.splat.ply or room.spz if present) from those frames' camera poses, and scores the renders against the
 real frames: PSNR and SSIM on the pixels not covered by people or pets (they're not part of the
 room), and coverage (share of those pixels the render fills at all).
 
@@ -21,30 +21,11 @@ import argparse
 import json
 import math
 import os
-import tempfile
 from pathlib import Path
 
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 import numpy as np
-
-
-def load_room_bin(path: Path) -> tuple[np.ndarray, np.ndarray]:
-    raw = path.read_bytes()
-    n = int(np.frombuffer(raw[:4], "<u4")[0])
-    pts = np.frombuffer(raw, "<f4", count=n * 3, offset=4).reshape(n, 3)
-    cols = np.frombuffer(raw, np.uint8, count=n * 3, offset=4 + n * 12).reshape(n, 3)
-    return pts.copy(), cols.copy()
-
-
-def load_frames(path: Path) -> list[dict]:
-    return [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
-
-
-def pose_of(line: dict) -> tuple[np.ndarray, np.ndarray]:
-    T = np.array(line["T"], np.float64).reshape(4, 4).T  # column-major in the file
-    fx, fy, cx, cy = line["K"]
-    return T, np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], np.float64)
 
 
 def overview_pose(poses: list[np.ndarray], points: np.ndarray) -> np.ndarray:
@@ -78,9 +59,10 @@ def main() -> None:
     import torch
     from PIL import Image, ImageDraw
 
+    import decode
     import fusion
+    import package
     import splat
-    from video2capture import extract_frames
 
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     frames = json.loads(args.holdout.read_text())["frames"]
@@ -88,9 +70,9 @@ def main() -> None:
 
     # Ground truth: the held-out frames from the first capture's video (all captures of one
     # source video have the same frames).
-    with tempfile.TemporaryDirectory() as tmp:
-        paths = extract_frames(caps[0][1] / "video.mp4", frames, Path(tmp))
-        gt_full = torch.from_numpy(np.stack([np.asarray(Image.open(p).convert("RGB")) for p in paths]))
+    info = decode.probe(caps[0][1] / "video.mp4")
+    dec = decode.decode(info, frames, max(info.width, info.height), None)
+    gt_full = torch.from_numpy(np.stack([dec.frames[i] for i in frames]))
     _, H, W, _ = gt_full.shape
     w, h = args.width, int(round(H * args.width / W / 2)) * 2
     gt = fusion.resize_images(gt_full, h, w).to(dev) / 255
@@ -98,16 +80,20 @@ def main() -> None:
 
     results, rows = {}, []
     for label, folder in caps:
-        lines = load_frames(folder / "frames.jsonl")
-        pts, cols = load_room_bin(folder / "room.bin")
+        lines = package.read_frames(folder / "frames.jsonl")
+        pts, cols = package.read_room_bin(folder / "room.bin")
         size = np.minimum(splat.neighbour_spacing(pts) * 1.2, 0.035)  # the viewer caps splats at 3.5 cm
         dots = splat.points_as_gaussians(pts, cols, 1.0)
         dots["scales"] = np.log(np.maximum(size, 1e-4) / 2)[:, None].repeat(3, 1).astype(np.float32)
         models = [("points", splat.tensors(dots, dev))]
-        if (folder / "room.splat.ply").exists():
+        if (folder / "room.spz").exists():
+            import spz
+
+            models.append(("splat", splat.tensors(spz.read_spz(folder / "room.spz"), dev)))
+        elif (folder / "room.splat.ply").exists():
             models.append(("splat", splat.tensors(splat.read_ply(folder / "room.splat.ply"), dev)))
-        poses = [pose_of(lines[i]) for i in frames]
-        ov = overview_pose([pose_of(l)[0] for l in lines], pts)
+        poses = [package.pose_of(lines[i]) for i in frames]
+        ov = overview_pose([package.pose_of(l)[0] for l in lines], pts)
         for kind, g in models:
             degree = int(math.isqrt(g["sh"].shape[1])) - 1
             renders, psnr, ssim, cover = [], [], [], []

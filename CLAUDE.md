@@ -267,6 +267,8 @@ Never cut: real capture, grounded facts with family approval, grounding enforcem
 
 **Last updated:** Sat Oct 24, 16:30 PT, by Shivin's Claude session. **What's left, who does it and the timeline: the top of `TASKS.md` ("Everything left until submission").** The final feature's plan: `docs/LAST-STEP.md`. Sponsor plan: `docs/SPONSOR-PLAN.md`. Theme: `docs/THEME.md` (public name **Relive With A Smile**; "Braindance" stays the internal code name).
 
+**v3 architecture (branch `arch/v3`, draft PR, not merged; Srinivas's session, Sun Oct 25 ~01:30):** Convex (dev deployment `dev:adamant-schnauzer-171`, team `srinivas-i-b`) + Cloudflare R2 (`braindance-dev`) + pull-based workers replace the guide server. Contract: `docs/architecture-v3.md`. The 7 team captures are imported and baked; the web reads only baked files. Run the bake worker: `systemctl --user status bd-bake-dev` (or `workers/bake/README.md`). GPU worker: `workers/gpu/README.md`. The guide keeps running until the cutover checklist (§9 of the contract) passes. Open items: iOS changes need a Mac build and phone checks (`ios/VERIFY.md`); the museum needs an iPad check; family functions have no login (decided: leave open for now).
+
 **Done and working** (checked on real hardware or real Claude):
 - **iPhone app** (`ios/`): live room scan, visit recording, on-device transcript, keyframes, review, upload, AirDrop zip, guided UI (#21 merged, tried on the phone).
 - **Guide server** (`guide/`): uploads, fact extraction, review, revisit sessions, grounding, distress, scoring, progress, read-only `/public` routes and the static exporter (in #17/#25).
@@ -339,3 +341,4 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 4. Never delete a decision from this file; if a person changes one, edit it and note the change in the Work log.
 
 **For people:** open Claude Code in your clone of the repo and say: **"Read CLAUDE.md and TASKS.md. I'm <name>. Continue from my next step."**
+- 2026-10-25 01:30 | Srinivas + Claude | v3 rebuild on `arch/v3`: Convex backend, R2 storage, bake worker, GPU worker, web on baked files, museum perf, iOS uploads + depth v2; reviewed by GPT 6.1 Sol and fixed; 7 captures imported and baked live | Shivin: build iOS on the Mac (`ios/VERIFY.md`); iPad check of museum/viewer; then the cutover checklist

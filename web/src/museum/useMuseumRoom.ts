@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import { museumRooms, type RoomPeers, type RoomRole } from '../api'
+import { rooms, type RoomPeers, type RoomRole } from '../data'
 import { acquireRoom, type RoomClient, type RoomSnapshot, type RoomStatus } from './roomClient'
 import { follow, roomHash, roomHere, sendFailed, shown, type RoomSpot } from './roomSync'
 
@@ -102,7 +102,7 @@ export type MuseumRoom = {
   enter: (id: string, at: number) => void
   /** Back to the museum on both screens. */
   leave: () => void
-  /** Helper only: their last change didn't reach the guide. */
+  /** Helper only: their last change didn't reach the server. */
   sendFailed: boolean
   /** Send that change again. */
   retry: () => void
@@ -155,8 +155,8 @@ export function useMuseumRoom(role: RoomRole, { join = null, enabled = true }: {
   }, [role, code, sync])
 
   const open = useCallback(async (at: number) => {
-    const room = await museumRooms.create(at)
-    patientRoom.set(room.code)
+    const { code } = await rooms.create(at)
+    patientRoom.set(code)
   }, [])
   const close = useCallback(() => patientRoom.set(null), [])
 
@@ -167,7 +167,7 @@ export function useMuseumRoom(role: RoomRole, { join = null, enabled = true }: {
     setNameState(clean)
   }, [])
 
-  // Each change builds on the newest one made here, even before the guide has confirmed it.
+  // Each change builds on the newest one made here, even before the server has confirmed it.
   const setAt = useCallback(
     // The iPad's hall has nothing open; the helper's phone keeps whatever the iPad has open.
     (at: number, atId: string | null) => client?.change((now) => ({ at, atId, window: role === 'patient' ? null : (now?.window ?? null) })),

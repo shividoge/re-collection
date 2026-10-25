@@ -1,15 +1,28 @@
 import { useFrame, useThree } from '@react-three/fiber'
-import { useMemo, useRef, type MutableRefObject } from 'react'
+import { useEffect, useMemo, useRef, type RefObject } from 'react'
 import * as THREE from 'three'
 import type { FrameRecord } from './formats'
 import { dominantQuarterTurns, frameIndexAtTime, rollColumnMajor } from './pose'
 
-function poseMatrix(T: number[], quarterTurns: number): THREE.Matrix4 {
-  return new THREE.Matrix4().fromArray(rollColumnMajor(T, (quarterTurns * Math.PI) / 2))
+/** Every frame's pose, turned upright, as position + rotation: worked out once, read per frame. */
+function uprightPoses(frames: FrameRecord[]): { positions: Float32Array; quaternions: Float32Array } {
+  const k = dominantQuarterTurns(frames)
+  const positions = new Float32Array(frames.length * 3)
+  const quaternions = new Float32Array(frames.length * 4)
+  const m = new THREE.Matrix4()
+  const p = new THREE.Vector3()
+  const q = new THREE.Quaternion()
+  const s = new THREE.Vector3()
+  frames.forEach((f, i) => {
+    m.fromArray(rollColumnMajor(f.T, (k * Math.PI) / 2)).decompose(p, q, s)
+    p.toArray(positions, i * 3)
+    q.toArray(quaternions, i * 4)
+  })
+  return { positions, quaternions }
 }
 
 /** The recorder's path as a faint line, plus a small frustum at the current playhead. */
-export function CameraPath({ frames, timeRef, color = '#ff5c3a' }: { frames: FrameRecord[]; timeRef: MutableRefObject<number>; color?: string }) {
+export function CameraPath({ frames, timeRef, color = '#ff5c3a' }: { frames: FrameRecord[]; timeRef: RefObject<number>; color?: string }) {
   const line = useMemo(() => {
     const pts = new Float32Array(frames.length * 3)
     frames.forEach((f, i) => pts.set([f.T[12], f.T[13], f.T[14]], i * 3))
@@ -17,15 +30,22 @@ export function CameraPath({ frames, timeRef, color = '#ff5c3a' }: { frames: Fra
     g.setAttribute('position', new THREE.BufferAttribute(pts, 3))
     return new THREE.Line(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.35 }))
   }, [frames, color])
-
+  useEffect(
+    () => () => {
+      line.geometry.dispose()
+      ;(line.material as THREE.Material).dispose()
+    },
+    [line],
+  )
+  const poses = useMemo(() => uprightPoses(frames), [frames])
   const marker = useRef<THREE.Group>(null)
-  const k = useMemo(() => dominantQuarterTurns(frames), [frames])
 
   useFrame(() => {
     const m = marker.current
     if (!m || frames.length === 0) return
-    const f = frames[frameIndexAtTime(frames, timeRef.current)]
-    poseMatrix(f.T, k).decompose(m.position, m.quaternion, m.scale)
+    const i = frameIndexAtTime(frames, timeRef.current ?? 0)
+    m.position.fromArray(poses.positions, i * 3)
+    m.quaternion.fromArray(poses.quaternions, i * 4)
   })
 
   return (
@@ -43,17 +63,19 @@ export function CameraPath({ frames, timeRef, color = '#ff5c3a' }: { frames: Fra
 }
 
 /** Drives the viewer camera along the recorded poses, smoothed, upright. */
-export function FollowCamera({ frames, timeRef, videoW, videoH, smoothing = 6 }: { frames: FrameRecord[]; timeRef: MutableRefObject<number>; videoW: number; videoH: number; smoothing?: number }) {
+export function FollowCamera({ frames, timeRef, videoW, videoH, smoothing = 6 }: { frames: FrameRecord[]; timeRef: RefObject<number>; videoW: number; videoH: number; smoothing?: number }) {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
   const k = useMemo(() => dominantQuarterTurns(frames), [frames])
-  const target = useMemo(() => ({ pos: new THREE.Vector3(), quat: new THREE.Quaternion(), scale: new THREE.Vector3(), first: true }), [])
+  const poses = useMemo(() => uprightPoses(frames), [frames])
+  const target = useMemo(() => ({ pos: new THREE.Vector3(), quat: new THREE.Quaternion(), first: true }), [])
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (frames.length === 0) return
-    const f = frames[frameIndexAtTime(frames, timeRef.current)]
-    poseMatrix(f.T, k).decompose(target.pos, target.quat, target.scale)
+    const i = frameIndexAtTime(frames, timeRef.current ?? 0)
+    target.pos.fromArray(poses.positions, i * 3)
+    target.quat.fromArray(poses.quaternions, i * 4)
     // Vertical field of view of the upright image.
-    const [fx, fy] = f.K
+    const [fx, fy] = frames[i].K
     const fov = k % 2 === 1 ? 2 * Math.atan(videoW / 2 / fx) : 2 * Math.atan(videoH / 2 / fy)
     const fovDeg = THREE.MathUtils.radToDeg(fov)
     if (Math.abs(camera.fov - fovDeg) > 0.01) {
@@ -69,6 +91,8 @@ export function FollowCamera({ frames, timeRef, videoW, videoH, smoothing = 6 }:
     const a = 1 - Math.exp(-smoothing * delta)
     camera.position.lerp(target.pos, a)
     camera.quaternion.slerp(target.quat, a)
+    // Still easing toward the recorded pose: keep drawing until it's there.
+    if (camera.position.distanceToSquared(target.pos) > 1e-8 || 1 - Math.abs(camera.quaternion.dot(target.quat)) > 1e-8) state.invalidate()
   })
   return null
 }

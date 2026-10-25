@@ -19,7 +19,8 @@ export interface VoxelIndex {
   /** World position of voxel (0, 0, 0)'s min corner. */
   origin: Vec3
   dims: [number, number, number]
-  map: Map<number, number>
+  /** Voxel coordinates → voxel id. Typed arrays only, so the index can move between threads. */
+  hash: VoxelHash
   /** ix, iy, iz per voxel id. */
   coords: Int32Array
   /** Voxel id → first slot in `points`; length is voxelCount + 1. */
@@ -30,6 +31,11 @@ export interface VoxelIndex {
 }
 
 const packKey = (ix: number, iy: number, iz: number) => (ix * AXIS + iy) * AXIS + iz
+function unpackKey(key: number): [number, number, number] {
+  const iz = key % AXIS
+  const iy = ((key - iz) / AXIS) % AXIS
+  return [(key - iz - iy * AXIS) / AXIS / AXIS, iy, iz]
+}
 
 export function buildVoxelIndex(positions: Float32Array, size = 0.03): VoxelIndex {
   const n = positions.length / 3
@@ -47,35 +53,101 @@ export function buildVoxelIndex(positions: Float32Array, size = 0.03): VoxelInde
   const dims = [0, 1, 2].map((a) => Math.floor((max[a] - origin[a]) / size) + 2) as [number, number, number]
   if (dims.some((d) => d >= AXIS)) throw new Error(`cloud too large to index at ${size} m voxels`)
 
-  const map = new Map<number, number>()
+  const hash = createVoxelHash(1024)
   const voxOf = new Uint32Array(n)
   const coordList: number[] = []
+  const keyList: number[] = []
   for (let i = 0; i < n; i++) {
     const ix = Math.floor((positions[i * 3] - origin[0]) / size)
     const iy = Math.floor((positions[i * 3 + 1] - origin[1]) / size)
     const iz = Math.floor((positions[i * 3 + 2] - origin[2]) / size)
-    const key = packKey(ix, iy, iz)
-    let id = map.get(key)
-    if (id === undefined) {
-      id = map.size
-      map.set(key, id)
+    let id = hashGet(hash, ix, iy, iz)
+    if (id < 0) {
+      id = hash.size
+      hashSet(hash, ix, iy, iz, id)
       coordList.push(ix, iy, iz)
+      keyList.push(packKey(ix, iy, iz))
     }
     voxOf[i] = id
   }
-  const voxelCount = map.size
+  const voxelCount = hash.size
+  // Canonical ids: voxels sorted by grid coordinates, so the same points in any order (the bake
+  // shuffles points.pack) index, classify and select the same way.
+  const keys = Float64Array.from(keyList).sort()
+  const coords = new Int32Array(voxelCount * 3)
+  keys.forEach((key, id) => {
+    const [ix, iy, iz] = unpackKey(key)
+    coords.set([ix, iy, iz], id * 3)
+    hashSet(hash, ix, iy, iz, id)
+  })
+  const rank = Uint32Array.from({ length: voxelCount }, (_, v) => hashGet(hash, coordList[v * 3], coordList[v * 3 + 1], coordList[v * 3 + 2]))
+  for (let i = 0; i < n; i++) voxOf[i] = rank[voxOf[i]]
   const start = new Uint32Array(voxelCount + 1)
   for (let i = 0; i < n; i++) start[voxOf[i] + 1]++
   for (let v = 0; v < voxelCount; v++) start[v + 1] += start[v]
   const fill = start.slice(0, voxelCount)
   const points = new Uint32Array(n)
   for (let i = 0; i < n; i++) points[fill[voxOf[i]]++] = i
-  return { size, origin, dims, map, coords: Int32Array.from(coordList), start, points, voxelCount }
+  return { size, origin, dims, hash, coords, start, points, voxelCount }
 }
 
 export function voxelId(idx: VoxelIndex, ix: number, iy: number, iz: number): number {
   if (ix < 0 || iy < 0 || iz < 0 || ix >= idx.dims[0] || iy >= idx.dims[1] || iz >= idx.dims[2]) return -1
-  return idx.map.get(packKey(ix, iy, iz)) ?? -1
+  return hashGet(idx.hash, ix, iy, iz)
+}
+
+/**
+ * Open-addressing hash table (linear probing) from voxel coordinates to ids, on typed arrays:
+ * the exact packed key in `keys`, the id in `ids` (−1 = empty slot).
+ */
+export interface VoxelHash {
+  keys: Float64Array
+  ids: Int32Array
+  size: number
+}
+
+export function createVoxelHash(capacity: number): VoxelHash {
+  let c = 16
+  while (c < capacity) c *= 2
+  return { keys: new Float64Array(c), ids: new Int32Array(c).fill(-1), size: 0 }
+}
+
+const slotOf = (ix: number, iy: number, iz: number, mask: number) => (Math.imul(ix, 73856093) ^ Math.imul(iy, 19349663) ^ Math.imul(iz, 83492791)) & mask
+
+export function hashGet(h: VoxelHash, ix: number, iy: number, iz: number): number {
+  const key = packKey(ix, iy, iz)
+  const mask = h.ids.length - 1
+  for (let s = slotOf(ix, iy, iz, mask); ; s = (s + 1) & mask) {
+    const id = h.ids[s]
+    if (id < 0) return -1
+    if (h.keys[s] === key) return id
+  }
+}
+
+/** Inserts or overwrites; grows the table to keep it at most half full. */
+export function hashSet(h: VoxelHash, ix: number, iy: number, iz: number, id: number) {
+  if ((h.size + 1) * 2 > h.ids.length) {
+    const old = { keys: h.keys, ids: h.ids }
+    h.keys = new Float64Array(old.ids.length * 2)
+    h.ids = new Int32Array(old.ids.length * 2).fill(-1)
+    const mask = h.ids.length - 1
+    for (let s = 0; s < old.ids.length; s++) {
+      if (old.ids[s] < 0) continue
+      const key = old.keys[s]
+      const [ix2, iy2, iz2] = unpackKey(key)
+      let t = slotOf(ix2, iy2, iz2, mask)
+      while (h.ids[t] >= 0) t = (t + 1) & mask
+      h.keys[t] = key
+      h.ids[t] = old.ids[s]
+    }
+  }
+  const key = packKey(ix, iy, iz)
+  const mask = h.ids.length - 1
+  let s = slotOf(ix, iy, iz, mask)
+  while (h.ids[s] >= 0 && h.keys[s] !== key) s = (s + 1) & mask
+  if (h.ids[s] < 0) h.size++
+  h.keys[s] = key
+  h.ids[s] = id
 }
 
 export function voxelCenter(idx: VoxelIndex, id: number): Vec3 {
@@ -136,39 +208,42 @@ export function raycastVoxels(idx: VoxelIndex, origin: Vec3, direction: Vec3, ma
   return null
 }
 
-/** Heights of large horizontal surfaces, from a histogram of point heights. */
+/**
+ * Heights of large horizontal surfaces, from a histogram of every point's height. Bin means sum
+ * whole micrometers, which is exact, so the result doesn't depend on the order of the points.
+ */
 export function estimateLevels(positions: Float32Array, bin = 0.02): { floorY: number | null; ceilingY: number | null } {
   const n = positions.length / 3
   if (n === 0) return { floorY: null, ceilingY: null }
-  const stride = Math.max(1, Math.floor(n / 500_000))
   let lo = Infinity
   let hi = -Infinity
-  for (let i = 0; i < n; i += stride) {
+  for (let i = 0; i < n; i++) {
     const y = positions[i * 3 + 1]
     if (y < lo) lo = y
     if (y > hi) hi = y
   }
   const bins = Math.max(1, Math.ceil((hi - lo) / bin) + 1)
   const count = new Float64Array(bins)
-  const sum = new Float64Array(bins)
-  for (let i = 0; i < n; i += stride) {
+  const sumUm = new Float64Array(bins)
+  for (let i = 0; i < n; i++) {
     const y = positions[i * 3 + 1]
     const b = Math.floor((y - lo) / bin)
     count[b]++
-    sum[b] += y
+    sumUm[b] += Math.round(y * 1e6)
   }
+  const mean = (b: number) => sumUm[b] / count[b] / 1e6
   let peak = 0
   for (let b = 0; b < bins; b++) peak = Math.max(peak, count[b])
   const dense = (b: number) => count[b] >= 0.3 * peak
   let floorBin = -1
   for (let b = 0; b < bins && floorBin < 0; b++) if (dense(b)) floorBin = b
   if (floorBin < 0) return { floorY: null, ceilingY: null }
-  const floorY = sum[floorBin] / count[floorBin]
+  const floorY = mean(floorBin)
   let ceilingY: number | null = null
   for (let b = bins - 1; b > floorBin; b--) {
     if (lo + b * bin < floorY + 1.8) break
     if (dense(b)) {
-      ceilingY = sum[b] / count[b]
+      ceilingY = mean(b)
       break
     }
   }
@@ -410,13 +485,31 @@ export interface Bounds {
 export function selectionMask(idx: VoxelIndex, voxels: Uint32Array): Uint8Array {
   const [dx, dy, dz] = idx.dims
   const mask = new Uint8Array(dx * dy * dz)
+  markVoxels(mask, idx.dims, voxelCoords(idx, voxels), 1)
+  return mask
+}
+
+/** ix, iy, iz of each voxel in `voxels`. */
+export function voxelCoords(idx: VoxelIndex, voxels: Uint32Array): Int32Array {
+  const out = new Int32Array(voxels.length * 3)
+  voxels.forEach((v, i) => out.set(idx.coords.subarray(v * 3, v * 3 + 3), i * 3))
+  return out
+}
+
+/**
+ * Writes `value` into a dense selection mask (selectionMask's layout) at each voxel in `coords`
+ * and its face neighbors. With 0 it undoes an earlier selection, so a mask can be kept and
+ * updated per click instead of rebuilt.
+ */
+export function markVoxels(mask: Uint8Array, dims: [number, number, number], coords: Int32Array, value: number) {
+  const [dx, dy, dz] = dims
   const set = (x: number, y: number, z: number) => {
-    if (x >= 0 && y >= 0 && z >= 0 && x < dx && y < dy && z < dz) mask[(z * dy + y) * dx + x] = 1
+    if (x >= 0 && y >= 0 && z >= 0 && x < dx && y < dy && z < dz) mask[(z * dy + y) * dx + x] = value
   }
-  for (const v of voxels) {
-    const x = idx.coords[v * 3]
-    const y = idx.coords[v * 3 + 1]
-    const z = idx.coords[v * 3 + 2]
+  for (let i = 0; i < coords.length; i += 3) {
+    const x = coords[i]
+    const y = coords[i + 1]
+    const z = coords[i + 2]
     set(x, y, z)
     set(x + 1, y, z)
     set(x - 1, y, z)
@@ -425,7 +518,6 @@ export function selectionMask(idx: VoxelIndex, voxels: Uint32Array): Uint8Array 
     set(x, y, z + 1)
     set(x, y, z - 1)
   }
-  return mask
 }
 
 export function boundsOfPoints(positions: Float32Array, points: Uint32Array): Bounds {

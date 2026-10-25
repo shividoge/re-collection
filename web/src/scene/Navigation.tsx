@@ -58,6 +58,7 @@ const EDGE_MAX_SPEED = 8
 export function FlyControls({ goalActive, onSteeringChange }: { goalActive: MutableRefObject<boolean>; onSteeringChange?: (steering: boolean) => void }) {
   const camera = useThree((s) => s.camera)
   const dom = useThree((s) => s.gl.domElement)
+  const invalidate = useThree((s) => s.invalidate)
   const keys = useHeldKeys()
   const look = useMemo(() => new THREE.Euler(0, 0, 0, 'YXZ'), [])
   const wheel = useRef(0)
@@ -87,6 +88,7 @@ export function FlyControls({ goalActive, onSteeringChange }: { goalActive: Muta
     }
     const locked = () => document.pointerLockElement === dom
     const onMove = (e: PointerEvent) => {
+      invalidate()
       let dx: number
       let dy: number
       if (locked()) {
@@ -143,11 +145,13 @@ export function FlyControls({ goalActive, onSteeringChange }: { goalActive: Muta
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       wheel.current += -e.deltaY
+      invalidate()
     }
     // Holding a movement key captures the mouse (hidden, unbounded, like a game); letting go
     // of all of them releases it. Where pointer lock is refused (e.g. embedded panes), the
     // cursor is hidden by CSS and edge-pinning above keeps the turn going.
     const onKeyDown = (e: KeyboardEvent) => {
+      invalidate()
       if (!STEER_KEYS.includes(e.code) || e.repeat || locked() || isTyping(e)) return
       try {
         const p = dom.requestPointerLock() as unknown as Promise<void> | undefined
@@ -157,6 +161,7 @@ export function FlyControls({ goalActive, onSteeringChange }: { goalActive: Muta
       }
     }
     const onKeyUp = () => {
+      invalidate()
       if (locked() && !STEER_KEYS.some((key) => keys.current.has(key))) document.exitPointerLock()
     }
     const onBlur = () => {
@@ -181,7 +186,7 @@ export function FlyControls({ goalActive, onSteeringChange }: { goalActive: Muta
       window.removeEventListener('blur', onBlur)
       if (locked()) document.exitPointerLock()
     }
-  }, [camera, dom, look, goalActive, keys])
+  }, [camera, dom, look, goalActive, keys, invalidate])
 
   useEffect(
     () => () => {
@@ -195,8 +200,10 @@ export function FlyControls({ goalActive, onSteeringChange }: { goalActive: Muta
   const right = useMemo(() => new THREE.Vector3(), [])
   const move = useMemo(() => new THREE.Vector3(), [])
 
-  useFrame((_, rawDelta) => {
+  useFrame((state, rawDelta) => {
     const delta = Math.min(rawDelta, 0.1)
+    // The canvas renders on demand: keep going while any key is held (flying or steering).
+    if (keys.current.size > 0) state.invalidate()
     if (goalActive.current) {
       // A go-to animation owns the camera; pick up wherever it leaves us.
       look.setFromQuaternion(camera.quaternion, 'YXZ')
@@ -248,6 +255,7 @@ export function CameraTween({ goal, active, onDone }: { goal: CameraGoal | null;
   const camera = useThree((s) => s.camera)
   // Read controls fresh each frame: OrbitControls may mount in the same update as the goal.
   const get = useThree((s) => s.get)
+  const invalidate = useThree((s) => s.invalidate)
   const state = useMemo(() => ({ fromPos: new THREE.Vector3(), fromLook: new THREE.Vector3(), t: 0, goal: null as CameraGoal | null }), [])
   const tmp = useMemo(() => ({ pos: new THREE.Vector3(), look: new THREE.Vector3(), to: new THREE.Vector3(), toLook: new THREE.Vector3() }), [])
 
@@ -260,11 +268,13 @@ export function CameraTween({ goal, active, onDone }: { goal: CameraGoal | null;
     const dist = camera.position.distanceTo(new THREE.Vector3(...goal.lookAt))
     state.fromLook.copy(camera.position).addScaledVector(dir, dist)
     active.current = true
-  }, [goal, camera, state, active])
+    invalidate()
+  }, [goal, camera, state, active, invalidate])
 
-  useFrame((_, delta) => {
+  useFrame((frame, delta) => {
     const g = state.goal
     if (!g) return
+    frame.invalidate()
     state.t = Math.min(1, state.t + delta / 0.9)
     const e = state.t < 0.5 ? 4 * state.t ** 3 : 1 - (-2 * state.t + 2) ** 3 / 2
     tmp.to.set(...g.position)

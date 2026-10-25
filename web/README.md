@@ -1,48 +1,53 @@
 # Braindance web app
 
-Vite + React + TypeScript + React Three Fiber. Owner: Firdavs. It talks only to the guide server (`../guide`, API in `../docs/guide-api.md`); every Claude call happens there.
+Vite + React + TypeScript + React Three Fiber. It talks only to Convex (`../backend/convex`, contract in `../docs/architecture-v3.md`) and to R2 through the presigned URLs Convex returns. Every Claude call happens in Convex.
+
+Package manager: **bun** (`bun.lock`; the old `package-lock.json` is gone).
 
 ## Run it
 
-The guide serves the built app at `/`, so one URL works for everything:
-
 ```bash
-npm --prefix web install
-npm --prefix web run build
-npm --prefix guide start          # then open http://127.0.0.1:8787
+bun install --cwd web
+bun run --cwd web dev          # http://127.0.0.1:5173, talks to the dev deployment in web/.env.development
+bun run --cwd web typecheck    # tsc -b
+bun run --cwd web lint         # oxlint
+bun run --cwd web test         # vitest: parsers, pose math, data layer, uploads, museum sync
 ```
 
-While developing, run Vite with hot reload (it proxies `/api`, `/files` and `/health` to the guide on 8787):
+- `VITE_CONVEX_URL` is the Convex deployment (no secrets). Dev: `web/.env.development`. A production build needs it set (`VITE_CONVEX_URL=… bun run --cwd web build`).
+- The generated `api` is imported from `../backend/convex/_generated/api`. Its `convex` imports resolve to web's copy (`paths` in `tsconfig.app.json`, `resolve.dedupe` in `vite.config.ts`). If backend code imports another package, run `bun install --cwd backend` too so typecheck can see it.
+- **Static site** (GitHub Pages): `VITE_STATIC=1 bun run --cwd web build`, then copy `web/dist` into the export from `backend/scripts/export-static.ts` (`.static-site/`). Static mode reads only `data/*.json` and `data/files/` (architecture-v3.md §8), never Convex.
 
-```bash
-npm --prefix guide start
-npm --prefix web run dev          # http://127.0.0.1:5173
-npm --prefix web test             # vitest: parsers, pose math, selection math
-```
+## Screens (hash routes, each loaded on demand)
 
-If the guide has `BRAINDANCE_KEY` set, the gallery asks for the team password once.
+- `#/` **Front page:** public moments only. The 3D scenes load after the page (the first download has no three.js).
+- `#/p/<id>` a public moment: the viewer with the family's approved facts.
+- `#/captures` **Captures:** drop a capture zip from the phone, or an old video (turned into an estimated 3D moment), or open a `room.bin` on its own. Cards show live per-stage status (facts, room bake, video → 3D, splat), the running job's progress, and which workers are online. Also: who the visits are for, and how Claude addresses them.
+- `#/capture/<id>` **Viewer + Revisit:** the room, people replayed in 3D, the phone's path, synced video, and the narrated visit.
+- `#/facts/<id>` **Fact review:** live; approve, edit, reject, "don't bring this up", ask Claude again.
+- `#/dashboard`, `#/dashboard/<id>` **Dashboard:** recall per session at real times, older memories, distress alerts, next revisits.
+- `#/museum`, `#/museum/edit`, `#/window/<id>`: the museum, its editor, the Memory Window.
 
-## Screens (hash routes)
+A red **MOCK MODE** banner shows whenever the backend runs with `MOCK_CLAUDE=1`.
 
-- `#/` **Gallery:** drop a capture zip from the phone (uploaded to the guide), or open a `room.bin` on its own (stays in the browser). Cards show real pipeline status.
-- `#/capture/<id>` **Viewer + fact review:** the room as soft points, people replayed in 3D from depth, the phone's path, synced video, and the family's fact review beside it.
-  - **Orbit:** drag to see the pivot from any angle; the pivot is the room center, or whatever you click. Esc goes back to the center.
-  - **Fly:** drag turns the room around you. Hold WASD to fly and steer with the mouse like a shooter (cursor hidden, keeps turning at the screen edge, comes back at the crosshair). E up, Q down, Shift faster, Alt slower.
-  - **Camera view:** ride along with the phone.
-  - **Select:** click an object to see its size and when the recording camera saw it (marks on the scrubber). F flies to it. Space plays and pauses.
-- `#/room` a `room.bin` opened from this computer: Orbit, Fly and select.
-- `#/revisit/<id>` **Revisit (patient):** welcome, slow replay with grounded narration, push-to-talk conversation, caregiver corner, goodbye.
-- `#/dashboard/<id>` **Dashboard (family):** recall per session at real times, older memories, distress alerts, next revisits.
+## Uploads
+
+`src/upload.ts`: the zip is opened in the browser (macOS `._` files and `room.ply` are skipped). Then `captures.begin`, and per file `uploads.start`, a single PUT or 4 parts at a time straight to R2, and `uploads.finish`; at the end `captures.complete`. Files go in this order: manifest, thumb, transcript, keyframes, room, frames, video, depth, so facts start before the big files land. Parts are retried with backoff; then `uploads.resume` gives fresh URLs. Unfinished uploads are kept in IndexedDB: drop the same zip after a reload and it carries on, skipping files the server already has. An old video works the same way: the same file (same title and people) dropped again goes on into the capture made the first time. Saved state older than 7 days is forgotten (R2 aborts unfinished multipart uploads by then). R2's CORS rules must allow `PUT` from the site and expose the `ETag` header.
 
 ## Layout
 
 ```
-src/api.ts                 guide client; ?key= on file URLs for <video>/<img>
-src/upload.ts              unzip in the browser (fflate), upload file by file, then validate
-src/scene/formats.ts       room.bin and frames.jsonl readers
-src/scene/pose.ts          unprojection and upright-video math (matches docs/capture-format.md)
-src/scene/spatial.ts       voxel index, picking, floor/wall detection, object selection, on-camera intervals
-src/scene/SceneViewer.tsx  the 3D viewer: StaticCloud, CameraPath, DepthReplay, Navigation (Orbit/Fly)
-src/views/                 Gallery, CaptureView, FactsPanel, RoomFile, Revisit, Dashboard
+src/data/                  the data layer: everything goes through here
+  index.ts                 DataProvider, loadCaptureAssets/useCaptureAssets, fetchBytes/fetchText, hooks
+  assets.ts                CaptureAssets: the boundary the 3D code reads
+  fetchCache.ts            page-wide byte cache (LRU by bytes, de-duplicated, Range-aware, abortable)
+  captureAssets.ts         Convex/static payload → CaptureAssets; static-site paths
+  live.ts / public.ts      family + session calls (live only) / public reads (live or static)
+  museum.ts                visits, the caretaker's arrangement, Visit together rooms
+  uploadPlan.ts            pure upload rules (order, parts, resume)
+src/upload.ts              zip/folder reading and the upload itself
+src/scene/                 the 3D viewer (render worker)
+src/museum/, src/window/   the museum and the Memory Window
+src/views/                 Gallery, CaptureView, FactsPanel, Dashboard, PublicView, Showcase, VisitDock
 tests/                     vitest; tests/fixture.ts is a synthetic box room for tests only
 ```

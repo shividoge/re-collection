@@ -1,64 +1,52 @@
-import { GuideError, museumRooms, type Room, type RoomChange, type RoomPeers, type RoomState, type RoomWho } from '../api'
+import { rooms, type Room, type RoomChange, type RoomPeers, type RoomState, type RoomWho } from '../data'
 import { failed, intend, received, retry, sent, shown, startSync, takeNext, type RoomSpot, type RoomSync } from './roomSync'
 
-/** How long the event stream gets to deliver its first state before the client polls instead. */
-export const STREAM_GRACE_MS = 3000
-export const POLL_MS = 1000
-/** A poll stuck in the tunnel longer than this is given up and tried again. */
-export const POLL_TIMEOUT_MS = 5000
-/** The iPad sends a change the guide didn't take again after this long. */
+/** Each screen says it's there this often; peers count heartbeats newer than 12 s (§6.6). */
+export const HEARTBEAT_MS = 5000
+/** The iPad sends a change Convex didn't take again after this long. */
 export const RETRY_MS = 2000
 /** A room nobody on this tab uses any more is closed after this long (the iPad switching screens reuses it). */
 export const KEEP_MS = 2000
 
 /**
- * live: connected. connecting / reconnecting: trying. gone: no room with this code (wrong code,
- * expired, or the guide restarted). Only the helper's screen ever shows these.
+ * live: connected. connecting / reconnecting: trying. gone: no room with this code (wrong code
+ * or expired). Only the helper's screen ever shows these.
  */
 export type RoomStatus = 'off' | 'connecting' | 'live' | 'reconnecting' | 'gone'
 
 export type RoomSnapshot = { sync: RoomSync; peers: RoomPeers; status: RoomStatus }
 
-type Listener = (e: { data?: unknown }) => void
-/** The part of `EventSource` the client uses. */
-export type RoomEvents = { addEventListener(type: string, listener: Listener): void; close(): void }
-
-/** How the client reaches the guide (swapped out in tests). */
+/** How the client reaches Convex (swapped out in tests). */
 export type RoomTransport = {
   setState(code: string, change: RoomChange): Promise<{ state: RoomState }>
-  poll(code: string, who: RoomWho, since: number | null, signal: AbortSignal): Promise<Room | null>
-  events(code: string, who: RoomWho): RoomEvents
+  /** `onRoom` now and on every change (null: no such room). Returns stop. */
+  watch(code: string, onRoom: (room: Room | null) => void, onError: (error: unknown) => void): () => void
+  heartbeat(code: string, who: RoomWho): Promise<void>
+  /** `onChange(connected)` when the connection drops or comes back. Returns stop. */
+  connection(onChange: (connected: boolean) => void): () => void
 }
 
-export const guideTransport: RoomTransport = {
-  setState: (code, change) => museumRooms.setState(code, change),
-  poll: (code, who, since, signal) => museumRooms.poll(code, who, since, signal),
-  events: (code, who) => new EventSource(museumRooms.eventsUrl(code, who)),
-}
+export const convexTransport: RoomTransport = rooms
 
 const NO_PEERS: RoomPeers = { patient: 0, helpers: [] }
-const isGone = (error: unknown) => error instanceof GuideError && error.status === 404
 
 /**
- * One screen's connection to a museum room: the guide's event stream, or polling once a second
- * when the stream doesn't get through (a cloudflared quick tunnel holds back its body), plus this
- * screen's own changes, sent one at a time in order. One per browser tab and room, shared by the
- * iPad's museum and its Memory Window, so a change made just before switching screens isn't lost.
+ * One screen's connection to a museum room: a reactive Convex query for the room's state and
+ * peers, a heartbeat every 5 s so the others see this screen, and this screen's own changes, sent
+ * one at a time in order. One per browser tab and room, shared by the iPad's museum and its Memory
+ * Window, so a change made just before switching screens isn't lost.
  */
 export class RoomClient {
   private snapshot: RoomSnapshot
   private readonly listeners = new Set<() => void>()
   private stopped = false
-  private polling = false
-  private version: number | null = null
-  private events: RoomEvents | null = null
-  private inflight: AbortController | null = null
+  private readonly stops: (() => void)[] = []
   private readonly timers = new Set<ReturnType<typeof setTimeout>>()
   private readonly code: string
   private readonly who: RoomWho
   private readonly transport: RoomTransport
 
-  constructor(code: string, who: RoomWho, transport: RoomTransport = guideTransport) {
+  constructor(code: string, who: RoomWho, transport: RoomTransport = convexTransport) {
     this.code = code
     this.who = who
     this.transport = transport
@@ -90,64 +78,39 @@ export class RoomClient {
     return timer
   }
 
-  private cancel(timer: ReturnType<typeof setTimeout> | null) {
-    if (timer === null) return
-    clearTimeout(timer)
-    this.timers.delete(timer)
-  }
-
   private apply(state: RoomState) {
     const sync = received(this.snapshot.sync, state)
     if (sync !== this.snapshot.sync) this.set({ sync })
   }
 
   start() {
-    const events = this.transport.events(this.code, this.who)
-    this.events = events
-    // Headers can arrive with no body behind them (a quick tunnel), so only a first state counts.
-    const grace = this.later(() => this.fallBack(), STREAM_GRACE_MS)
-    events.addEventListener('state', (e) => {
-      if (this.polling || this.stopped) return
-      this.cancel(grace)
-      if (this.snapshot.status !== 'live') this.set({ status: 'live' })
-      this.apply(JSON.parse(String(e.data)) as RoomState)
-    })
-    events.addEventListener('peers', (e) => {
-      if (!this.polling && !this.stopped) this.set({ peers: JSON.parse(String(e.data)) as RoomPeers })
-    })
-    // A dropped stream, a 404 or a tunnel's 502: polling finds out which, and carries on if it can.
-    events.addEventListener('error', () => this.fallBack())
+    this.stops.push(
+      this.transport.watch(
+        this.code,
+        (room) => {
+          if (this.stopped) return
+          if (!room) return this.gone()
+          this.apply(room.state)
+          this.set({ peers: room.peers, status: 'live' })
+        },
+        () => {
+          if (!this.stopped && this.snapshot.status === 'live') this.set({ status: 'reconnecting' })
+        },
+      ),
+      this.transport.connection((connected) => {
+        if (this.stopped || this.snapshot.status === 'gone') return
+        if (!connected && this.snapshot.status === 'live') this.set({ status: 'reconnecting' })
+        // The query re-delivers on reconnect; a quiet room still counts as live again.
+        if (connected && this.snapshot.status === 'reconnecting') this.set({ status: 'live' })
+      }),
+    )
+    this.beat()
   }
 
-  /** Quietly switch to polling for as long as this room stays open. */
-  private fallBack() {
-    if (this.polling || this.stopped) return
-    this.polling = true
-    this.events?.close()
-    void this.poll()
-  }
-
-  private async poll() {
-    const aborter = new AbortController()
-    this.inflight = aborter
-    const timeout = setTimeout(() => aborter.abort(), POLL_TIMEOUT_MS)
-    try {
-      const room = await this.transport.poll(this.code, this.who, this.version, aborter.signal)
-      if (this.stopped) return
-      if (room) {
-        this.version = room.version
-        this.apply(room.state)
-        this.set({ peers: room.peers })
-      }
-      if (this.snapshot.status !== 'live') this.set({ status: 'live' })
-    } catch (error) {
-      if (this.stopped) return
-      if (isGone(error)) return this.gone()
-      if (this.snapshot.status === 'live') this.set({ status: 'reconnecting' })
-    } finally {
-      clearTimeout(timeout)
-    }
-    this.later(() => void this.poll(), POLL_MS)
+  /** Says this screen is here, now and every HEARTBEAT_MS. A missed beat is just tried next time. */
+  private beat() {
+    this.transport.heartbeat(this.code, this.who).catch(() => {})
+    this.later(() => this.beat(), HEARTBEAT_MS)
   }
 
   /** The room no longer exists: stop, and say so (the helper's screen shows it; the iPad forgets the code). */
@@ -163,7 +126,7 @@ export class RoomClient {
     this.pump()
   }
 
-  /** Send a change the guide didn't take again. */
+  /** Send a change Convex didn't take again. */
   retry() {
     if (this.stopped) return
     this.set({ sync: retry(this.snapshot.sync) })
@@ -181,9 +144,8 @@ export class RoomClient {
         this.set({ sync: sent(this.snapshot.sync, intent.seq, state) })
         this.pump()
       },
-      (error: unknown) => {
+      () => {
         if (this.stopped) return
-        if (isGone(error)) return this.gone()
         this.set({ sync: failed(this.snapshot.sync, intent.seq) })
         // The iPad never shows a problem: it keeps walking and tries again. The helper is told.
         if (this.who.as === 'patient') this.later(() => this.retry(), RETRY_MS)
@@ -197,8 +159,7 @@ export class RoomClient {
     this.stopped = true
     for (const timer of this.timers) clearTimeout(timer)
     this.timers.clear()
-    this.inflight?.abort()
-    this.events?.close()
+    for (const stop of this.stops.splice(0)) stop()
   }
 }
 
@@ -209,7 +170,7 @@ const open = new Map<string, Entry>()
  * The tab's client for this room and screen, started if needed. Call `release` when done; the
  * client stays open for a moment in case the next screen wants it.
  */
-export function acquireRoom(code: string, who: RoomWho, transport: RoomTransport = guideTransport): { client: RoomClient; release: () => void } {
+export function acquireRoom(code: string, who: RoomWho, transport: RoomTransport = convexTransport): { client: RoomClient; release: () => void } {
   const key = JSON.stringify([code, who.as, who.name, who.client])
   let entry = open.get(key)
   if (!entry || entry.client.closed) {

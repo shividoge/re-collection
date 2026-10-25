@@ -89,6 +89,22 @@ export class MuseumSound {
   }
 
   /**
+   * Stops everything and lets the audio engine go (leaving the museum). A later `wake()` starts
+   * afresh, so a museum opened again never stacks a second engine on this one.
+   */
+  dispose() {
+    this.music?.pause()
+    this.music?.removeAttribute('src')
+    this.music?.load()
+    void this.ctx?.close().catch(() => {})
+    this.ctx = null
+    this.music = null
+    this.musicGain = null
+    this.fx = null
+    this.warps = null
+  }
+
+  /**
    * The sound of diving through a picture, its crossing `crossIn` seconds from now: forwards to
    * step in, played backwards to step out (the air rushing the other way).
    */

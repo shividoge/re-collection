@@ -29,7 +29,7 @@ targets:
         NSCameraUsageDescription: Braindance uses the camera and LiDAR to capture the room and the visit.
         NSMicrophoneUsageDescription: Braindance records audio so your family can hear the visit again.
         NSSpeechRecognitionUsageDescription: Braindance writes down what was said during the visit, on this phone, so your family can review it.
-        NSLocalNetworkUsageDescription: Braindance uploads visits to your team's guide server on this network.
+        NSLocalNetworkUsageDescription: Braindance can upload visits to a Braindance server on this network (for testing).
         # Plain http is allowed only for local addresses (a laptop on the same Wi-Fi); tunnels use https.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

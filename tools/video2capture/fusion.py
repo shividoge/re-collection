@@ -8,8 +8,12 @@ on torch tensors so the same code works on CUDA, MPS or CPU.
 
 from __future__ import annotations
 
+from typing import Callable
+
 import torch
 import torch.nn.functional as F
+
+from decode import ConvertError
 
 # COCO labels (torchvision numbering) for things that move during a visit and must not become
 # part of the static room: people and pets.
@@ -97,37 +101,79 @@ def consistency(depth: torch.Tensor, valid: torch.Tensor, Ks: torch.Tensor, pose
     return keep
 
 
-def voxel_downsample(points: torch.Tensor, colors: torch.Tensor, voxel: float) -> tuple[torch.Tensor, torch.Tensor]:
-    """Average points and colours (float 0..255) per voxel."""
-    keys = torch.floor(points / voxel).long()
-    _, inverse, counts = torch.unique(keys, dim=0, return_inverse=True, return_counts=True)
-    m = counts.numel()
-    psum = torch.zeros((m, 3), device=points.device, dtype=torch.float64).index_add_(0, inverse, points.double())
-    csum = torch.zeros((m, 3), device=points.device, dtype=torch.float64).index_add_(0, inverse, colors.double())
-    c = counts[:, None].double()
-    return (psum / c).float(), (csum / c).round().clamp(0, 255).to(torch.uint8)
+def voxel_keys(points: torch.Tensor, voxel: float) -> torch.Tensor:
+    """One int64 per voxel (21 bits per axis, about ±15 km at 1.5 cm)."""
+    q = torch.floor(points / voxel).long() + (1 << 20)
+    return (q[:, 0] << 42) | (q[:, 1] << 21) | q[:, 2]
+
+
+class VoxelGrid:
+    """Running weighted sums of positions and colours per voxel, so a long video's frames can be
+    fused a batch at a time instead of all at once."""
+
+    def __init__(self, voxel: float, device: torch.device):
+        self.voxel = voxel
+        self.keys = torch.zeros(0, dtype=torch.long, device=device)
+        self.sums = torch.zeros((0, 7), dtype=torch.float64, device=device)  # w·xyz, w·rgb, w
+
+    def add(self, points: torch.Tensor, colors: torch.Tensor, weights: torch.Tensor) -> None:
+        """Adds observations; ones with weight <= 0 or anything non-finite carry no evidence and are
+        skipped (a voxel seen only by those would otherwise come out as a black point at 0, 0, 0)."""
+        ok = (weights > 0) & torch.isfinite(weights) & torch.isfinite(points).all(1) & torch.isfinite(colors).all(1)
+        if not ok.all():
+            points, colors, weights = points[ok], colors[ok], weights[ok]
+        w = weights.double()[:, None]
+        rows = torch.cat([points.double() * w, colors.double() * w, w], 1)
+        keys = torch.cat([self.keys, voxel_keys(points, self.voxel)])
+        rows = torch.cat([self.sums, rows])
+        self.keys, inverse = torch.unique(keys, return_inverse=True)
+        self.sums = torch.zeros((len(self.keys), 7), dtype=torch.float64, device=rows.device).index_add_(0, inverse, rows)
+
+    def result(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """(points float32, colours uint8, total weight) per voxel (every weight > 0)."""
+        sums = self.sums[self.sums[:, 6] > 0]
+        w = sums[:, 6:7]
+        return ((sums[:, :3] / w).float(), (sums[:, 3:6] / w).round().clamp(0, 255).to(torch.uint8), sums[:, 6].float())
+
+
+def voxel_downsample(points: torch.Tensor, colors: torch.Tensor, voxel: float,
+                     weights: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor]:
+    """Weighted average of points and colours (float 0..255) per voxel (equal weights by default)."""
+    grid = VoxelGrid(voxel, points.device)
+    grid.add(points, colors, torch.ones(len(points), device=points.device) if weights is None else weights)
+    p, c, _ = grid.result()
+    return p, c
+
+
+class MaskModel:
+    """People and pets in frames, from torchvision's Mask R-CNN (COCO), loaded once. Used to keep
+    moving people out of the static room and out of the splat training loss; they stay in the
+    per-frame depth for the people replay."""
+
+    def __init__(self, device: torch.device):
+        from torchvision.models.detection import MaskRCNN_ResNet50_FPN_V2_Weights, maskrcnn_resnet50_fpn_v2
+
+        self.device = device
+        self.model = maskrcnn_resnet50_fpn_v2(weights=MaskRCNN_ResNet50_FPN_V2_Weights.DEFAULT).eval().to(device)
+        self.labels = torch.tensor(MOVING_LABELS, device=device)
+
+    def __call__(self, frames: torch.Tensor, score: float = 0.5, batch: int = 4) -> torch.Tensor:
+        """uint8 (N, H, W, 3) on the CPU -> bool (N, H, W) on the CPU, grown a little at the edges."""
+        n, h, w, _ = frames.shape
+        out = torch.zeros((n, h, w), dtype=torch.bool)
+        with torch.no_grad():
+            for s in range(0, n, batch):
+                imgs = [f.to(self.device).permute(2, 0, 1).float() / 255 for f in frames[s:s + batch]]
+                for k, det in enumerate(self.model(imgs)):
+                    hit = (det["scores"] >= score) & torch.isin(det["labels"], self.labels)
+                    if hit.any():
+                        out[s + k] = (det["masks"][hit, 0] >= 0.5).any(0).cpu()
+        return dilate(out, max(3, w // 100))
 
 
 def moving_masks(frames: torch.Tensor, device: torch.device, score: float = 0.5, batch: int = 4) -> torch.Tensor:
-    """People and pets in each frame (N, H, W, 3 uint8 on CPU) -> bool (N, H, W), from
-    torchvision's Mask R-CNN (COCO). Used to keep moving people out of the static room and out
-    of the splat training loss; they stay in the per-frame depth for the people replay."""
-    from torchvision.models.detection import MaskRCNN_ResNet50_FPN_V2_Weights, maskrcnn_resnet50_fpn_v2
-
-    model = maskrcnn_resnet50_fpn_v2(weights=MaskRCNN_ResNet50_FPN_V2_Weights.DEFAULT).eval().to(device)
-    n, h, w, _ = frames.shape
-    out = torch.zeros((n, h, w), dtype=torch.bool)
-    with torch.no_grad():
-        for s in range(0, n, batch):
-            imgs = [f.to(device).permute(2, 0, 1).float() / 255 for f in frames[s:s + batch]]
-            for k, det in enumerate(model(imgs)):
-                hit = (det["scores"] >= score) & torch.isin(det["labels"], torch.tensor(MOVING_LABELS, device=device))
-                if hit.any():
-                    out[s + k] = (det["masks"][hit, 0] >= 0.5).any(0).cpu()
-    del model
-    if device.type == "cuda":
-        torch.cuda.empty_cache()
-    return dilate(out, max(3, w // 100))
+    """One-off MaskModel (loads the model each call; keep a MaskModel to reuse it)."""
+    return MaskModel(device)(frames, score, batch)
 
 
 def scale_K(K: torch.Tensor, sx: float, sy: float) -> torch.Tensor:
@@ -152,21 +198,24 @@ def resize_images(frames: torch.Tensor, h: int, w: int) -> torch.Tensor:
 
 
 def fuse_room(depth: torch.Tensor, keep: torch.Tensor, Ks: torch.Tensor, poses: torch.Tensor,
-              colors: torch.Tensor, frames: list[int], upsample: int, voxel: float) -> tuple[torch.Tensor, torch.Tensor]:
-    """Fuse the kept pixels of `frames` into one coloured cloud, at `upsample` times the depth
-    resolution. Depth is bilinear-upsampled only inside surfaces: `keep` already excludes
-    edges, so no pixel blends across a depth jump. `colors` are float RGB frames (N, H*up, W*up, 3)
-    resampled from the full-resolution video."""
-    n, h, w = depth.shape
-    H, W = h * upsample, w * upsample
-    pts, cols = [], []
-    for k in frames:
-        d = F.interpolate(depth[k][None, None], size=(H, W), mode="bilinear", align_corners=False)[0, 0]
-        m = F.interpolate(keep[k][None, None].float(), size=(H, W), mode="nearest")[0, 0] > 0
-        K = scale_K(Ks[k], W / w, H / h)
-        world = unproject(d, K, poses[k])
-        pts.append(world[m])
-        cols.append(colors[k][m])
-    if not pts:
+              colors: Callable[[int], torch.Tensor], frames: list[int], voxel: float, weights: torch.Tensor | None = None,
+              batch: int = 16) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Fuse the kept pixels of `frames` into one coloured cloud at the depth maps' own resolution
+    (no upsampling: at 1.5 cm voxels several frames already land in every voxel). Each voxel is the
+    `weights`-weighted average (the model's confidence) of the pixels that fall in it. `colors(k)` is
+    frame k's float RGB (h, w, 3), made on demand so a long video never holds them all. Returns points, uint8 colours and each voxel's total weight."""
+    if not frames:
         raise ValueError("no frames to fuse")
-    return voxel_downsample(torch.cat(pts), torch.cat(cols), voxel)
+    grid = VoxelGrid(voxel, depth.device)
+    for s in range(0, len(frames), batch):
+        pts, cols, ws = [], [], []
+        for k in frames[s:s + batch]:
+            m = keep[k]
+            pts.append(unproject(depth[k], Ks[k], poses[k])[m])
+            cols.append(colors(k)[m])
+            ws.append(weights[k][m] if weights is not None else torch.ones(int(m.sum()), device=depth.device))
+        grid.add(torch.cat(pts), torch.cat(cols), torch.cat(ws))
+    points, cols, weight = grid.result()
+    if len(points) == 0:
+        raise ConvertError("No pixel had usable depth and confidence, so there is no room to build.")
+    return points, cols, weight

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { guide } from '../api'
+import { errorMessage, family } from '../data'
 
 /** The family's switch for the public front page. Off unless they turn it on. */
 export function PublicSwitch({ id, initial }: { id: string; initial: boolean }) {
@@ -13,10 +13,10 @@ export function PublicSwitch({ id, initial }: { id: string; initial: boolean }) 
         onChange={(e) => {
           const next = e.target.checked
           setError(null)
-          guide
+          family
             .setPublic(id, next)
             .then(() => setOn(next))
-            .catch((err: Error) => setError(err.message))
+            .catch((err: unknown) => setError(errorMessage(err)))
         }}
       />
       Public{error && <span style={{ color: 'var(--bd-error)' }}> {error}</span>}

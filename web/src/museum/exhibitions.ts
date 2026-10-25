@@ -1,13 +1,11 @@
 // What hangs in the museum. An exhibition is a title and a list of pictures and videos, in
-// visiting order. Exhibitions come from three places:
-// - web/public/museum/exhibitions.json, curated by hand (format in docs/museum.md);
-// - "Our visits", made from the captures on the guide: each visit's video and a few of its
-//   keyframes, with the title and date the family gave it;
-// - photos and videos dropped onto the museum page, kept in this browser (IndexedDB) so they
-//   are still there after a reload.
-// Nothing is invented: an exhibition only shows what was put into it.
+// visiting order. The museum shows one: "Our visits", made from the family's captures (each
+// visit's video and a few of its keyframes) the way the caretaker arranged it in the editor, or
+// the automatic arrangement until they do. Nothing is invented: it only shows what was filmed.
 
-import { captureFileUrl, guide, publicGuide, STATIC, type Arrangement, type ArrangementItem, type Manifest } from '../api'
+import type { Arrangement, ArrangementItem } from '../api'
+import type { CaptureAssets, Manifest } from '../data/assets'
+import { arrangements, loadVisitSources } from '../data'
 
 export type ArtworkKind = 'photo' | 'video'
 
@@ -25,8 +23,8 @@ export interface Artwork {
   /** For a visit: stepping in opens its 3D room, at second `t` of the visit (this picture's moment). */
   captureId?: string
   t?: number
-  /** Added on this device (can be removed again here). */
-  local?: boolean
+  /** From a visit rebuilt from an ordinary video: its room is estimated, not measured. */
+  estimated?: boolean
 }
 
 export interface Exhibition {
@@ -34,68 +32,30 @@ export interface Exhibition {
   title: string
   subtitle?: string
   items: Artwork[]
-  /** Where it came from, for the picker. */
-  source: 'curated' | 'visits' | 'local'
-}
-
-/** Exhibitions from web/public/museum/exhibitions.json; none if the file isn't there. */
-async function curated(): Promise<Exhibition[]> {
-  try {
-    const response = await fetch(`${import.meta.env.BASE_URL}museum/exhibitions.json`, { cache: 'no-cache' })
-    if (!response.ok) return []
-    const body = (await response.json()) as { exhibitions?: Partial<Exhibition>[] }
-    return (body.exhibitions ?? []).flatMap((e, i) => {
-      const items = (e.items ?? []).filter((a): a is Artwork => Boolean(a && a.src && (a.kind === 'photo' || a.kind === 'video')))
-      if (!e.title) return []
-      return [
-        {
-          id: e.id ?? `curated-${i}`,
-          title: e.title,
-          subtitle: e.subtitle,
-          items: items.map((a, k) => ({ ...a, id: a.id ?? `${e.id ?? i}-${k}` })),
-          source: 'curated' as const,
-        },
-      ]
-    })
-  } catch {
-    return []
-  }
 }
 
 const formatDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''
 
-/** A finished visit on the guide, with what's needed to hang pieces of it. */
+/** A finished visit, with what's needed to hang pieces of it. */
 export interface Visit {
   id: string
   title: string
   date: string
   thumb: boolean
   manifest: Manifest
+  /** The visit's files (the same object stepping in uses, so nothing loads twice). */
+  assets: CaptureAssets
 }
 
-/** Every finished visit, oldest first (on the public site: the published ones). */
+/** Every finished visit, oldest first (on the public site: the published ones). Manifests load in parallel. */
 export async function loadVisits(): Promise<Visit[]> {
-  let list
   try {
-    // The public (static) site has only the visits the family published, all finished uploads.
-    list = STATIC
-      ? (await publicGuide.captures()).map((c) => ({ ...c, status: { upload: 'done' } }))
-      : await guide.captures()
+    const sources = await loadVisitSources()
+    return sources.map((s) => ({ id: s.id, title: s.title || s.assets.manifest.title || 'A visit', date: formatDate(s.createdAt), thumb: s.hasThumb, manifest: s.assets.manifest, assets: s.assets }))
   } catch {
     return []
   }
-  const done = list.filter((c) => c.status.upload === 'done').sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
-  const out: Visit[] = []
-  for (const c of done) {
-    try {
-      const { manifest } = await guide.capture(c.id)
-      out.push({ id: c.id, title: c.title || manifest.title || 'A visit', date: formatDate(c.createdAt), thumb: Boolean(c.thumb), manifest })
-    } catch {
-      // A capture whose manifest can't be read is left out, not guessed at.
-    }
-  }
-  return out
 }
 
 /** The pieces of a visit that can hang: its video, its thumbnail, and a still every few seconds. */
@@ -113,56 +73,23 @@ export function piecesOf(v: Visit): string[] {
 
 /** One piece of a visit as a picture on the wall; null if the visit doesn't have that piece. */
 export function pieceArtwork(v: Visit, piece: string, title = '', caption = '', n = 0): Artwork | null {
-  const poster = v.thumb ? captureFileUrl(v.id, 'thumb.jpg') : undefined
-  const base = { id: `${v.id}-${piece}-${n}`, title: title || v.title, date: v.date, caption: caption || undefined, captureId: v.id }
-  if (piece === 'video') return v.manifest.video?.file ? { ...base, kind: 'video', src: captureFileUrl(v.id, v.manifest.video.file), poster, t: 0 } : null
+  const url = (name: string) => v.assets.rawUrl(name) ?? undefined
+  const poster = v.thumb ? url('thumb.jpg') : undefined
+  const base = { id: `${v.id}-${piece}-${n}`, title: title || v.title, date: v.date, caption: caption || undefined, captureId: v.id, estimated: v.manifest.source === 'video' || undefined }
+  const video = v.manifest.video?.file ? url(v.manifest.video.file) : undefined
+  if (piece === 'video') return video ? { ...base, kind: 'video', src: video, poster, t: 0 } : null
   if (piece === 'thumb') return poster ? { ...base, kind: 'photo', src: poster, t: 0 } : null
   const kf = v.manifest.keyframes
   const k = /^k(\d{4})$/.exec(piece)
   if (!k || !kf || Number(k[1]) >= kf.count) return null
-  return { ...base, kind: 'photo', src: captureFileUrl(v.id, `${kf.dir}/${piece}.jpg`), t: Number(k[1]) * kf.everySec }
+  const src = url(`${kf.dir}/${piece}.jpg`)
+  return src ? { ...base, kind: 'photo', src, t: Number(k[1]) * kf.everySec } : null
 }
-
-/**
- * The public site has no server to save to, so a caretaker trying the editor there saves into
- * this browser only (and the museum in this browser shows it).
- */
-const LOCAL_ARRANGEMENT = 'braindance.museum.arrangement'
 
 /** The museum the caretaker saved, or null for the automatic one. */
-export async function loadArrangement(): Promise<Arrangement | null> {
-  if (STATIC) {
-    try {
-      const local = localStorage.getItem(LOCAL_ARRANGEMENT)
-      if (local) return JSON.parse(local) as Arrangement
-    } catch {
-      /* no storage: fall through to the published one */
-    }
-    return publicGuide.arrangement()
-  }
-  return guide.arrangement().catch(() => null)
-}
-
-export async function saveArrangement(a: Omit<Arrangement, 'updatedAt'>): Promise<Arrangement> {
-  if (STATIC) {
-    const saved = { ...a, updatedAt: new Date().toISOString() }
-    localStorage.setItem(LOCAL_ARRANGEMENT, JSON.stringify(saved))
-    return saved
-  }
-  return guide.saveArrangement(a)
-}
-
-export async function resetArrangement(): Promise<void> {
-  if (STATIC) {
-    try {
-      localStorage.removeItem(LOCAL_ARRANGEMENT)
-    } catch {
-      /* nothing saved */
-    }
-    return
-  }
-  await guide.resetArrangement()
-}
+export const loadArrangement = (): Promise<Arrangement | null> => arrangements.load().catch(() => null)
+export const saveArrangement = (a: Omit<Arrangement, 'updatedAt'>): Promise<Arrangement> => arrangements.save(a)
+export const resetArrangement = (): Promise<void> => arrangements.clear()
 
 /** The museum built from an arrangement: its pictures, in its order, with its words. */
 export function arrangedExhibition(a: Arrangement, visits: Visit[]): Exhibition {
@@ -172,7 +99,7 @@ export function arrangedExhibition(a: Arrangement, visits: Visit[]): Exhibition 
     const art = v ? pieceArtwork(v, item.piece, item.title, item.caption, n) : null
     return art ? [art] : []
   })
-  return { id: 'visits', title: a.title || 'Our visits', subtitle: a.subtitle || undefined, items, source: 'visits' }
+  return { id: 'visits', title: a.title || 'Our visits', subtitle: a.subtitle || undefined, items }
 }
 
 /** Pictures that fill two rooms of the gallery (layout.ts: 8 in the first, 6 in the last). */
@@ -206,111 +133,15 @@ export async function visits(): Promise<Exhibition | null> {
   return arrangedExhibition(arrangement && arrangement.items.length > 0 ? arrangement : automaticArrangement(all), all)
 }
 
-// Files dropped onto the museum, kept in IndexedDB.
-
-interface StoredItem {
-  id: string
-  exhibitionId: string
-  kind: ArtworkKind
-  blob: Blob
-  title: string
-  addedAt: number
-}
-
-const DB = 'relive-museum'
-const STORE = 'items'
-
-function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 1)
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id' })
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
-  })
-}
-
-async function storedItems(): Promise<StoredItem[]> {
-  try {
-    const db = await openDb()
-    return await new Promise((resolve, reject) => {
-      const req = db.transaction(STORE).objectStore(STORE).getAll()
-      req.onsuccess = () => resolve(req.result as StoredItem[])
-      req.onerror = () => reject(req.error)
-    })
-  } catch {
-    return []
-  }
-}
-
-const objectUrls = new Map<string, string>()
-function urlFor(item: StoredItem): string {
-  let url = objectUrls.get(item.id)
-  if (!url) objectUrls.set(item.id, (url = URL.createObjectURL(item.blob)))
-  return url
-}
-
-const asArtwork = (s: StoredItem): Artwork => ({ id: s.id, kind: s.kind, src: urlFor(s), title: s.title, local: true })
-
-/** The kind of a dropped file, or null for anything that isn't a photo or a video. */
-export function kindOf(file: File): ArtworkKind | null {
-  if (file.type.startsWith('image/')) return 'photo'
-  if (file.type.startsWith('video/')) return 'video'
-  return null
-}
-
-/** Keeps dropped files in this browser, added to `exhibitionId`. Returns them as artworks. */
-export async function addFiles(exhibitionId: string, files: File[]): Promise<Artwork[]> {
-  const items: StoredItem[] = files.flatMap((file) => {
-    const kind = kindOf(file)
-    if (!kind) return []
-    const title = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')
-    return [{ id: `local-${crypto.randomUUID()}`, exhibitionId, kind, blob: file, title, addedAt: Date.now() }]
-  })
-  if (items.length === 0) return []
-  const db = await openDb()
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite')
-    for (const item of items) tx.objectStore(STORE).put(item)
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-  })
-  return items.map(asArtwork)
-}
-
-export async function removeLocal(id: string): Promise<void> {
-  const db = await openDb()
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite')
-    tx.objectStore(STORE).delete(id)
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-  })
-  const url = objectUrls.get(id)
-  if (url) URL.revokeObjectURL(url)
-  objectUrls.delete(id)
-}
-
-/** The exhibition dropped files go to when nothing else is open. */
-export const MY_EXHIBITION = 'mine'
-
 /**
- * Every exhibition: curated ones, "Our visits", and "My exhibition" (only once something was
- * dropped). Dropped files also join whichever exhibition they were dropped into.
+ * The piece a shared walk points at (Visit together): `at` when that piece is still the visit
+ * `atId` names (the two screens' lists can differ), else the first piece of that visit, else
+ * `at` itself; −1 for the entrance or a piece this museum doesn't have.
  */
-export async function loadExhibitions(): Promise<Exhibition[]> {
-  const [fromFile, fromGuide, local] = await Promise.all([curated(), visits(), storedItems()])
-  const all = [...fromFile, ...(fromGuide ? [fromGuide] : [])]
-  local.sort((a, b) => a.addedAt - b.addedAt)
-  for (const ex of all) ex.items.push(...local.filter((s) => s.exhibitionId === ex.id).map(asArtwork))
-  const mine = local.filter((s) => !all.some((ex) => ex.id === s.exhibitionId))
-  if (mine.length > 0 || all.length === 0) {
-    all.push({
-      id: MY_EXHIBITION,
-      title: 'My exhibition',
-      subtitle: 'Drop photos and videos here to hang them',
-      items: mine.map(asArtwork),
-      source: 'local',
-    })
-  }
-  return all
+export function followIndex(items: Artwork[], at: number, atId: string | null): number {
+  const inRange = at >= 0 && at < items.length
+  if (atId === null) return inRange ? at : -1
+  if (inRange && items[at].captureId === atId) return at
+  const first = items.findIndex((a) => a.captureId === atId)
+  return first >= 0 ? first : inRange ? at : -1
 }

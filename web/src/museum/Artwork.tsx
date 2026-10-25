@@ -1,88 +1,154 @@
-import { useFrame, type ThreeEvent } from '@react-three/fiber'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useThree, type ThreeEvent } from '@react-three/fiber'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import * as THREE from 'three'
-import { gilding, ornateFrameGeometry } from './Classic'
+import { ornateFrameGeometry } from './Classic'
 import type { Artwork as Art } from './exhibitions'
 import { fitPicture, type Slot } from './layout'
 import type { Look } from './looks'
-import { paintMaterial, setPicture } from './paint'
-import { labelTexture, lightPoolTexture } from './textures'
+import { gilding, pool } from './materials'
+import { loadPicture, paintInto, paintSize, paintTarget, PHOTO_HEIGHT, VIDEO_HEIGHT } from './painter'
+import { acquireVideo, releaseVideo, wantPlaying, type Playlist } from './playback'
+import { labelTexture } from './textures'
 
-const pool = lightPoolTexture()
+/** A painted picture ready to hang: its texture and its shape (width / height). */
+type Painted = { texture: THREE.Texture; aspect: number }
 
-/** Videos play while the visitor is this close (m); further away they pause on their frame. */
-const PLAY_DISTANCE = 7
-
-type Picture = { texture: THREE.Texture; aspect: number; video: HTMLVideoElement | null }
-
-function loadImage(src: string, done: (p: Picture) => void, failed: () => void): () => void {
-  let cancelled = false
-  let made: THREE.Texture | null = null
-  new THREE.TextureLoader().load(
-    src,
-    (t) => {
-      if (cancelled) return t.dispose()
-      t.colorSpace = THREE.SRGBColorSpace
-      t.anisotropy = 8
-      made = t
-      const img = t.image as HTMLImageElement
-      done({ texture: t, aspect: img.width / img.height, video: null })
-    },
-    undefined,
-    () => !cancelled && failed(),
-  )
-  return () => {
-    cancelled = true
-    made?.dispose()
-  }
+/** Paints the photo at `src` once; null until it's ready (or if it can't be loaded). */
+function usePaintedPhoto(src: string | undefined): Painted | null {
+  const gl = useThree((s) => s.gl)
+  const invalidate = useThree((s) => s.invalidate)
+  const [painted, setPainted] = useState<{ src: string; value: Painted } | null>(null)
+  useEffect(() => {
+    if (!src) return
+    let cancelled = false
+    let target: THREE.WebGLRenderTarget | null = null
+    loadPicture(src)
+      .then(({ texture, width, height }) => {
+        if (cancelled) return texture.dispose()
+        target = paintTarget(...paintSize(width, height, PHOTO_HEIGHT))
+        paintInto(gl, texture, width / height, target)
+        texture.dispose()
+        setPainted({ src, value: { texture: target.texture, aspect: width / height } })
+        invalidate()
+      })
+      .catch(() => {
+        /* a picture that can't be loaded stays a dark canvas, never a stand-in */
+      })
+    return () => {
+      cancelled = true
+      target?.dispose()
+    }
+  }, [src, gl, invalidate])
+  return painted && painted.src === src ? painted.value : null
 }
 
 /**
- * A picture's texture and shape (w / h), loaded from its URL; null until it's ready or if it
- * fails. A video shows its poster until it plays, and keeps the poster if this browser can't
- * play it (an HEVC .mov in Chrome, say). Also returns a video's element from the start, so it
- * can be started while its poster is still showing.
+ * A video's painting, repainted whenever it shows a new frame while it plays; null until the
+ * first frame is painted. Its element is shared with every other piece showing the same file.
  */
-function usePicture(art: Art): { picture: Picture | null; video: HTMLVideoElement | null } {
-  const [state, setState] = useState<Picture | null>(null)
+function usePaintedVideo(src: string | undefined, hasPoster: boolean, playing: boolean, hz: number): Painted | null {
+  const gl = useThree((s) => s.gl)
+  const invalidate = useThree((s) => s.invalidate)
   const [video, setVideo] = useState<HTMLVideoElement | null>(null)
+  const [painted, setPainted] = useState<Painted | null>(null)
+  const target = useRef<THREE.WebGLRenderTarget | null>(null)
   useEffect(() => {
-    if (art.kind === 'photo') return loadImage(art.src, setState, () => setState(null))
-    let cancelled = false
-    let videoTexture: THREE.Texture | null = null
-    const stopPoster = art.poster ? loadImage(art.poster, (p) => !cancelled && setState((s) => (s?.video ? s : p)), () => {}) : () => {}
-    const v = document.createElement('video')
-    setVideo(v)
-    v.src = art.src
-    v.crossOrigin = 'anonymous'
-    v.muted = true
-    v.loop = true
-    v.playsInline = true
-    v.preload = 'auto'
-    // Swap the poster for the video only once it's actually playing: until then the video
-    // texture has no frame on the GPU and would show black. Without a poster, show the video as
-    // soon as its first frame is ready.
-    const show = () => {
-      if (cancelled || videoTexture) return
-      const t = new THREE.VideoTexture(v)
-      t.colorSpace = THREE.SRGBColorSpace
-      videoTexture = t
-      setState({ texture: t, aspect: v.videoWidth / v.videoHeight || 16 / 9, video: v })
-    }
-    v.addEventListener('playing', show, { once: true })
-    if (!art.poster) v.addEventListener('loadeddata', show, { once: true })
+    if (!src) return
+    const el = acquireVideo(src, hasPoster)
+    setVideo(el)
     return () => {
-      cancelled = true
-      stopPoster()
-      videoTexture?.dispose()
-      v.pause()
-      v.removeAttribute('src')
-      v.load()
       setVideo(null)
+      setPainted(null)
+      target.current?.dispose()
+      target.current = null
+      releaseVideo(src)
     }
-  }, [art.kind, art.src, art.poster])
-  return { picture: state, video }
+  }, [src, hasPoster])
+  useEffect(() => {
+    if (!src || !video || !playing) return
+    wantPlaying(src, true)
+    return () => wantPlaying(src, false)
+  }, [src, video, playing])
+
+  // Paint each new frame while it plays (and the first one, for a video without a poster), at
+  // most `hz` times a second, from a frame scaled down to the painting's size first (uploading
+  // full-size video frames is what costs). When it stops, its last frame stays up.
+  useEffect(() => {
+    if (!video) return
+    const source = new THREE.Texture()
+    source.colorSpace = THREE.SRGBColorSpace
+    source.generateMipmaps = false
+    source.minFilter = THREE.LinearFilter
+    source.flipY = false
+    let stopped = false
+    let busy = false
+    let lastPaint = -Infinity
+    let frame = 0
+    let raf = 0
+    const paint = async () => {
+      if (stopped || busy || video.readyState < 2 || !video.videoWidth) return
+      busy = true
+      lastPaint = performance.now()
+      const aspect = video.videoWidth / video.videoHeight
+      const [w, h] = paintSize(video.videoWidth, video.videoHeight, VIDEO_HEIGHT)
+      try {
+        const bitmap = await createImageBitmap(video, { resizeWidth: w, resizeHeight: h, resizeQuality: 'medium', imageOrientation: 'flipY' })
+        if (stopped) return bitmap.close()
+        const previous = source.image as ImageBitmap | null
+        source.image = bitmap
+        source.needsUpdate = true
+        let t = target.current
+        if (!t || t.width !== w || t.height !== h) {
+          t?.dispose()
+          t = target.current = paintTarget(w, h)
+          setPainted({ texture: t.texture, aspect })
+        }
+        paintInto(gl, source, aspect, t)
+        previous?.close()
+        invalidate()
+      } catch {
+        /* a frame that can't be read is skipped */
+      } finally {
+        busy = false
+      }
+    }
+    const due = () => performance.now() - lastPaint >= 1000 / hz
+    const onFrame = () => {
+      if (due()) void paint()
+      if (!stopped) frame = video.requestVideoFrameCallback(onFrame)
+    }
+    // Without frame callbacks (older browsers), look for a new frame on each animation frame.
+    let last = -1
+    const poll = () => {
+      if (video.currentTime !== last && due()) {
+        last = video.currentTime
+        void paint()
+      }
+      if (!stopped) raf = requestAnimationFrame(poll)
+    }
+    const first = () => void paint()
+    if (playing) {
+      if ('requestVideoFrameCallback' in video) frame = video.requestVideoFrameCallback(onFrame)
+      else raf = requestAnimationFrame(poll)
+    } else if (!hasPoster && !target.current) {
+      if (video.readyState >= 2) first()
+      else video.addEventListener('loadeddata', first, { once: true })
+    }
+    return () => {
+      stopped = true
+      if ('cancelVideoFrameCallback' in video) video.cancelVideoFrameCallback(frame)
+      cancelAnimationFrame(raf)
+      video.removeEventListener('loadeddata', first)
+      ;(source.image as ImageBitmap | null)?.close?.()
+      source.dispose()
+    }
+  }, [video, playing, hasPoster, hz, gl, invalidate])
+  return painted
 }
+
+const placeholder = new THREE.MeshStandardMaterial({ color: '#2a2522', roughness: 0.9 })
+const glass = new THREE.MeshStandardMaterial({ color: '#ffffff', metalness: 1, roughness: 0.06, transparent: true, opacity: 0.07, envMapIntensity: 1.4, depthWrite: false })
+const noRaycast = () => null
 
 /**
  * One framed picture on a wall: frame, card mount, the picture painted as an old oil (paint.ts;
@@ -96,6 +162,7 @@ export function Artwork({
   focused,
   onSelect,
   onMeasure,
+  playlist,
 }: {
   art: Art
   slot: Slot
@@ -104,8 +171,17 @@ export function Artwork({
   onSelect: (slot: number) => void
   /** Reports the picture's hung size (m), for stepping into it. */
   onMeasure?: (slot: number, w: number, h: number) => void
+  /** Which videos play (MuseumScene decides); none play without one. */
+  playlist?: Playlist
 }) {
-  const { picture, video } = usePicture(art)
+  const isVideo = art.kind === 'video'
+  const playing = useSyncExternalStore(playlist?.subscribe ?? noSubscribe, () => playlist?.has(slot.index) ?? false)
+  const still = usePaintedPhoto(isVideo ? art.poster : art.src)
+  // The piece in focus is repainted at full video pace; a neighbour playing nearby, at half.
+  const moving = usePaintedVideo(isVideo ? art.src : undefined, Boolean(art.poster), playing, focused ? 30 : 15)
+  // A video shows its poster until its first frame is painted, and keeps its poster if this
+  // browser can't play it (an HEVC .mov in Chrome, say).
+  const picture = moving ?? still
   const aspect = picture?.aspect ?? 4 / 3
   const { w, h } = fitPicture(slot, aspect)
   useEffect(() => {
@@ -122,10 +198,10 @@ export function Artwork({
 
   // Gilded frames are carved (ornate profile, one mesh); the others are plain rails.
   const gilded = look.frame.metalness > 0.5
-  const frameMaterial = useMemo(
+  const plainFrame = useMemo(
     () =>
       gilded
-        ? gilding()
+        ? null
         : new THREE.MeshPhysicalMaterial({
             color: look.frame.color,
             metalness: look.frame.metalness,
@@ -137,30 +213,28 @@ export function Artwork({
           }),
     [look, gilded],
   )
-  useEffect(() => () => frameMaterial.dispose(), [frameMaterial])
+  useEffect(() => () => plainFrame?.dispose(), [plainFrame])
+  const frameMaterial = plainFrame ?? gilding()
   const ornate = useMemo(() => (gilded ? ornateFrameGeometry(outerW, outerH, border) : null), [gilded, outerW, outerH, border])
   useEffect(() => () => ornate?.dispose(), [ornate])
 
-  // The picture itself, painted (paint.ts), so a snapshot looks at home in a gilded frame.
-  const painted = useMemo(() => paintMaterial(), [])
-  useEffect(() => () => painted.dispose(), [painted])
-  useEffect(() => setPicture(painted, picture?.texture ?? null, aspect), [painted, picture, aspect])
-
-  // Videos play only while the visitor is near (or looking at this one), to spare the device.
-  const group = useRef<THREE.Group>(null)
-  const playing = useRef(false)
-  useFrame(({ camera }) => {
-    const v = video
-    if (!v || !group.current) return
-    const near = focused || camera.position.distanceTo(group.current.position) < PLAY_DISTANCE
-    if (near && !playing.current) {
-      playing.current = true
-      v.play().catch(() => (playing.current = false))
-    } else if (!near && playing.current) {
-      playing.current = false
-      v.pause()
-    }
-  })
+  // The picture, already painted (painter.ts): shown in its own light, like a well-lit painting.
+  const pictureMaterial = useMemo(() => (picture ? new THREE.MeshBasicMaterial({ map: picture.texture, toneMapped: false }) : null), [picture])
+  useEffect(() => () => pictureMaterial?.dispose(), [pictureMaterial])
+  const poolMaterial = useMemo(
+    () => new THREE.MeshBasicMaterial({ map: pool(), color: look.pool, transparent: true, opacity: look.poolStrength, blending: THREE.AdditiveBlending, depthWrite: false }),
+    [look],
+  )
+  useEffect(() => () => poolMaterial.dispose(), [poolMaterial])
+  const invalidate = useThree((s) => s.invalidate)
+  useEffect(() => {
+    poolMaterial.opacity = look.poolStrength * (focused ? 1.25 : 1)
+    invalidate()
+  }, [poolMaterial, look, focused, invalidate])
+  const matMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: look.matColor, roughness: 0.95 }), [look])
+  useEffect(() => () => matMaterial.dispose(), [matMaterial])
+  const labelMaterial = useMemo(() => new THREE.MeshStandardMaterial({ map: label.texture, roughness: 0.8 }), [label])
+  useEffect(() => () => labelMaterial.dispose(), [labelMaterial])
 
   const select = (e: ThreeEvent<MouseEvent>) => {
     // A drag to look around isn't a tap.
@@ -173,15 +247,14 @@ export function Artwork({
   // Labels go to the right, except beside a doorway on its left, where they go to the left.
   const labelSide = slot.normal[1] !== 0 && slot.center[0] < 0 ? -1 : 1
   return (
-    <group ref={group} position={slot.center} rotation={[0, yaw, 0]}>
+    <group position={slot.center} rotation={[0, yaw, 0]}>
       {/* The pool of light a picture light leaves on the wall. */}
-      <mesh position={[0, 0.12, 0.004]} renderOrder={1}>
+      <mesh position={[0, 0.12, 0.004]} renderOrder={1} material={poolMaterial}>
         <planeGeometry args={[outerW + 1.1, outerH + 1.3]} />
-        <meshBasicMaterial map={pool} color={look.pool} transparent opacity={look.poolStrength * (focused ? 1.25 : 1)} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
 
       {ornate ? (
-        <mesh geometry={ornate} material={frameMaterial} castShadow />
+        <mesh geometry={ornate} material={frameMaterial} />
       ) : (
         // Frame: four rails around the mount.
         [
@@ -190,35 +263,39 @@ export function Artwork({
           [-outerW / 2 + border / 2, 0, border, outerH - border * 2],
           [outerW / 2 - border / 2, 0, border, outerH - border * 2],
         ].map(([x, y, bw, bh], i) => (
-          <mesh key={i} position={[x, y, depth / 2]} material={frameMaterial} castShadow>
+          <mesh key={i} position={[x, y, depth / 2]} material={frameMaterial}>
             <boxGeometry args={[bw, bh, depth]} />
           </mesh>
         ))
       )}
 
       {mat > 0 && (
-        <mesh position={[0, 0, depth * 0.45]}>
+        <mesh position={[0, 0, depth * 0.45]} material={matMaterial}>
           <planeGeometry args={[w + mat * 2, h + mat * 2]} />
-          <meshStandardMaterial color={look.matColor} roughness={0.95} />
         </mesh>
       )}
 
-      <mesh position={[0, 0, depth * 0.47]} onClick={select} onPointerOver={() => (document.body.style.cursor = 'pointer')} onPointerOut={() => (document.body.style.cursor = '')}>
+      <mesh
+        position={[0, 0, depth * 0.47]}
+        material={pictureMaterial ?? placeholder}
+        onClick={select}
+        onPointerOver={() => (document.body.style.cursor = 'pointer')}
+        onPointerOut={() => (document.body.style.cursor = '')}
+      >
         <planeGeometry args={[w, h]} />
-        {picture ? <primitive object={painted} attach="material" /> : <meshStandardMaterial color="#2a2522" roughness={0.9} />}
       </mesh>
 
       {/* Glass: almost invisible, but it picks up the room's light at an angle. */}
-      <mesh position={[0, 0, depth * 0.9]} raycast={() => null}>
+      <mesh position={[0, 0, depth * 0.9]} raycast={noRaycast} material={glass}>
         <planeGeometry args={[w + mat * 2, h + mat * 2]} />
-        <meshStandardMaterial color="#ffffff" metalness={1} roughness={0.06} transparent opacity={0.07} envMapIntensity={1.4} depthWrite={false} />
       </mesh>
 
       {/* The label, beside the picture at reading height. */}
-      <mesh position={[labelSide * (outerW / 2 + 0.12 + labelW / 2), -0.12 - labelW / label.aspect / 2 + 0.05, 0.006]} onClick={select}>
+      <mesh position={[labelSide * (outerW / 2 + 0.12 + labelW / 2), -0.12 - labelW / label.aspect / 2 + 0.05, 0.006]} onClick={select} material={labelMaterial}>
         <planeGeometry args={[labelW, labelW / label.aspect]} />
-        <meshStandardMaterial map={label.texture} roughness={0.8} />
       </mesh>
     </group>
   )
 }
+
+const noSubscribe = () => () => {}
