@@ -49,6 +49,7 @@ export function MuseumScene({
   onLook,
   onMeasure,
   walker,
+  onWalkerReady,
   frozen = false,
   paused = false,
   dive,
@@ -63,6 +64,8 @@ export function MuseumScene({
   onLook: (slot: number) => void
   onMeasure: (slot: number, w: number, h: number) => void
   walker: Ref<WalkerHandle>
+  /** The walker can take walks now (mounted, or back at the entrance of a new plan). */
+  onWalkerReady?: () => void
   /** While stepped into a picture: the museum holds still and ignores walking keys. */
   frozen?: boolean
   /** While the visitor is inside a visit's 3D room, hidden behind it: the museum stops drawing. */
@@ -115,7 +118,7 @@ export function MuseumScene({
         plan.slots[i] ? <Artwork key={art.id} art={art} slot={plan.slots[i]} look={LOOK} focused={i === focus} onSelect={onSelect} onMeasure={onMeasure} playlist={playlist} /> : null,
       )}
 
-      <Walker plan={plan} onArrive={onArrive} onLook={onLook} hung={exhibition.items.length} ref={walker} frozen={frozen} />
+      <Walker plan={plan} onArrive={onArrive} onLook={onLook} onReady={onWalkerReady} hung={exhibition.items.length} ref={walker} frozen={frozen} />
       <PlayPolicy playlist={playlist} pieces={pieces} focus={focus} still={paused} />
       <Pacer kick={`${frozen}:${paused}:${focus}`} />
       <Effects dive={dive} />

@@ -2,6 +2,9 @@
 // picture and 3D stay in sync); without one, a plain clock runs over the frame times. The 3D
 // scene reads `timeRef` every frame; only the scrubber and time label subscribe to changes
 // (usePlaybackState), at most ~15 times a second. PlaybackDriver ticks it from R3F's loop.
+// The plain clock measures wall time from when play was pressed (or the last seek or speed
+// change), never R3F's frame delta: the canvas renders on demand, so the first frame after an
+// idle stretch would otherwise count the whole idle gap as playback.
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 
@@ -24,6 +27,13 @@ export class Playback {
   private listeners = new Set<() => void>()
   private redraw: (() => void) | null = null
   private unbindVideo: (() => void) | null = null
+  /** The plain clock showed `time` at wall time `wall` (ms) and has run at `rate` since. */
+  private base = { wall: 0, time: 0 }
+  private readonly now: () => number
+
+  constructor(now: () => number = () => performance.now()) {
+    this.now = now
+  }
 
   get playing(): boolean {
     return this.video ? !this.video.paused && !this.video.ended : this.clockPlaying
@@ -43,7 +53,9 @@ export class Playback {
   }
 
   setRate(rate: number) {
+    this.advance()
     this.rate = rate
+    this.restart()
     if (this.video) this.video.playbackRate = rate
   }
 
@@ -75,14 +87,23 @@ export class Playback {
   }
 
   /** Advances the clock; called every rendered frame. */
-  tick(dt: number) {
+  tick() {
     const v = this.video
     if (v) this.timeRef.current = v.currentTime
-    else if (this.clockPlaying) {
-      this.timeRef.current = Math.min(this.duration, this.timeRef.current + dt * this.rate)
-      if (this.timeRef.current >= this.duration) this.clockPlaying = false
-    }
+    else this.advance()
     this.publish(false)
+  }
+
+  /** The plain clock's time now. */
+  private advance() {
+    if (this.video || !this.clockPlaying) return
+    this.timeRef.current = Math.min(this.duration, this.base.time + ((this.now() - this.base.wall) / 1000) * this.rate)
+    if (this.timeRef.current >= this.duration) this.clockPlaying = false
+  }
+
+  /** The plain clock counts from here. */
+  private restart() {
+    this.base = { wall: this.now(), time: this.timeRef.current }
   }
 
   play = () => {
@@ -94,6 +115,7 @@ export class Playback {
       return
     }
     if (this.timeRef.current >= this.duration) this.timeRef.current = 0
+    this.restart()
     this.clockPlaying = true
     this.publish(true)
     this.redraw?.()
@@ -101,6 +123,7 @@ export class Playback {
 
   pause = () => {
     this.video?.pause()
+    this.advance()
     this.clockPlaying = false
     this.publish(true)
   }
@@ -111,6 +134,7 @@ export class Playback {
     const clamped = Math.max(0, Math.min(this.duration, t))
     if (this.video) this.video.currentTime = clamped
     this.timeRef.current = clamped
+    this.restart()
     this.publish(true)
     this.redraw?.()
   }
@@ -167,8 +191,8 @@ export function PlaybackDriver({ playback }: { playback: Playback }) {
     return () => playback.setRedraw(null)
   }, [playback, invalidate])
   // First, so everything else in the frame reads this frame's time.
-  useFrame((_, dt) => {
-    playback.tick(dt)
+  useFrame(() => {
+    playback.tick()
     if (playback.playing) invalidate()
   }, -1)
   return null

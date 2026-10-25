@@ -104,6 +104,17 @@
   max-width: min(560px, calc(100vw - 32px));
   text-align: center;
 }
+.window-notes {
+  position: absolute;
+  left: 16px;
+  bottom: 96px;
+  max-width: min(560px, calc(100% - 32px));
+  background: rgba(20, 20, 26, 0.8);
+  border-radius: 12px;
+  padding: 8px 14px;
+  font-size: 14px;
+  color: #ffb4ac;
+}
 .window-hint.error {
   color: #ffb4ac;
 }

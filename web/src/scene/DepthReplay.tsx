@@ -2,12 +2,12 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import * as THREE from 'three'
 import type { FrameRecord } from './formats'
-import { DepthSource } from './depthSource'
+import { DepthSource, failureNote } from './depthSource'
 import type { DepthPose } from './depthMesh'
 import { depthFrameIndices, nearestDepthFrame } from './pose'
 import type { TimelineData } from './packs'
 import { SELECTION_GLSL, applySelection, selectionUniforms, type SelectionTint } from './selectionTint'
-import type { DepthSourceInfo } from './useCaptureScene'
+import type { DepthSourceInfo, SceneNote } from './useCaptureScene'
 
 /** The voxels the replay skips, as a 3D texture the shaders test world positions against. */
 function roomTexture(t: TimelineData): THREE.Data3DTexture {
@@ -53,6 +53,8 @@ interface Props {
    */
   timeline?: TimelineData | null | 'loading'
   minConfidence?: number
+  /** Told when depth frames can't be loaded (and when they load again). */
+  onNote?: SceneNote
 }
 
 /**
@@ -72,7 +74,7 @@ interface Props {
  * Same math as pose.ts unprojectDepthPixel and docs/capture-format.md: scale K to the depth grid,
  * x = (u − cx')·d/fx', y = (v − cy')·d/fy', z = d, flip to ARKit camera space (x, −y, −z), then T.
  */
-export function DepthReplay({ depth, frames, videoW, videoH, rateHz, video, timeRef, show = true, selection = null, timeline = null, minConfidence = 1 }: Props) {
+export function DepthReplay({ depth, frames, videoW, videoH, rateHz, video, timeRef, show = true, selection = null, timeline = null, minConfidence = 1, onNote }: Props) {
   const { width, height } = depth.index
   const invalidate = useThree((s) => s.invalidate)
   const withDepth = useMemo(() => depthFrameIndices(frames), [frames])
@@ -308,6 +310,21 @@ export function DepthReplay({ depth, frames, videoW, videoH, rateHz, video, time
     [geometry, material, depthTexture, videoTexture],
   )
 
+  // What the viewer says about the people replay, told only when it changes.
+  const noted = useRef<string | null>(null)
+  const note = (next: string | null) => {
+    if (next === noted.current) return
+    noted.current = next
+    onNote?.('people', next)
+  }
+  useEffect(
+    () => () => {
+      noted.current = null
+      onNote?.('people', null)
+    },
+    [onNote],
+  )
+
   // The depth frame on screen; reset when the source (and so the meshing) changes.
   const shown = useRef<{ source: DepthSource | null; k: number }>({ source: null, k: -1 })
   // A paused video never pushes its frame to the GPU on its own. Upload it once whenever the
@@ -327,12 +344,19 @@ export function DepthReplay({ depth, frames, videoW, videoH, rateHz, video, time
     const frame = source ? nearestDepthFrame(frames, withDepth, time, maxGap) : -1
     if (!source || frame < 0) {
       material.uniforms.uVisible.value = 0
+      note(source?.error ? `The people replay stopped: ${source.error}` : null)
       return
     }
     const f = frames[frame]
     const k = f.d as number
     const entry = source.frame(k)
-    if (!entry) return // keep showing the previous frame until this one arrives
+    const failure = entry ? null : source.failure(k)
+    note(source.error ? `The people replay stopped: ${source.error}` : failure ? failureNote(frames, failure) : null)
+    // Nothing live until this frame's depth is here: an older frame's shape would be in the wrong place.
+    if (!entry) {
+      material.uniforms.uVisible.value = 0
+      return
+    }
     if (shown.current.source !== source || shown.current.k !== k) {
       depthTexture.image.data = entry.packed
       depthTexture.needsUpdate = true

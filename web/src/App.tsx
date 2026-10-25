@@ -1,5 +1,6 @@
 import { Component, lazy, Suspense, useEffect, useState } from 'react'
 import { dataMode, useHealth } from './data'
+import { legacyMuseumHash } from './museum/roomSync'
 import './views/views.css'
 
 // Every screen is its own chunk: the front page never downloads three.js, the museum,
@@ -27,8 +28,6 @@ const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
   // The Memory Window: the visit full screen, looked into with head tracking (TV, laptop, iPad).
   // #/window/<id>?from=museum comes back to the museum.
   [/^#\/window\/([0-9a-f-]{36})(?:\?from=(museum))?$/i, (id, from) => <MemoryWindow key={id} id={id} from={from} />],
-  // The old hall's address now opens the museum (keeping a helper's join code).
-  [/^#\/memories(\?join=[A-Za-z]*)?$/i, (join) => (location.replace(`#/museum${join ?? ''}`), null)],
   // The walkable museum: #/museum, or #/museum/<exhibition id>; #/museum?join=CODE is a helper's
   // phone joining the iPad's walk ("Visit together").
   [/^#\/museum(?:\/([\w-]+))?(?:\?join=([A-Za-z]*))?$/, (id, join) => <MuseumPage key="museum" id={id} join={join} />],
@@ -37,6 +36,12 @@ const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
 ]
 
 function view(hash: string): React.ReactNode {
+  // The old hall's address opens the museum (keeping a helper's join code), on the static site too.
+  const legacy = legacyMuseumHash(hash)
+  if (legacy) {
+    location.replace(legacy)
+    return null
+  }
   // Visitors read only the public routes: the front page ("#/", and anchors like "#how") and
   // "#/p/<id>". The family's tools live at "#/captures" and below.
   const visitor = /^#\/p\/([0-9a-f-]{36})$/i.exec(hash)

@@ -32,7 +32,7 @@ A red **MOCK MODE** banner shows whenever the backend runs with `MOCK_CLAUDE=1`.
 
 ## Uploads
 
-`src/upload.ts`: the zip is opened in the browser (macOS `._` files and `room.ply` are skipped). Then `captures.begin`, and per file `uploads.start`, a single PUT or 4 parts at a time straight to R2, and `uploads.finish`; at the end `captures.complete`. Files go in this order: manifest, thumb, transcript, keyframes, room, frames, video, depth, so facts start before the big files land. Parts are retried with backoff; then `uploads.resume` gives fresh URLs. Unfinished uploads are kept in IndexedDB: drop the same zip after a reload and it carries on, skipping files the server already has. R2's CORS rules must allow `PUT` from the site and expose the `ETag` header.
+`src/upload.ts`: the zip is opened in the browser (macOS `._` files and `room.ply` are skipped). Then `captures.begin`, and per file `uploads.start`, a single PUT or 4 parts at a time straight to R2, and `uploads.finish`; at the end `captures.complete`. Files go in this order: manifest, thumb, transcript, keyframes, room, frames, video, depth, so facts start before the big files land. Parts are retried with backoff; then `uploads.resume` gives fresh URLs. Unfinished uploads are kept in IndexedDB: drop the same zip after a reload and it carries on, skipping files the server already has. An old video works the same way: the same file (same title and people) dropped again goes on into the capture made the first time. Saved state older than 7 days is forgotten (R2 aborts unfinished multipart uploads by then). R2's CORS rules must allow `PUT` from the site and expose the `ETag` header.
 
 ## Layout
 

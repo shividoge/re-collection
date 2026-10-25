@@ -13,10 +13,11 @@ import type { SceneBounds } from './packs'
 import { dominantQuarterTurns, type Vec3 } from './pose'
 import { ProcessingStatus } from './ProcessingStatus'
 import { SceneReplay, SceneRoom, shownRoom, type RoomView } from './SceneRoom'
+import { trimStop } from './depthSource'
 import { useSelectionTint } from './selectionTint'
 import type { SplatStatus } from './SplatRoom'
 import { StaticCloud } from './StaticCloud'
-import { useCaptureScene, type CaptureScene } from './useCaptureScene'
+import { useCaptureScene, useSceneNotes, type CaptureScene, type SceneNote } from './useCaptureScene'
 import { useRoomQuery, type RoomSource, type Selection, type SelectionGrid } from './useRoomIndex'
 import { useVirtualCursor } from './useVirtualCursor'
 import './viewer.css'
@@ -120,8 +121,16 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
   // The room as one connected surface (fused from the scan's depth frames), or as raw points.
   const [showSurface, setShowSurface] = useState(true)
   // The splat when there is one; the points (what was measured or estimated) are always a click away.
-  const [roomView, setRoomView] = useState<'splat' | 'points'>('splat')
+  const [chosenView, setRoomView] = useState<'splat' | 'points'>('splat')
   const [splatStatus, setSplatStatus] = useState<SplatStatus>({ state: 'loading' })
+  // Problems the room and the replay report while drawing (photos, depth frames).
+  const [liveNotes, onNote] = useSceneNotes()
+  // A splat that fails says so, and the measured points take its place.
+  const splatFailed = splatStatus.state === 'failed'
+  const roomView = splatFailed ? 'points' : chosenView
+  useEffect(() => {
+    if (splatFailed && room.kind === 'capture') room.requestPoints()
+  }, [splatFailed, room])
   // The video plays all the time (sound, people replay); this only hides or shows its panel.
   const [videoOpen, setVideoOpen] = useState(false)
   const cameraRef = useRef<THREE.Camera | null>(null)
@@ -320,6 +329,7 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
                 playback={playback}
                 showPath={showPath && canFollow}
                 onSplatStatus={setSplatStatus}
+                onNote={onNote}
               />
               {mode === 'follow' && canFollow && <FollowCamera frames={moment} timeRef={playback.timeRef} videoW={videoW} videoH={videoH} />}
               {mode === 'orbit' && (
@@ -362,6 +372,11 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
 
           <div className="viewer-foot">
             <FootNotes room={room} shown={shown} splatStatus={splatStatus} roomView={roomView} />
+            {liveNotes.map((n) => (
+              <span key={n} className="err">
+                {n}
+              </span>
+            ))}
             {interactive && query.state.status === 'building' && <span>Indexing room for selection…</span>}
             {query.state.status === 'failed' && <span className="err">Selection unavailable: {query.state.message}</span>}
             {pickMiss && <span>Nothing scanned there</span>}
@@ -375,9 +390,14 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
 
       <div className="viewer-timeline">
         <PlayBar playback={playback} duration={duration} selection={selection} />
-        {scene?.splat && splatStatus.state !== 'failed' && (
+        {scene?.splat && (
           <div className="room-view" role="group" aria-label="How to draw the room">
-            <button className={roomView === 'splat' ? 'on' : ''} onClick={() => setRoomView('splat')} title="The room as 3D Gaussians, fitted to the recording">
+            <button
+              className={roomView === 'splat' ? 'on' : ''}
+              onClick={() => setRoomView('splat')}
+              disabled={splatFailed}
+              title={splatFailed ? "The splat didn't load" : 'The room as 3D Gaussians, fitted to the recording'}
+            >
               Splat
             </button>
             <button
@@ -418,6 +438,7 @@ function ViewerScene({
   playback,
   showPath,
   onSplatStatus,
+  onNote,
 }: {
   room: ViewerRoom
   view: RoomView
@@ -429,6 +450,7 @@ function ViewerScene({
   playback: Playback
   showPath: boolean
   onSplatStatus: (s: SplatStatus) => void
+  onNote: SceneNote
 }) {
   // The selected object, tinted on the surface and in the video replay.
   const tint = useSelectionTint(grid, selection?.voxelCoords ?? null)
@@ -436,7 +458,7 @@ function ViewerScene({
   return (
     <>
       {scene ? (
-        <SceneRoom scene={scene} view={view} selection={tint} onSplatStatus={onSplatStatus} />
+        <SceneRoom scene={scene} view={view} selection={tint} onSplatStatus={onSplatStatus} onNote={onNote} />
       ) : (
         <>
           <HoleFill />
@@ -450,7 +472,7 @@ function ViewerScene({
         </>
       )}
       {scene && showPath && <CameraPath frames={scene.moment} timeRef={playback.timeRef} />}
-      {scene && video && <SceneReplay scene={scene} video={video} timeRef={playback.timeRef} masked={shown === 'surface'} selection={tint} />}
+      {scene && video && <SceneReplay scene={scene} video={video} timeRef={playback.timeRef} masked={shown === 'surface'} selection={tint} onNote={onNote} />}
     </>
   )
 }
@@ -470,7 +492,7 @@ function FootNotes({ room, shown, splatStatus, roomView }: { room: ViewerRoom; s
         </span>
       )}
       {scene.splat && roomView === 'splat' && splatStatus.state === 'loading' && <span>Loading the splat…</span>}
-      {splatStatus.state === 'failed' && <span className="err">The splat didn't load ({splatStatus.message}). Showing the points.</span>}
+      {splatStatus.state === 'failed' && <span className="err">The splat didn't load ({trimStop(splatStatus.message)}), so the room is drawn from its points.</span>}
       {part(scene.points, "room's points")}
       {part(scene.surface, "room's surface")}
       {part(scene.timeline, "visit's timeline")}

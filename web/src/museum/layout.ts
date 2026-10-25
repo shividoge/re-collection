@@ -357,3 +357,10 @@ export function fitPicture(slot: Slot, aspect: number): { w: number; h: number }
   }
   return { w, h }
 }
+
+/** Where a guided walk to piece `index` ends (−1: the entrance) and what it then looks at; null if the plan has no such piece. */
+export function walkTarget(plan: MuseumPlan, index: number): { to: [number, number]; look?: [number, number, number] } | null {
+  if (index < 0) return { to: plan.start }
+  const slot = plan.slots[index]
+  return slot ? { to: slot.view, look: slot.center } : null
+}
