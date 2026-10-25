@@ -129,7 +129,10 @@ class FakeConvex:
         return job_id
 
     def _job(self, args: dict[str, object]) -> dict[str, object]:
-        return self.jobs[str(args["jobId"])]
+        """Every call after claim must carry the claim's attempt (the v3 protocol)."""
+        j = self.jobs[str(args["jobId"])]
+        assert args.get("attempt") == j["attempts"], f"attempt {args.get('attempt')} != {j['attempts']}"
+        return j
 
     def mutation(self, name: str, args: dict[str, object]) -> object:
         return self._call(name, args)
@@ -178,6 +181,7 @@ class FakeConvex:
             for n, (area, data) in files.items()]}
 
     def _outputUrls(self, a: dict[str, object]) -> object:
+        self._job(a)
         out = []
         for f in a["files"]:  # type: ignore[union-attr]
             uid = f"up{len(self.uploads) + 1}"
@@ -193,6 +197,7 @@ class FakeConvex:
         return out
 
     def _finishOutput(self, a: dict[str, object]) -> object:
+        self._job(a)
         up = self.uploads[str(a["uploadId"])]
         parts = a.get("parts")
         if parts is None:

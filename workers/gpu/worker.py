@@ -66,6 +66,7 @@ class _Job:
     def __init__(self, api: WorkerApi, claim: Claim, heartbeat_sec: float, gap_sec: float) -> None:
         self.claim = claim
         self.id = claim["jobId"]
+        self.attempt = int(claim["attempt"])
         self.stop = threading.Event()
         self.cancelled = False  # Convex said stop: cancelled, or the lease isn't ours any more
         self._api = api
@@ -118,7 +119,7 @@ class _Job:
         with self._lock:
             progress = self._progress  # replaced, never mutated, so no copy needed
         try:
-            reply = self._api.heartbeat(self.id, progress)
+            reply = self._api.heartbeat(self.id, self.attempt, progress)
         except Exception as exc:
             if is_lease_lost(exc):
                 log.warning("job %s is no longer leased to this worker; stopping it", self.id)
@@ -224,7 +225,7 @@ class Worker:
             result = self._run(job, root)
             if job.cancelled:
                 raise Cancelled()
-            self._api.complete(job.id, result)
+            self._api.complete(job.id, job.attempt, result)
             log.info("job %s done", job.id)
         except Cancelled:
             if self._shutdown.is_set() and not job.cancelled:
@@ -249,7 +250,7 @@ class Worker:
 
     def _fail(self, job: _Job, message: str, retryable: bool) -> None:
         try:
-            self._api.fail(job.id, message, retryable)
+            self._api.fail(job.id, job.attempt, message, retryable)
         except Exception as exc:
             log.warning("couldn't report job %s as failed (its lease will expire instead): %s", job.id, redact(str(exc)))
 
@@ -261,7 +262,7 @@ class Worker:
         inp.mkdir(parents=True)
         out.mkdir()
         job.progress("downloading", None, "Downloading the inputs")
-        inputs = self._api.inputs(job.id)
+        inputs = self._api.inputs(job.id, job.attempt)
         kind = job.claim["kind"]
         if kind == "convert":
             return self._convert(job, inputs, inp, out)
@@ -317,7 +318,7 @@ class Worker:
         ]
         total = sum(f["bytes"] for f in files) or 1
         job.progress("uploading", 0.0, f"Uploading {len(files)} files")
-        targets = {t["name"]: t["target"] for t in self._api.output_urls(job.id, files)}
+        targets = {t["name"]: t["target"] for t in self._api.output_urls(job.id, job.attempt, files)}
         if missing := [f["name"] for f in files if f["name"] not in targets]:
             raise RuntimeError(f"Convex returned no upload target for {', '.join(missing)}.")
         lock = threading.Lock()
@@ -328,7 +329,7 @@ class Worker:
             parts = transfer.upload(target, root / f["name"], f["contentType"], sleep=self._sleep,
                                     should_stop=job.should_stop, threads=self._upload_threads)
             job.check()
-            stored = self._api.finish_output(job.id, target["uploadId"], parts)
+            stored = self._api.finish_output(job.id, job.attempt, target["uploadId"], parts)
             if stored != f["bytes"]:
                 raise SizeMismatch(f"{f['name']}: storage has {stored} bytes, expected {f['bytes']}.")
             with lock:

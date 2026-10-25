@@ -166,28 +166,32 @@ class WorkerApi:
         args: dict[str, object] = {"workerId": worker_id, "kinds": kinds, "gpu": gpu, "maxFrames": max_frames}
         return cast(Claim | None, self._call("mutation", "worker:claim", args))
 
-    def heartbeat(self, job_id: str, progress: Progress | None = None) -> Heartbeat:
-        args: dict[str, object] = {"jobId": job_id}
+    # Every call after claim carries the claim's `attempt`: Convex ignores calls from a worker
+    # whose lease was taken over, and keys the job's uploads by attempt.
+
+    def heartbeat(self, job_id: str, attempt: int, progress: Progress | None = None) -> Heartbeat:
+        args: dict[str, object] = {"jobId": job_id, "attempt": attempt}
         if progress is not None:
             args["progress"] = dict(progress)
         return cast(Heartbeat, self._call("mutation", "worker:heartbeat", args))
 
-    def inputs(self, job_id: str) -> Inputs:
-        return cast(Inputs, self._call("action", "worker:inputs", {"jobId": job_id}))
+    def inputs(self, job_id: str, attempt: int) -> Inputs:
+        return cast(Inputs, self._call("action", "worker:inputs", {"jobId": job_id, "attempt": attempt}))
 
-    def output_urls(self, job_id: str, files: list[OutputFile]) -> list[OutputTarget]:
-        return cast(list[OutputTarget], self._call("action", "worker:outputUrls", {"jobId": job_id, "files": [dict(f) for f in files]}))
+    def output_urls(self, job_id: str, attempt: int, files: list[OutputFile]) -> list[OutputTarget]:
+        args: dict[str, object] = {"jobId": job_id, "attempt": attempt, "files": [dict(f) for f in files]}
+        return cast(list[OutputTarget], self._call("action", "worker:outputUrls", args))
 
-    def finish_output(self, job_id: str, upload_id: str, parts: list[FinishedPart] | None = None) -> int:
+    def finish_output(self, job_id: str, attempt: int, upload_id: str, parts: list[FinishedPart] | None = None) -> int:
         """Finish one upload; returns the stored object's size in bytes."""
-        args: dict[str, object] = {"jobId": job_id, "uploadId": upload_id}
+        args: dict[str, object] = {"jobId": job_id, "attempt": attempt, "uploadId": upload_id}
         if parts is not None:
             args["parts"] = [dict(p) for p in parts]
         reply = cast(dict[str, object], self._call("action", "worker:finishOutput", args))
         return int(cast(int, reply["bytes"]))
 
-    def complete(self, job_id: str, result: JobResult) -> None:
-        self._call("mutation", "worker:complete", {"jobId": job_id, "result": dict(result)})
+    def complete(self, job_id: str, attempt: int, result: JobResult) -> None:
+        self._call("mutation", "worker:complete", {"jobId": job_id, "attempt": attempt, "result": dict(result)})
 
-    def fail(self, job_id: str, error: str, retryable: bool) -> None:
-        self._call("mutation", "worker:fail", {"jobId": job_id, "error": error, "retryable": retryable})
+    def fail(self, job_id: str, attempt: int, error: str, retryable: bool) -> None:
+        self._call("mutation", "worker:fail", {"jobId": job_id, "attempt": attempt, "error": error, "retryable": retryable})
