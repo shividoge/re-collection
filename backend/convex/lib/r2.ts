@@ -446,7 +446,21 @@ export async function abortMultipart(cfg: R2Config, key: string, uploadId: strin
 export async function headObject(cfg: R2Config, key: string): Promise<{ bytes: number; etag: string | null } | null> {
   const res = await s3(cfg, 'HeadObject', 'HEAD', key, { ok: [404] })
   if (res.status === 404) return null
-  return { bytes: Number(res.headers.get('content-length') ?? 0), etag: res.headers.get('etag') }
+  const etag = res.headers.get('etag')
+  const length = res.headers.get('content-length')
+  // R2 leaves out Content-Length (or could transform) for content-encoded objects; the listing has the stored size.
+  if (length === null || res.headers.get('content-encoding')) {
+    const listed = await listedSize(cfg, key)
+    return listed === null ? null : { bytes: listed, etag }
+  }
+  return { bytes: Number(length), etag }
+}
+
+/** The stored size of one object from ListObjectsV2, or null if it isn't there. */
+export async function listedSize(cfg: R2Config, key: string): Promise<number | null> {
+  const xml = await (await s3(cfg, 'ListObjectsV2', 'GET', '', { query: { 'list-type': '2', prefix: key, 'max-keys': '1000' } })).text()
+  for (const item of xmlAll(xml, 'Contents')) if (xmlOne(item, 'Key') === key) return Number(xmlOne(item, 'Size'))
+  return null
 }
 
 export async function deleteObject(cfg: R2Config, key: string): Promise<void> {

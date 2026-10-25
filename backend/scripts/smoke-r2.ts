@@ -125,9 +125,15 @@ try {
   let left = urls.length
   for (let i = 0; i < 30 && left > 0; i++) {
     await new Promise((r) => setTimeout(r, 1000))
-    left = (await Promise.all(urls.map((u) => fetch(u, { method: 'HEAD' }).then((r) => r.status !== 404)))).filter(Boolean).length
+    left = (await Promise.all(urls.map((u) => fetch(u, { headers: { Range: 'bytes=0-0' } }).then((r) => r.status !== 404)))).filter(Boolean).length
   }
   check(left === 0, `after captures.remove: ${urls.length - left}/${urls.length} objects gone in ${((performance.now() - t0) / 1000).toFixed(1)} s`)
   check((await client.query(api.captures.get, { captureId: id })) === null, 'capture rows gone')
+  let keys = ['?']
+  for (let i = 0; i < 20 && keys.length > 0; i++) {
+    keys = await client.action(api.admin.storageKeys, { token, prefix: `captures/${id}/` })
+    if (keys.length) await new Promise((r) => setTimeout(r, 1000))
+  }
+  check(keys.length === 0, `no objects left under captures/${id}/ (${keys.length})`)
   console.log(results.join('\n'))
 }

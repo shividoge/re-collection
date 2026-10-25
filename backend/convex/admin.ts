@@ -1,9 +1,11 @@
 // Writes only the import script (and operators) may make: restoring review state and sessions
 // from the guide's data folder. Every function takes the shared WORKER_TOKEN.
 import { v } from 'convex/values'
-import { mutation } from './_generated/server'
-import { getMomentDoc, patchStatus, requireCapture } from './lib/data'
+import { action, mutation } from './_generated/server'
+import { getMomentDoc, invalid, patchStatus, requireCapture } from './lib/data'
 import { requireToken } from './lib/jobs'
+import { shown } from './lib/errors'
+import { listKeys, r2Config } from './lib/r2'
 import { moment, session } from './validators'
 
 /** Puts a moment (facts + review) on a capture as is, and marks facts done so nothing re-extracts it. */
@@ -47,5 +49,16 @@ export const forgetWorker = mutation({
     const row = await ctx.db.query('workers').withIndex('by_workerId', (q) => q.eq('workerId', workerId)).unique()
     if (row) await ctx.db.delete(row._id)
     return { ok: true as const, removed: row !== null }
+  },
+})
+
+/** Object keys in the bucket under a prefix (at most 1000), to check what a capture left behind. */
+export const storageKeys = action({
+  args: { token: v.string(), prefix: v.string() },
+  returns: v.array(v.string()),
+  handler: async (_ctx, { token, prefix }) => {
+    requireToken(token)
+    if (!prefix.startsWith('captures/') && !prefix.startsWith('videos/')) throw invalid('prefix must start with captures/ or videos/.')
+    return shown(async () => (await listKeys(r2Config(), prefix)).slice(0, 1000))
   },
 })

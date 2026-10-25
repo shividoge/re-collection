@@ -15,6 +15,7 @@ import type * as factsJob from "../factsJob.js";
 import type * as jobsCron from "../jobsCron.js";
 import type * as lib_claude from "../lib/claude.js";
 import type * as lib_data from "../lib/data.js";
+import type * as lib_errors from "../lib/errors.js";
 import type * as lib_facts from "../lib/facts.js";
 import type * as lib_grounding from "../lib/grounding.js";
 import type * as lib_jobs from "../lib/jobs.js";
@@ -50,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   jobsCron: typeof jobsCron;
   "lib/claude": typeof lib_claude;
   "lib/data": typeof lib_data;
+  "lib/errors": typeof lib_errors;
   "lib/facts": typeof lib_facts;
   "lib/grounding": typeof lib_grounding;
   "lib/jobs": typeof lib_jobs;
