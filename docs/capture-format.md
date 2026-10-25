@@ -1,5 +1,18 @@
 # Capture package format v1
 
+## Optional generated completion (Oct 25)
+
+An experiment may add `room.completion` with `{ file: "completion.spz", format: "spz",
+count: N, shDegree: 0, source: "generated", report: "completion.json" }`. It is a separate
+degree-0 splat in the capture's world coordinates. `room.splat` remains the evidence-only
+reconstruction. Completion never changes the raw depth, video, facts or replay.
+
+`completion.json` records source frame IDs, excluded holdout frames, methods, per-object
+candidate/accepted/duplicate/free-space-conflict counts and `reviewed: false`. It must describe
+the actual method: inferred planes are not neural object completion. The viewer defaults to
+evidence only and labels the optional layer **Generated completion** whenever enabled.
+The experimental local CLI writes these files; automatic queue deployment is separate work.
+
 The contract between the iPhone app (Shivin), the guide server (Shivin) and the web app (Firdavs). The phone writes it, the guide server stores and serves it, and the web reads it.
 
 Status markers:

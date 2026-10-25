@@ -158,7 +158,8 @@ def train_steps(n: int, batch: int, passes: float) -> int:
 def train(points: torch.Tensor, colors: torch.Tensor, images: torch.Tensor, masks: torch.Tensor,
           poses: torch.Tensor, Ks: torch.Tensor, depths: torch.Tensor, passes: float = 30, batch: int = 4,
           sh_degree: int = 1, cap: int = 800_000, depth_weight: float = 0.2, empty_weight: float = 0.1,
-          log=print, checkpoint=lambda: None, progress=lambda fraction: None) -> dict[str, torch.Tensor]:
+          log=print, checkpoint=lambda: None, progress=lambda fraction: None,
+          detail: bool = False) -> dict[str, torch.Tensor]:
     """Optimise Gaussians so they reproduce the training frames, `batch` frames per step.
     points (P, 3), colors (P, 3) 0..255: the fused room cloud (initial Gaussians).
     images (N, H, W, 3) uint8, masks (N, H, W) bool (True = moving thing, ignored by the loss),
@@ -173,12 +174,16 @@ def train(points: torch.Tensor, colors: torch.Tensor, images: torch.Tensor, mask
     from gsplat import rasterization
     from gsplat.strategy import MCMCStrategy
 
-    dev = images.device
+    dev = points.device
     n, H, W, _ = images.shape
     B = min(batch, n)
     steps = train_steps(n, B, passes)
     if len(points) > cap // 2:  # start from a random half of the budget; MCMC adds the rest where needed
-        pick = torch.randperm(len(points), device=points.device)[: cap // 2]
+        if detail:
+            from quality import spatial_selection
+            pick = torch.as_tensor(spatial_selection(points.cpu().numpy(), np.ones(len(points)), cap // 2), device=dev)
+        else:
+            pick = torch.randperm(len(points), device=points.device)[: cap // 2]
         points, colors = points[pick], colors[pick]
     centres = poses[:, :3, 3]
     scene_scale = float((centres - centres.mean(0)).norm(dim=1).max().clamp_min(0.5)) * 1.1
@@ -214,7 +219,7 @@ def train(points: torch.Tensor, colors: torch.Tensor, images: torch.Tensor, mask
     dh, dw = depths.shape[1:]
     iv = ((torch.arange(dh, device=dev) + 0.5) * H / dh).long().clamp_max(H - 1)
     iu = ((torch.arange(dw, device=dev) + 0.5) * W / dw).long().clamp_max(W - 1)
-    order = schedule(n, B, steps).to(dev)
+    order = schedule(n, B, steps)
     sh_at = steps // 7
     log_every = max(1, steps // 7)
     log(f"    {steps} steps of {B} frames ({passes:g} passes over {n})")
@@ -222,7 +227,8 @@ def train(points: torch.Tensor, colors: torch.Tensor, images: torch.Tensor, mask
         if step % 50 == 0:
             checkpoint()
             progress(step / steps)
-        idx = order[step]
+        cpu_idx = order[step]
+        idx = cpu_idx.to(dev)
         degree = min(sh_degree, step // sh_at) if sh_at else sh_degree
         colors_sh = torch.cat([params["sh0"], params["shN"]], 1)
         out, alpha, info = rasterization(
@@ -231,10 +237,16 @@ def train(points: torch.Tensor, colors: torch.Tensor, images: torch.Tensor, mask
             sh_degree=degree, packed=False, rasterize_mode="antialiased", render_mode="RGB+ED")
         e = exposure[idx]
         img = out[..., :3].clamp(0, 1) * torch.exp(e[:, 0])[:, None, None, :] + e[:, 1][:, None, None, :]
-        gt = images[idx].float() / 255
-        m = masks[idx]
+        # Frames can remain on the CPU; only the current batch occupies GPU memory.
+        frame_batch = images[cpu_idx.to(images.device)].to(dev)
+        gt = frame_batch.float() / 255
+        m = masks[cpu_idx.to(masks.device)].to(dev)
         pred = torch.where(m[..., None], gt, img)  # moving things: no gradient
-        loss = 0.8 * (pred - gt).abs().mean() + 0.2 * (1 - ssim_fn(pred.permute(0, 3, 1, 2), gt.permute(0, 3, 1, 2)))
+        weights = 1.0
+        if detail:
+            from quality import image_detail_weights
+            weights = image_detail_weights(frame_batch, m)[..., None]
+        loss = 0.8 * ((pred - gt).abs() * weights).mean() + 0.2 * (1 - ssim_fn(pred.permute(0, 3, 1, 2), gt.permute(0, 3, 1, 2)))
         mf = m.float()
         loss = loss + empty_weight * (alpha[..., 0] * mf).sum() / mf.sum().clamp_min(1)
         d_ref = depths[idx]
@@ -262,28 +274,35 @@ def train(points: torch.Tensor, colors: torch.Tensor, images: torch.Tensor, mask
 
 
 def contributions(g: dict[str, torch.Tensor], poses: torch.Tensor, Ks: torch.Tensor, masks: torch.Tensor,
-                  batch: int = 4) -> torch.Tensor:
+                  batch: int = 4, checkpoint=lambda: None) -> torch.Tensor:
     """How much each Gaussian shows in the training frames: the sum, over every pixel that isn't a
     person or pet, of its blending weight there (exact: the gradient of the rendered image with
     respect to a per-Gaussian colour of 1). 0 for Gaussians no frame saw, or saw only behind people."""
     from gsplat import rasterization
 
     n, H, W = masks.shape
-    ones = torch.ones((len(g["means"]), 3), device=masks.device, requires_grad=True)
+    ones = torch.ones((len(g["means"]), 3), device=g["means"].device, requires_grad=True)
     for s in range(0, n, batch):
+        checkpoint()
         img, _, _ = rasterization(g["means"], g["quats"], torch.exp(g["scales"]), torch.sigmoid(g["opacities"]), ones,
                                   viewmats(poses[s:s + batch]), Ks[s:s + batch], W, H, sh_degree=None, packed=False,
                                   rasterize_mode="antialiased")
-        (img[..., 0] * (~masks[s:s + batch]).float()).sum().backward()
+        (img[..., 0] * (~masks[s:s + batch]).to(img.device).float()).sum().backward()
     return ones.grad[:, 0].detach()
 
 
-def prune(g: dict[str, torch.Tensor], contrib: torch.Tensor, keep_max: int, min_contrib: float = 0.5) -> dict[str, torch.Tensor]:
+def prune(g: dict[str, torch.Tensor], contrib: torch.Tensor, keep_max: int, min_contrib: float = 0.5,
+          detail: bool = False) -> dict[str, torch.Tensor]:
     """Drop Gaussians no frame showed (less than `min_contrib` of a pixel in total), then keep
     the `keep_max` that show the most."""
     alive = torch.nonzero(contrib >= min_contrib)[:, 0]
     if len(alive) > keep_max:
-        alive = alive[torch.topk(contrib[alive], keep_max).indices]
+        if detail:
+            from quality import spatial_selection
+            selected = spatial_selection(g["means"][alive].cpu().numpy(), contrib[alive].cpu().numpy(), keep_max)
+            alive = alive[torch.as_tensor(selected, device=alive.device)]
+        else:
+            alive = alive[torch.topk(contrib[alive], keep_max).indices]
     alive = alive.sort().values
     return {k: v[alive] for k, v in g.items()}
 
@@ -292,7 +311,7 @@ def train_from_package(capture: Path, masks_model, device: str, holdout_frames: 
                        passes: float = 30, batch: int = 4, width: int = 1280, cap: int = 800_000,
                        keep_max: int = 500_000, sh_degree: int = 1, log=print, checkpoint=lambda: None,
                        progress=lambda fraction: None, timings: dict | None = None,
-                       max_views: int = 240) -> dict[str, np.ndarray]:
+                       max_views: int = 240, detail: bool = False) -> dict[str, np.ndarray]:
     """Train the room splat from a capture package on disk (video.mp4, frames.jsonl, depth,
     room.bin): the model frames (lines with `d`) minus `holdout_frames`. Same inputs whether it
     runs right after the conversion or as the GPU worker's separate splat job. At most
@@ -319,11 +338,11 @@ def train_from_package(capture: Path, masks_model, device: str, holdout_frames: 
     dec = decode.decode(info, [l["i"] for l in lines], width, None, checkpoint=checkpoint)
     images_cpu = torch.from_numpy(np.stack([dec.frames[l["i"]] for l in lines]))
     _, H, W, _ = images_cpu.shape
-    masks = masks_model(images_cpu).to(dev)
-    images = images_cpu.to(dev)
+    masks = masks_model(images_cpu)
+    images = images_cpu if detail else images_cpu.to(dev)
     mm = package.read_depth(capture, manifest)
     depths = torch.from_numpy(np.stack([mm[l["d"]] for l in lines]).astype(np.float32) / 1000).to(dev)
-    depths = torch.where(fusion.resize_mask(masks, *depths.shape[1:]), torch.zeros_like(depths), depths)
+    depths = torch.where(fusion.resize_mask(masks, *depths.shape[1:]).to(dev), torch.zeros_like(depths), depths)
     poses, Ks = [], []
     for l in lines:
         T, K = package.pose_of(l)
@@ -338,14 +357,15 @@ def train_from_package(capture: Path, masks_model, device: str, holdout_frames: 
     t0 = time.perf_counter()
     log(f"    training on {len(lines)} frames at {W}x{H}, starting from {len(pts):,} points")
     g = train(torch.from_numpy(pts).to(dev), torch.from_numpy(cols).to(dev), images, masks, poses_t, Ks_t, depths,
-              passes=passes, batch=batch, sh_degree=sh_degree, cap=cap, log=log, checkpoint=checkpoint, progress=progress)
+              passes=passes, batch=batch, sh_degree=sh_degree, cap=cap, log=log, checkpoint=checkpoint, progress=progress,
+              detail=detail)
     if device == "cuda":
         torch.cuda.synchronize()
     timings["splat train"] = round(time.perf_counter() - t0, 2)
     t0 = time.perf_counter()
-    contrib = contributions(g, poses_t, Ks_t, masks)
+    contrib = contributions(g, poses_t, Ks_t, masks, batch=batch, checkpoint=checkpoint)
     before = len(g["means"])
-    g = prune(g, contrib, keep_max)
+    g = prune(g, contrib, keep_max, detail=detail)
     log(f"    kept {len(g['means']):,} of {before:,} Gaussians (the rest no frame showed, or showed least)")
     out = {k: v.float().cpu().numpy() for k, v in g.items()}
     timings["splat prune"] = round(time.perf_counter() - t0, 2)

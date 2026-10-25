@@ -1,5 +1,9 @@
 # video2capture: any video → a Braindance capture
 
+Experimental detail training and separately labelled completion are described in
+[`docs/SCENE-COMPLETION.md`](../../docs/SCENE-COMPLETION.md). The existing worker defaults
+remain unchanged; learned object completion is not yet operational.
+
 Turns an ordinary video (no LiDAR) into a capture package the guide can import, using
 Depth Anything 3 (default **DA3NESTED-GIANT-LARGE-1.1**: multi-view depth and camera poses, plus a
 metric-depth model for real-world scale) and, optionally, a **Gaussian splat** of the room trained

@@ -170,7 +170,7 @@ Every capture from `GET /api/captures` with its thumbnail and real pipeline stat
 - **Fallback first (an hour's work):** the video in a panel, synced to a playhead moving along the camera path in the cloud.
 - **DepthReplay (the Braindance effect):** the video as a `VideoTexture` plus a 256×192 grid of points. Each frame, find the depth frame nearest `video.currentTime`, upload it as a `Uint16` data texture, and unproject in the vertex shader with the math in `docs/capture-format.md`, using that frame's `T` and `K`. Points take their color from the video. People appear in 3D, in place, in sync with sound. Fetch `depth.bin` in chunks with range requests.
 - **CameraPath mode** (camera follows the recorded pose, smoothed) and **Free mode** (orbit).
-- Areas without data stay empty. Never fill them.
+- The evidence view leaves areas without data empty. **Oct 25, Srinivas:** add a separate, labelled generated-completion layer for exploring beyond the recording. Preserve recorded appearance and retain the evidence-only view. Generated geometry is not evidence for facts or narration. See `docs/SCENE-COMPLETION.md`.
 
 ### 7.3 Family: fact review
 Timeline under the viewer with chapters; fact list on the side; clicking a fact jumps the viewer to its evidence time. Approve, edit, reject, "don't bring up". A "Re-extract" button calls `/extract`.
@@ -265,6 +265,14 @@ Never cut: real capture, grounded facts with family approval, grounding enforcem
 
 ## Status
 
+**Scene detail experiment (Oct 25, Srinivas, `t3/llm-gaussian-detail-generation`):** The user
+authorized generated completion for ordinary video, kept separate from recorded evidence.
+Local high-detail splat training and a default-off generated layer are implemented; the first
+real lab clip improves PSNR 22.16 → 22.83 dB, but coverage slips 96.7 → 96.2%. Plane filling is
+an experiment, not learned furniture completion. Full object/room completion remains unfinished.
+GX10 SSH is verified; SAM weights login and an ARM-compatible runtime are pending. Exact
+connection, commands, measurements and remaining work: `docs/SCENE-COMPLETION.md`.
+
 **Last updated:** Sat Oct 24, 16:30 PT, by Shivin's Claude session. **What's left, who does it and the timeline: the top of `TASKS.md` ("Everything left until submission").** The final feature's plan: `docs/LAST-STEP.md`. Sponsor plan: `docs/SPONSOR-PLAN.md`. Theme: `docs/THEME.md` (public name **Relive With A Smile**; "Braindance" stays the internal code name).
 
 **v3 architecture (branch `arch/v3`, draft PR, not merged; Srinivas's session, Sun Oct 25 ~01:30):** Convex (dev deployment `dev:adamant-schnauzer-171`, team `srinivas-i-b`) + Cloudflare R2 (`braindance-dev`) + pull-based workers replace the guide server. Contract: `docs/architecture-v3.md`. The 7 team captures are imported and baked; the web reads only baked files. Run the bake worker: `systemctl --user status bd-bake-dev` (or `workers/bake/README.md`). GPU worker: `workers/gpu/README.md`. The guide keeps running until the cutover checklist (§9 of the contract) passes. Open items: iOS changes need a Mac build and phone checks (`ios/VERIFY.md`); the museum needs an iPad check; family functions have no login (decided: leave open for now).
@@ -344,3 +352,5 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 **For people:** open Claude Code in your clone of the repo and say: **"Read CLAUDE.md and TASKS.md. I'm <name>. Continue from my next step."**
 - 2026-10-25 01:30 | Srinivas + Claude | v3 rebuild on `arch/v3`: Convex backend, R2 storage, bake worker, GPU worker, web on baked files, museum perf, iOS uploads + depth v2; reviewed by GPT 6.1 Sol and fixed; 7 captures imported and baked live | Shivin: build iOS on the Mac (`ios/VERIFY.md`); iPad check of museum/viewer; then the cutover checklist
 - 2026-10-25 01:05 | Srinivas + Claude | `web/palace-live-v3`: #57's live visit on Convex (palace.ts: visit key, presence, her view, WebRTC signals, μ-law relay; web live/ client on reactive queries; editor shows her link). Backend 136 tests, web 219 pass | deploy to dev (`bunx convex dev --once`), two-device test, then port the rest of #57
+
+- 2026-10-25 04:40 CT | Srinivas + Codex | local detailed-splat experiment and separate generated-plane layer; lab held-out PSNR 22.16 to 22.83 dB, coverage 96.7 to 96.2%; browser toggle/orbit verified, Python/web/shared checks pass | Full object completion unfinished: authenticate approved SAM weights on GX10, resolve isolated ARM runtime, then implement and evaluate object generation; see docs/SCENE-COMPLETION.md

@@ -92,4 +92,13 @@ describe('manifest', () => {
   test('rejects a bad id', () => {
     expect(() => parseManifest('{"id":"x"}')).toThrow(ManifestError)
   })
+  test('completion cannot lose generated provenance or escape the capture', () => {
+    const base = { id: 'aa8ba104-6d9c-462f-ab5c-a172b1e0b95e', video: { file: 'video.mp4' }, depth: { file: 'depth.bin', count: 3 } }
+    const completion = { file: 'completion.spz', format: 'spz', count: 10, shDegree: 0, source: 'generated', report: 'completion.json' }
+    const parse = (change: Record<string, unknown>) => parseManifest(JSON.stringify({ ...base, room: { completion: { ...completion, ...change } } }))
+    expect(parse({}).room?.completion?.source).toBe('generated')
+    expect(() => parse({ source: 'measured' })).toThrow(ManifestError)
+    expect(() => parse({ file: '../other.spz' })).toThrow(ManifestError)
+    expect(() => parse({ count: -1 })).toThrow(ManifestError)
+  })
 })
