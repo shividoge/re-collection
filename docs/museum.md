@@ -24,7 +24,8 @@ side the picture's own world comes out of the blur (`StepIn.tsx`):
 - any other photo fills the view and drifts slowly; a video plays, its own sound rising gently.
 
 Every photo and video hangs in the museum as an old oil painting, so snapshots look at home in
-gilded frames (`web/src/museum/paint.ts`): soft brushwork that keeps edges, brush marks laid along
+gilded frames (`web/src/museum/paint.ts`, painted once into a texture by `painter.ts`; a video is
+repainted only when it shows a new frame): soft brushwork that keeps edges, brush marks laid along
 the picture's contours, rich but deep colour under warm varnish, a canvas weave and darkened
 edges. The painting stays on through the dive and the arrival; then it lifts away over a few
 seconds, leaving the photo or video exactly as it was taken, while the picture's own sound rises
@@ -43,6 +44,26 @@ browser once, offline (`web/src/museum/sound.ts`): rushing air climbing with the
 rumble, a soft shimmer rising an octave, and the air parting in a sweep at the crossing, in a
 wide hall. Stepping out plays it backwards. Nothing rings on at the end.
 
+## Visit together and the Memory Window
+
+On the iPad, **Visit together** shows a code and a link; a helper who opens
+`#/museum?join=CODE` on their phone walks the same museum: moving to a picture on either screen
+moves the other. Every picture from a visit has a **Memory Window** button (on the helper's phone:
+**Open on the iPad**) that opens the visit, head-tracked, on the iPad; **Back to the museum**
+returns both. The old hall's address, `#/memories` (and `#/memories?join=CODE`), now opens
+`#/museum`.
+
+## Keeping it light on a tablet
+
+The museum draws only when something changes (walking, looking, a dive, a video frame); between
+those the candles flicker at 20 frames a second for a minute after the last touch, then the room
+rests (`pace.ts`). Still furniture is merged into one mesh per shared material (`materials.ts`,
+`merge.ts`), the candle flames are two instanced meshes, and the floor's reflection is redrawn only
+when the view moves. Videos load nothing until they play, each file has one `<video>` element,
+and only the picture in focus and one neighbour play (`playback.ts`). `bun
+web/scripts/measure-museum.ts <url> <out dir>` measures all this at iPad-like settings in headless
+Chrome.
+
 ## Rooms
 
 One style: a classic picture gallery at a modest scale. Rose-red fabric walls, raised-panel
@@ -53,8 +74,9 @@ rosettes), three large ones per side wall above the panelling, in one row, under
 of the skylight.
 
 Rooms are added as an exhibition grows (up to 8 pieces per room, joined by doorways). Every
-surface is generated in code (`web/src/museum/textures.ts`), so nothing is downloaded and it
-works offline.
+surface is drawn in code (`web/src/museum/textureGen.ts`), once, at build time: `bun
+web/scripts/bake-museum-textures.ts` writes them as small WebP images to
+`web/public/museum/textures/` (committed; rerun it after changing a generator). No stock images.
 
 ## Furnishings
 

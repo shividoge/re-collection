@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useCaptureAssets } from '../data'
-import { SceneViewer } from '../scene'
+import type { CaptureAssets } from '../data/assets'
 import { VisitDock } from '../views/VisitDock'
 import type { Artwork } from './exhibitions'
 import { REPAINT_MS, UNPAINT_MS } from './paint'
-import { Painted } from './Painted'
+import { Painted, PaintedStill } from './Painted'
+// TEMPORARY: from '../data' and '../scene' once they exist.
+import { useCaptureAssets } from '../data'
+import { SceneViewer, useCaptureScene } from '../scene'
 import { ARRIVE_MS, LEAVE_MS } from './warp'
 
 /** Where the visitor is with a picture: diving toward it, inside it, or on the way back out. */
@@ -64,35 +66,38 @@ export function StepIn({
   onBack,
   onCovered,
   onGone,
+  paint: paintProp,
 }: {
   art: Artwork
   stage: Stage
   onBack: () => void
   onCovered?: (covered: boolean) => void
   onGone: () => void
+  /** Paints a photo as the museum shows it (the museum's own renderer); without it, no painted overlay. */
+  paint?: (src: string, maxW: number, maxH: number) => Promise<HTMLCanvasElement>
 }) {
   const world = useRef<HTMLDivElement>(null)
   const cover = useRef<HTMLDivElement>(null)
   const video = useRef<HTMLVideoElement>(null)
   const hasRoom = Boolean(art.captureId)
-  const assetsState = useCaptureAssets(art.captureId ?? null)
-  const capture = assetsState.status === 'ready' ? assetsState.assets : null
+  // The visit's files (prefetched when the visitor arrived at the picture), then its room.
+  const assets = useCaptureAssets(art.captureId ?? null)
   const [roomSince, setRoomSince] = useState(0)
-  const roomError = assetsState.status === 'error' ? assetsState.message : null
+  const [sceneError, setSceneError] = useState<string | null>(null)
+  const roomError = assets.status === 'error' ? assets.message : assets.status === 'missing' && hasRoom ? "This visit isn't here any more." : sceneError
+  const ready = assets.status === 'ready' ? assets.assets : null
   const [roomLive, setRoomLive] = useState(false)
   const [settled, setSettled] = useState(false)
   // The museum's painted look stays on through the dive and the arrival, then lifts away.
   const [paint, setPaint] = useState(true)
+  const paintPhoto = paintProp
   const [unpainted, setUnpainted] = useState(false)
-  const [source, setSource] = useState<HTMLImageElement | HTMLVideoElement | null>(null)
+  const [source, setSource] = useState<HTMLVideoElement | null>(null)
   const stopFade = useRef<() => void>(() => {})
   useEffect(() => () => stopFade.current(), [])
   const still = art.kind === 'photo' ? art.src : (art.poster ?? '')
 
-  // Load the room as soon as the dive begins, so it's there on the far side.
-  useEffect(() => {
-    if (capture) setRoomSince(performance.now())
-  }, [capture])
+  const onRoomReady = useCallback(() => setRoomSince(performance.now()), [])
 
   // Arriving and leaving.
   useLayoutEffect(() => {
@@ -132,14 +137,14 @@ export function StepIn({
   // On the far side, once the paint has lifted and the room has drawn for a moment, the picture
   // gives way to it.
   useEffect(() => {
-    if (stage !== 'here' || !capture || roomLive || !unpainted) return
+    if (stage !== 'here' || !roomSince || roomLive || !unpainted) return
     const wait = Math.max(0, roomSince + ROOM_SETTLE_MS - performance.now())
     const t = setTimeout(() => {
       const a = cover.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 900, easing: 'ease-in-out', fill: 'both' })
       if (a) a.onfinish = () => setRoomLive(true)
     }, wait)
     return () => clearTimeout(t)
-  }, [stage, capture, roomSince, roomLive, unpainted])
+  }, [stage, roomSince, roomLive, unpainted])
 
   // Escape steps back out.
   useEffect(() => {
@@ -151,14 +156,19 @@ export function StepIn({
   }, [stage, onBack])
 
   const onPaintSettled = useCallback(() => setUnpainted(!paint), [paint])
-  // Nothing to paint (no picture, or it didn't load): there's nothing to wait for either.
+  // Nothing to paint (no picture, it didn't load, or no painter): nothing to wait for either.
+  const paintable = art.kind === 'video' && !hasRoom ? Boolean(source) : Boolean(still && paintPhoto)
   useEffect(() => {
-    if (!paint && !source) setUnpainted(true)
-  }, [paint, source])
-  // Drawn from the arrival on, so the dive itself stays smooth.
-  const painted = stage !== 'diving' && (
-    <Painted source={source} fit={hasRoom ? 'cover' : 'contain'} painted={paint} ms={paint ? REPAINT_MS : UNPAINT_MS} onSettled={onPaintSettled} />
-  )
+    if (!paint && !paintable) setUnpainted(true)
+  }, [paint, paintable])
+  const fit = hasRoom ? 'cover' : 'contain'
+  const ms = paint ? REPAINT_MS : UNPAINT_MS
+  // A photo's painting is made during the dive (one pass on the museum's renderer) and shown
+  // from the arrival on; a video is painted live, from the arrival on, so the dive stays smooth.
+  const painted =
+    art.kind === 'video' && !hasRoom
+      ? stage !== 'diving' && <Painted source={source} fit={fit} painted={paint} ms={ms} onSettled={onPaintSettled} />
+      : still && paintPhoto && <PaintedStill src={still} paint={paintPhoto} fit={fit} painted={paint} ms={ms} onSettled={onPaintSettled} />
 
   const showUi = stage === 'here' && settled && (!hasRoom || roomLive || Boolean(roomError))
   return (
@@ -167,20 +177,14 @@ export function StepIn({
         {hasRoom ? (
           <>
             {/* Drawn from the arrival on, so the dive itself stays smooth. */}
-            {capture && stage !== 'diving' && (
+            {ready && stage !== 'diving' && (
               <div className={`stepin-3d${roomLive ? ' live' : ''}`}>
-                <SceneViewer
-                  assets={capture}
-                  initialMode="follow"
-                  startAt={art.t ?? 0}
-                  showVideo={false}
-                  overlay={(controls) => <VisitDock captureId={art.captureId!} controls={controls} />}
-                />
+                <Room assets={ready} startAt={art.t ?? 0} onReady={onRoomReady} onError={setSceneError} />
               </div>
             )}
             {/* The picture itself, standing in for the room until the room is ready. */}
             <div ref={cover} className={`stepin-cover${roomLive ? ' gone' : ''}`}>
-              {still && <img src={still} alt="" draggable={false} onLoad={(e) => setSource(e.currentTarget)} />}
+              {still && <img src={still} alt="" draggable={false} />}
               {painted}
             </div>
           </>
@@ -189,7 +193,7 @@ export function StepIn({
             <div className="stepin-backdrop" style={still ? { backgroundImage: `url("${still}")` } : undefined} />
             <div className={`stepin-picture${art.kind === 'photo' ? ' drift' : ''}`}>
               {art.kind === 'photo' ? (
-                <img className="stepin-full" src={art.src} alt={art.title ?? ''} draggable={false} onLoad={(e) => setSource(e.currentTarget)} />
+                <img className="stepin-full" src={art.src} alt={art.title ?? ''} draggable={false} />
               ) : (
                 <video
                   ref={video}
@@ -223,5 +227,23 @@ export function StepIn({
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * A visit's 3D room behind its picture: says when it's ready to be seen (or why it can't be),
+ * so the picture can give way to it.
+ */
+function Room({ assets, startAt, onReady, onError }: { assets: CaptureAssets; startAt: number; onReady: () => void; onError: (message: string) => void }) {
+  const scene = useCaptureScene(assets)
+  const status = scene.status as string
+  const message = scene.status === 'error' ? scene.message : status === 'processing' ? 'This visit is still being prepared. Its room will be here soon.' : null
+  useEffect(() => {
+    if (status === 'ready') onReady()
+    else if (message) onError(message)
+  }, [status, message, onReady, onError])
+  if (status !== 'ready') return null
+  return (
+    <SceneViewer assets={assets} initialMode="follow" startAt={startAt} showVideo={false} overlay={(controls) => <VisitDock captureId={assets.id} controls={controls} />} />
   )
 }

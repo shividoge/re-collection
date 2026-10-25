@@ -1,13 +1,15 @@
 // What hangs in the museum. An exhibition is a title and a list of pictures and videos, in
 // visiting order. Exhibitions come from three places:
 // - web/public/museum/exhibitions.json, curated by hand (format in docs/museum.md);
-// - "Our visits", made from the captures on the guide: each visit's video and a few of its
+// - "Our visits", made from the family's captures: each visit's video and a few of its
 //   keyframes, with the title and date the family gave it;
 // - photos and videos dropped onto the museum page, kept in this browser (IndexedDB) so they
 //   are still there after a reload.
 // Nothing is invented: an exhibition only shows what was put into it.
 
-import { arrangements, loadVisitSources, type Arrangement, type ArrangementItem, type CaptureAssets, type Manifest } from '../data'
+import type { Arrangement, ArrangementItem } from '../api'
+import type { CaptureAssets, Manifest } from '../data/assets'
+import { arrangements, loadVisitSources } from '../data'
 
 export type ArtworkKind = 'photo' | 'video'
 
@@ -27,6 +29,8 @@ export interface Artwork {
   t?: number
   /** Added on this device (can be removed again here). */
   local?: boolean
+  /** From a visit rebuilt from an ordinary video: its room is estimated, not measured. */
+  estimated?: boolean
 }
 
 export interface Exhibition {
@@ -72,14 +76,15 @@ export interface Visit {
   date: string
   thumb: boolean
   manifest: Manifest
+  /** The visit's files (the same object stepping in uses, so nothing loads twice). */
   assets: CaptureAssets
 }
 
-/** Every finished visit, oldest first (on the public site: the published ones). */
+/** Every finished visit, oldest first (on the public site: the published ones). Manifests load in parallel. */
 export async function loadVisits(): Promise<Visit[]> {
   try {
     const sources = await loadVisitSources()
-    return sources.map((v) => ({ id: v.id, title: v.title || v.assets.manifest.title || 'A visit', date: formatDate(v.createdAt), thumb: v.hasThumb, manifest: v.assets.manifest, assets: v.assets }))
+    return sources.map((s) => ({ id: s.id, title: s.title || s.assets.manifest.title || 'A visit', date: formatDate(s.createdAt), thumb: s.hasThumb, manifest: s.assets.manifest, assets: s.assets }))
   } catch {
     return []
   }
@@ -100,15 +105,16 @@ export function piecesOf(v: Visit): string[] {
 
 /** One piece of a visit as a picture on the wall; null if the visit doesn't have that piece. */
 export function pieceArtwork(v: Visit, piece: string, title = '', caption = '', n = 0): Artwork | null {
-  const poster = (v.thumb && v.assets.rawUrl('thumb.jpg')) || undefined
-  const base = { id: `${v.id}-${piece}-${n}`, title: title || v.title, date: v.date, caption: caption || undefined, captureId: v.id }
-  const video = v.manifest.video?.file ? v.assets.rawUrl(v.manifest.video.file) : null
+  const url = (name: string) => v.assets.rawUrl(name) ?? undefined
+  const poster = v.thumb ? url('thumb.jpg') : undefined
+  const base = { id: `${v.id}-${piece}-${n}`, title: title || v.title, date: v.date, caption: caption || undefined, captureId: v.id, estimated: v.manifest.source === 'video' || undefined }
+  const video = v.manifest.video?.file ? url(v.manifest.video.file) : undefined
   if (piece === 'video') return video ? { ...base, kind: 'video', src: video, poster, t: 0 } : null
   if (piece === 'thumb') return poster ? { ...base, kind: 'photo', src: poster, t: 0 } : null
   const kf = v.manifest.keyframes
   const k = /^k(\d{4})$/.exec(piece)
   if (!k || !kf || Number(k[1]) >= kf.count) return null
-  const src = v.assets.rawUrl(`${kf.dir}/${piece}.jpg`)
+  const src = url(`${kf.dir}/${piece}.jpg`)
   return src ? { ...base, kind: 'photo', src, t: Number(k[1]) * kf.everySec } : null
 }
 
@@ -266,4 +272,17 @@ export async function loadExhibitions(): Promise<Exhibition[]> {
     })
   }
   return all
+}
+
+/**
+ * The piece a shared walk points at (Visit together): `at` when that piece is still the visit
+ * `atId` names (the two screens' lists can differ), else the first piece of that visit, else
+ * `at` itself; −1 for the entrance or a piece this museum doesn't have.
+ */
+export function followIndex(items: Artwork[], at: number, atId: string | null): number {
+  const inRange = at >= 0 && at < items.length
+  if (atId === null) return inRange ? at : -1
+  if (inRange && items[at].captureId === atId) return at
+  const first = items.findIndex((a) => a.captureId === atId)
+  return first >= 0 ? first : inRange ? at : -1
 }

@@ -1,31 +1,18 @@
-import { MeshReflectorMaterial } from '@react-three/drei'
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js'
-import { ArchDoorways, Carpets, Cornice, FloorBorder, Lantern, varnishedWood, Wainscot } from './Classic'
+import { ArchDoorways, Carpets, Cornice, FloorBorder, Lantern, Wainscot } from './Classic'
 import { WALL, type MuseumPlan } from './layout'
 import type { Look } from './looks'
-import { fabric, titleTexture, woodFloor, type SurfaceMaps } from './textures'
+import { varnishedWood } from './materials'
+import { ReflectiveFloor } from './Reflector'
+import { museumMaps, titleTexture, type SurfaceMaps } from './textures'
 
 RectAreaLightUniformsLib.init()
 
-/** Generated surfaces are slow to make (a second or so), so each is made once per look. */
-const floorCache = new Map<string, SurfaceMaps>()
-const wallCache = new Map<string, SurfaceMaps>()
-
-function floorMaps(look: Look): SurfaceMaps {
-  const key = `${look.floor.light}:${look.floor.dark}`
-  let maps = floorCache.get(key)
-  if (!maps) floorCache.set(key, (maps = woodFloor(look.floor.light, look.floor.dark)))
-  return maps
-}
-
-function wallMaps(color: [number, number, number]): SurfaceMaps {
-  const key = color.join(',')
-  let maps = wallCache.get(key)
-  if (!maps) wallCache.set(key, (maps = fabric(color)))
-  return maps
-}
+const FLOOR_NORMALS = new THREE.Vector2(0.6, 0.6)
+const WALL_NORMALS = new THREE.Vector2(0.35, 0.35)
+const BLUR: [number, number] = [400, 120]
 
 /** Copies of the maps tiled `rx` × `ry` times (copies share the pixels). */
 function tiled(maps: SurfaceMaps, rx: number, ry: number, rotation = 0): SurfaceMaps {
@@ -98,16 +85,15 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
   const floor = useMemo(() => {
     const t = look.floor.metersPerTile
     // Herringbone is laid at 45°, as it usually is.
-    return tiled(floorMaps(look), floorW / t, floorD / t, Math.PI / 4)
+    return tiled(museumMaps('floor'), floorW / t, floorD / t, Math.PI / 4)
   }, [look, floorW, floorD])
 
   const wallMaterial = useMemo(() => {
-    const m = wallMaps(look.wall)
-    return new THREE.MeshStandardMaterial({ map: m.map, normalMap: m.normalMap, normalScale: new THREE.Vector2(0.35, 0.35), roughnessMap: m.roughnessMap, roughness: 1, envMapIntensity: 0.6 })
-  }, [look])
-  const wainscotMaterial = useMemo(() => varnishedWood(), [])
+    const m = museumMaps('fabric')
+    return new THREE.MeshStandardMaterial({ map: m.map, normalMap: m.normalMap, normalScale: WALL_NORMALS, roughnessMap: m.roughnessMap, roughness: 1, envMapIntensity: 0.6 })
+  }, [])
   const ceilingMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: look.ceiling, roughness: 0.95 }), [look])
-  useEffect(() => () => [wallMaterial, wainscotMaterial, ceilingMaterial].forEach((m) => m.dispose()), [wallMaterial, wainscotMaterial, ceilingMaterial])
+  useEffect(() => () => [wallMaterial, ceilingMaterial].forEach((m) => m.dispose()), [wallMaterial, ceilingMaterial])
 
   // Wall faces, door jambs and the wall above each doorway, as one mesh.
   const wallGeometry = useMemo(() => {
@@ -127,6 +113,10 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
   const wainscotGeometry = useMemo(() => quads(walls.map((w) => wallQuad(w.a, w.b, 0, look.wainscotHeight, w.normal, 0.012))), [walls, look])
   useEffect(() => () => wainscotGeometry.dispose(), [wainscotGeometry])
 
+  const floorSize = useMemo<[number, number]>(() => [floorW + WALL * 2, floorD + WALL * 2], [floorW, floorD])
+  const floorAt = useMemo<[number, number, number]>(() => [0, 0, (first.zFront + last.zBack) / 2], [first, last])
+  const floorSurface = useMemo(() => ({ ...floor, normalScale: FLOOR_NORMALS, roughness: 1, metalness: 0, envMapIntensity: 0.7 }), [floor])
+
   const titleArt = useMemo(() => titleTexture(title, subtitle, look.titleInk, look.accent), [title, subtitle, look])
   useEffect(() => () => titleArt.texture.dispose(), [titleArt])
   // The title sits between the mantel's candelabra and the cornice.
@@ -137,34 +127,32 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
       <hemisphereLight args={[look.light, '#3a2c22', 0.85]} />
 
       {/* One floor under every room, so its reflections are rendered once. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, (first.zFront + last.zBack) / 2]} receiveShadow>
-        <planeGeometry args={[floorW + WALL * 2, floorD + WALL * 2]} />
-        {reflections > 0 && look.floor.mirror > 0 ? (
-          <MeshReflectorMaterial
-            {...floor}
-            normalScale={new THREE.Vector2(0.6, 0.6)}
-            roughness={1}
-            metalness={0}
-            envMapIntensity={0.7}
-            resolution={reflections}
-            blur={[400, 120]}
-            mixBlur={1.2}
-            mixStrength={look.floor.mirror * 2.2}
-            mixContrast={1}
-            depthScale={0.6}
-            minDepthThreshold={0.6}
-            maxDepthThreshold={1.4}
-            mirror={look.floor.mirror}
-          />
-        ) : (
-          <meshStandardMaterial {...floor} normalScale={new THREE.Vector2(0.6, 0.6)} roughness={1} envMapIntensity={0.9} />
-        )}
-      </mesh>
+      {reflections > 0 && look.floor.mirror > 0 ? (
+        <ReflectiveFloor
+          size={floorSize}
+          position={floorAt}
+          resolution={reflections}
+          blur={BLUR}
+          mixBlur={1.2}
+          mixStrength={look.floor.mirror * 2.2}
+          mixContrast={1}
+          depthScale={0.6}
+          minDepthThreshold={0.6}
+          maxDepthThreshold={1.4}
+          mirror={look.floor.mirror}
+          surface={floorSurface}
+        />
+      ) : (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={floorAt}>
+          <planeGeometry args={floorSize} />
+          <meshStandardMaterial {...floor} normalScale={FLOOR_NORMALS} roughness={1} envMapIntensity={0.9} />
+        </mesh>
+      )}
 
-      <mesh geometry={wallGeometry} material={wallMaterial} receiveShadow />
-      <mesh geometry={wainscotGeometry} material={wainscotMaterial} />
+      <mesh geometry={wallGeometry} material={wallMaterial} />
+      <mesh geometry={wainscotGeometry} material={varnishedWood()} />
       <Wainscot plan={plan} look={look} />
-      <Cornice plan={plan} look={look} />
+      <Cornice plan={plan} />
       <ArchDoorways plan={plan} wallMaterial={wallMaterial} />
       <FloorBorder plan={plan} />
       <Carpets plan={plan} />

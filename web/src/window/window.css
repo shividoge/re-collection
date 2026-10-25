@@ -23,16 +23,6 @@
 .window-message a {
   color: #f2efe9;
 }
-.window-loading {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: #07080a;
-  color: #b9b3ab;
-  font-size: 20px;
-  pointer-events: none;
-}
 .window-message {
   position: fixed;
   inset: 0;

@@ -9,6 +9,7 @@ import { flyDive, WarpBlurEffect, type Dive } from './warp'
  */
 export function DiveCamera({ dive }: { dive: RefObject<Dive | null> }) {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
+  const invalidate = useThree((s) => s.invalidate)
   const effect = useMemo(() => new WarpBlurEffect(), [])
   useEffect(() => () => effect.dispose(), [effect])
   useFrame(() => {
@@ -16,6 +17,8 @@ export function DiveCamera({ dive }: { dive: RefObject<Dive | null> }) {
     if (!d) return effect.set(0, 0, [0.5, 0.5])
     const { blur, flash, center } = flyDive(d, camera, performance.now())
     effect.set(blur, flash, center)
+    // A dive is an animation: keep drawing until it's over.
+    invalidate()
   })
   return <primitive object={effect} dispose={null} />
 }

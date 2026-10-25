@@ -15,7 +15,6 @@ const MuseumPage = lazy(() => import('./museum/MuseumPage').then((m) => ({ defau
 const RoomFile = lazy(() => import('./views/RoomFile').then((m) => ({ default: m.RoomFile })))
 const Showcase = lazy(() => import('./views/Showcase').then((m) => ({ default: m.Showcase })))
 const MemoryWindow = lazy(() => import('./window/MemoryWindow').then((m) => ({ default: m.MemoryWindow })))
-const Museum = lazy(() => import('./museum/Museum').then((m) => ({ default: m.Museum })))
 
 /** Hash routes, so the app works as plain static files. */
 const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
@@ -28,11 +27,11 @@ const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
   // The Memory Window: the visit full screen, looked into with head tracking (TV, laptop, iPad).
   // #/window/<id>?from=museum comes back to the museum.
   [/^#\/window\/([0-9a-f-]{36})(?:\?from=(museum))?$/i, (id, from) => <MemoryWindow key={id} id={id} from={from} />],
-  // Your memories: every moment as a picture frame in a calm hall; tap one to step into its
-  // Memory Window. #/memories?join=CODE is a helper's phone joining the iPad's walk ("Visit together").
-  [/^#\/memories(\?join=[A-Za-z]*)?$/i, (join) => <Museum key={join ?? ''} join={join?.slice('?join='.length)} />],
-  // The walkable museum: #/museum, or #/museum/<exhibition id>.
-  [/^#\/museum(?:\/([\w-]+))?$/, (id) => <MuseumPage key="museum" id={id} />],
+  // The old hall's address now opens the museum (keeping a helper's join code).
+  [/^#\/memories(\?join=[A-Za-z]*)?$/i, (join) => (location.replace(`#/museum${join ?? ''}`), null)],
+  // The walkable museum: #/museum, or #/museum/<exhibition id>; #/museum?join=CODE is a helper's
+  // phone joining the iPad's walk ("Visit together").
+  [/^#\/museum(?:\/([\w-]+))?(?:\?join=([A-Za-z]*))?$/, (id, join) => <MuseumPage key="museum" id={id} join={join} />],
   // The caretaker's editor for that museum (after the line above, so it wins over an exhibition id).
   [/^#\/museum\/edit$/, () => <MuseumEditor />],
 ]
@@ -44,7 +43,7 @@ function view(hash: string): React.ReactNode {
   if (visitor) return <PublicView key={visitor[1]} id={visitor[1]} />
   const front = !hash.startsWith('#/') || hash === '#/'
   // A static site has no family tools: everything but the museum and its Memory Windows lands
-  // on the front page. (Visit together needs the live server, so #/memories isn't in it.)
+  // on the front page. (Visit together needs the live backend.)
   const staticPage = /^#\/(museum(\/[\w-]+)?|window\/[0-9a-f-]{36}(\?from=museum)?)$/i.test(hash)
   if (front || (dataMode === 'static' && !staticPage)) return <Showcase />
 

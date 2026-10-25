@@ -1,7 +1,10 @@
 import { Canvas } from '@react-three/fiber'
 import { useEffect, useRef, useState } from 'react'
+import type { CaptureAssets } from '../data/assets'
+import type { NavMode } from '../scene/SceneViewer'
+// TEMPORARY: the real exports come from '../data' and '../scene' once they land.
 import { useCaptureAssets } from '../data'
-import { PlaybackDriver, SceneReplay, SceneRoom, useCaptureScene, usePlayback, usePlaybackState, type CaptureScene, type NavMode } from '../scene'
+import { PlaybackDriver, SceneReplay, SceneRoom, useCaptureScene, usePlayback, usePlaybackState, type CaptureScene } from '../scene'
 import { WithYou } from '../museum/Together'
 import { useMuseumRoom, type MuseumRoom } from '../museum/useMuseumRoom'
 import { EstimatedBadge } from '../views/EstimatedBadge'
@@ -10,7 +13,6 @@ import { useHeadTracker } from './useHeadTracker'
 import { WindowCamera } from './WindowCamera'
 import './window.css'
 
-const NO_FRAMES: never[] = []
 const IDLE_MS = 4000
 const canTilt = typeof window !== 'undefined' && 'DeviceOrientationEvent' in window && navigator.maxTouchPoints > 0
 
@@ -21,55 +23,47 @@ const canTilt = typeof window !== 'undefined' && 'DeviceOrientationEvent' in win
  * visit (VisitDock) runs inside it unchanged, so everything said is still grounded.
  */
 export function MemoryWindow({ id, from }: { id: string; from?: string }) {
-  const assetsState = useCaptureAssets(id)
-  const sceneState = useCaptureScene(assetsState.status === 'ready' ? assetsState.assets : null)
-  const error = assetsState.status === 'error' ? assetsState.message : sceneState.status === 'error' ? sceneState.message : null
   // Visit together: opened from the museum, the window stays in the iPad's room, so the helper
   // pressing "Back to the museum" (or stepping into another moment) on their phone moves it too.
   const room = useMuseumRoom('patient', { enabled: from === 'museum' })
+  const state = useCaptureAssets(id)
+  const back = from === 'museum' ? '#/museum' : `#/capture/${id}`
 
-  if (error) {
-    const locked = /Braindance-Key|401/.test(error)
-    return (
-      <div className="window-message">
-        {locked ? (
-          <span>
-            This browser needs the team password first. <a href="#/">Unlock on the Captures page</a>, then come back.
-          </span>
-        ) : (
-          error
-        )}
-      </div>
-    )
-  }
-  if (sceneState.status === 'processing') return <div className="window-message">This visit's room is still being prepared.</div>
-  if (sceneState.status !== 'ready') return <div className="window-message">Opening the window…</div>
-  return <WindowStage id={id} scene={sceneState.scene} back={from === 'museum' ? '#/memories' : `#/capture/${id}`} room={room} />
+  if (state.status === 'error') return <div className="window-message">{state.message}</div>
+  if (state.status === 'missing') return <div className="window-message">This visit isn’t here any more.</div>
+  if (state.status === 'loading') return <div className="window-message">Opening the window…</div>
+  return <WindowScene assets={state.assets} back={back} room={room} />
+}
+
+function WindowScene({ assets, back, room }: { assets: CaptureAssets; back: string; room: MuseumRoom }) {
+  const state = useCaptureScene(assets)
+  if (state.status === 'ready') return <WindowStage scene={state.scene} back={back} room={room} />
+  if (state.status === 'error') return <div className="window-message">{state.message}</div>
+  if (state.status === 'loading') return <div className="window-message">Bringing the room in…</div>
+  // Still being baked into a scene by the pipeline.
+  return <div className="window-message">This visit is still being prepared…</div>
 }
 
 /** Drag distance, as a fraction of the screen's shorter side, for a full head movement. */
 const DRAG_RANGE = 0.35
 const DRAG_HOLD_MS = 8000
 
-function WindowStage({ id, scene, back, room }: { id: string; scene: CaptureScene; back: string; room: MuseumRoom }) {
-  const { manifest } = scene
-  const frames = scene.moment ?? NO_FRAMES
+function WindowStage({ scene, back, room }: { scene: CaptureScene; back: string; room: MuseumRoom }) {
+  const { manifest, moment: frames } = scene
   const tracker = useHeadTracker()
 
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null)
   const [videoError, setVideoError] = useState(false)
   const [speed, setSpeed] = useState(1)
-  const hasVideo = Boolean(scene.videoUrl) && !videoError
-  const duration = manifest?.video?.durationSec ?? (frames.length ? frames[frames.length - 1].t : 0)
-  const playback = usePlayback(hasVideo ? videoEl : null, duration, speed)
+  const video = scene.videoUrl && !videoError ? videoEl : null
+  const duration = manifest.video?.durationSec ?? (frames.length ? frames[frames.length - 1].t : 0)
+  const playback = usePlayback(video, duration, speed)
   const { playing } = usePlaybackState(playback)
-  const canReplayPeople = Boolean(scene.canReplay && videoEl && hasVideo)
+  const canReplayPeople = scene.canReplay && Boolean(video)
   // The people layer is colored from the video and sits right in front of the window, so until
   // the video has played it would cover the room in black. Show it once the visit has started.
   const [started, setStarted] = useState(false)
-  useEffect(() => {
-    if (playing) setStarted(true)
-  }, [playing])
+  if (playing && !started) setStarted(true)
 
   // Controls fade away so only the window is left; any movement or tap brings them back.
   const [idle, setIdle] = useState(false)
@@ -153,7 +147,7 @@ function WindowStage({ id, scene, back, room }: { id: string; scene: CaptureScen
     switchMode: () => {},
     setSpeed,
     canFollow: frames.length > 0,
-    video: videoEl,
+    video,
   }
 
   return (
@@ -168,18 +162,19 @@ function WindowStage({ id, scene, back, room }: { id: string; scene: CaptureScen
         <color attach="background" args={['#07080a']} />
         <PlaybackDriver playback={playback} />
         <SceneRoom scene={scene} dim={canReplayPeople && playing ? 0.6 : 1} />
-        {canReplayPeople && started && videoEl && <SceneReplay scene={scene} video={videoEl} timeRef={playback.timeRef} masked={scene.surface?.status === 'ready'} />}
+        {canReplayPeople && started && video && <SceneReplay scene={scene} video={video} timeRef={playback.timeRef} />}
         <WindowCamera
           frames={frames}
           timeRef={playback.timeRef}
           head={tracking ? tracker.head : dragHead}
           ambient={!tracking && !dragging}
-          videoW={manifest?.video?.width ?? 1920}
-          videoH={manifest?.video?.height ?? 1440}
+          videoW={manifest.video?.width ?? 1920}
+          videoH={manifest.video?.height ?? 1440}
         />
       </Canvas>
 
       {/* The video plays for sound and to color the people; the window shows it in 3D instead. */}
+      {/* Only the duration loads until they press play; playing then fetches the rest. */}
       {scene.videoUrl && (
         <video
           ref={setVideoEl}
@@ -187,7 +182,7 @@ function WindowStage({ id, scene, back, room }: { id: string; scene: CaptureScen
           src={scene.videoUrl}
           crossOrigin="anonymous"
           playsInline
-          preload="auto"
+          preload="metadata"
           onError={() => setVideoError(true)}
         />
       )}
@@ -195,7 +190,7 @@ function WindowStage({ id, scene, back, room }: { id: string; scene: CaptureScen
       <header className="window-top">
         {/* Tell the helper's phone too (the link then goes back as usual). */}
         <a href={back} className="window-exit" onClick={room.leave}>
-          {back === '#/memories' ? '← Back to the museum' : '← Back'}
+          {back === '#/museum' ? '← Back to the museum' : '← Back'}
         </a>
         <div className="window-title">
           {scene.label} <EstimatedBadge manifest={manifest} />
@@ -219,12 +214,10 @@ function WindowStage({ id, scene, back, room }: { id: string; scene: CaptureScen
         </div>
       </header>
 
-      {scene.points?.status === 'loading' && scene.surface?.status !== 'ready' && <div className="window-loading">Bringing the room in…</div>}
-
       <TrackerHint status={tracker.status} />
 
       <div className="window-dock">
-        <VisitDock captureId={id} controls={controls} />
+        <VisitDock captureId={scene.id} controls={controls} />
         {duration > 0 && (
           <button className="window-play" onClick={playback.toggle}>
             {playing ? 'Pause' : 'Play the visit'}
