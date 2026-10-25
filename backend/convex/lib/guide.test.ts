@@ -23,9 +23,11 @@ describe('the guide\'s sources', () => {
   })
   it('tags Moss documents with their memory and finds the source again', () => {
     const docs = mossDocs(memoryKey({ capture: 'cap', piece: 'video' }), sourcesOf(CTX))
-    expect(docs[1]).toEqual({ id: 'cap/video#n1', text: 'Priya baked the mango cake the night before.', metadata: { memory: 'cap/video', source: 'n1' } })
+    expect(docs[1]).toEqual({ id: 'cap_video__n1', text: 'Priya baked the mango cake the night before.', metadata: { memory: 'cap_video', source: 'n1' } })
     expect(sourceIdOf(docs[4])).toBe('f1')
-    expect(sourceIdOf({ id: 'cap/video#n2' })).toBe('n2')
+    expect(sourceIdOf({ id: 'cap_video__n2' })).toBe('n2')
+    // Moss accepts only letters, digits, "-" and "_" in ids.
+    for (const d of mossDocs('11111111-2222-4333-8444-555555555555/k0012', sourcesOf(CTX))) expect(d.id).toMatch(/^[A-Za-z0-9_-]+$/)
   })
   it('notices when the notes change', () => {
     expect(fingerprint(CTX)).toBe(fingerprint({ ...CTX }))
@@ -95,7 +97,7 @@ describe('listening and remembering', () => {
   it('keeps what they said as a source tied to the memory', async () => {
     const { saidDoc, worthRemembering, sourceIdOf } = await import('./guide')
     const d = saidDoc('cap/video', '  this kitchen looks like my mother\'s ', 42)
-    expect(d).toEqual({ id: 'cap/video#said-42', text: 'They said: "this kitchen looks like my mother\'s"', metadata: { memory: 'cap/video', source: 'said-42' } })
+    expect(d).toEqual({ id: 'cap_video__said-42', text: 'They said: "this kitchen looks like my mother\'s"', metadata: { memory: 'cap_video', source: 'said-42' } })
     expect(sourceIdOf(d)).toBe('said-42')
     expect(worthRemembering('yes')).toBe(false)
     expect(worthRemembering('that was my sister Ana')).toBe(true)
