@@ -10,7 +10,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { WALL, type Feature, type MuseumPlan, type Room } from './layout'
 import type { Look } from './looks'
-import { carpet, frostedGlassTexture, imperialPorcelain, lightPoolTexture, persianRug, woodFloor, woodGrain, type SurfaceMaps } from './textures'
+import { carpet, frostedGlassTexture, imperialPorcelain, lightPoolTexture, persianRug, woodGrain, type SurfaceMaps } from './textures'
 
 const GOLD = '#c9a052'
 
@@ -36,44 +36,6 @@ export function varnishedWood(): THREE.MeshPhysicalMaterial {
     clearcoatRoughness: 0.28,
     envMapIntensity: 1,
   })
-}
-
-let parquetMaps: SurfaceMaps | null = null
-/**
- * Darker herringbone parquet for the floor's edge and the doorways, in the same pattern as the
- * floor itself. Geometry using it needs world UVs (`worldUV`), so the pattern runs on unbroken
- * from one piece to the next.
- */
-export function darkParquet(): THREE.MeshPhysicalMaterial {
-  parquetMaps ??= woodFloor('herringbone', [112, 70, 42], [54, 31, 18], 23)
-  const tile = (t: THREE.Texture) => {
-    const c = t.clone()
-    c.repeat.set(1 / 1.6, 1 / 1.6)
-    c.rotation = Math.PI / 4
-    c.needsUpdate = true
-    return c
-  }
-  return new THREE.MeshPhysicalMaterial({
-    map: tile(parquetMaps.map),
-    normalMap: tile(parquetMaps.normalMap),
-    roughnessMap: tile(parquetMaps.roughnessMap),
-    normalScale: new THREE.Vector2(0.6, 0.6),
-    roughness: 1,
-    clearcoat: 0.3,
-    clearcoatRoughness: 0.35,
-  })
-}
-
-/** Sets a floor piece's UVs to its world x, z, so textures line up across pieces. */
-function worldUV(g: THREE.BufferGeometry): THREE.BufferGeometry {
-  const pos = g.attributes.position
-  const uv = new Float32Array(pos.count * 2)
-  for (let i = 0; i < pos.count; i++) {
-    uv[i * 2] = pos.getX(i)
-    uv[i * 2 + 1] = -pos.getZ(i)
-  }
-  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
-  return g
 }
 
 /** Gilding: warm gold leaf, polished on the high points. */
@@ -168,67 +130,73 @@ export function Wainscot({ plan, look }: { plan: MuseumPlan; look: Look }) {
   return <mesh geometry={geometry} material={material} />
 }
 
+let shadeMap: THREE.CanvasTexture | null = null
+/** A strip that is dark at one long edge and fades to nothing at the other. */
+function edgeShade(): THREE.CanvasTexture {
+  if (shadeMap) return shadeMap
+  const c = document.createElement('canvas')
+  c.width = 4
+  c.height = 256
+  const ctx = c.getContext('2d')!
+  const g = ctx.createLinearGradient(0, 0, 0, 256)
+  g.addColorStop(0, '#ffffff')
+  g.addColorStop(0.35, '#7a7a7a')
+  g.addColorStop(1, '#000000')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, 4, 256)
+  shadeMap = new THREE.CanvasTexture(c)
+  return shadeMap
+}
+
 /**
- * Darker parquet around the edge of each floor and through the doorways, in the floor's own
- * herringbone, with a thin light inlay line: the floor deepens toward the panelling, as in old
- * galleries, and runs on unbroken from one room to the next.
+ * The floor deepens toward the panelling, as an old floor does where feet and light rarely
+ * reach: a soft darkening along each wall that fades out within a meter, and the same darkness
+ * across the doorways. No band or inlay line, which would read as the edge of a rug.
  */
-export function FloorBorder({ plan }: { plan: MuseumPlan }) {
-  const band = 0.5
-  const geometry = useMerged(() => {
+export function FloorShade({ plan }: { plan: MuseumPlan }) {
+  const reach = 0.9
+  const strips = useMerged(() => {
     const parts: THREE.BufferGeometry[] = []
     for (const room of plan.rooms) {
       const w = room.x1 - room.x0
       const d = room.zFront - room.zBack
       const cz = (room.zFront + room.zBack) / 2
-      for (const [x, z, bw, bd] of [
-        [0, room.zFront - band / 2, w, band],
-        [0, room.zBack + band / 2, w, band],
-        [room.x0 + band / 2, cz, band, d - band * 2],
-        [room.x1 - band / 2, cz, band, d - band * 2],
+      // Each strip's v = 0 edge (dark) lies along its wall.
+      for (const [x, z, len, angle] of [
+        [0, room.zFront - reach / 2, w, 0],
+        [0, room.zBack + reach / 2, w, Math.PI],
+        [room.x0 + reach / 2, cz, d, -Math.PI / 2],
+        [room.x1 - reach / 2, cz, d, Math.PI / 2],
       ]) {
-        const g = new THREE.PlaneGeometry(bw, bd)
+        const g = new THREE.PlaneGeometry(len, reach)
         g.rotateX(-Math.PI / 2)
+        g.rotateY(angle)
         g.translate(x, 0.003, z)
-        parts.push(worldUV(g))
-      }
-    }
-    // Through each doorway, joining the two rooms' borders.
-    for (const d of plan.doorways) {
-      const g = new THREE.PlaneGeometry(d.width, WALL + 0.02)
-      g.rotateX(-Math.PI / 2)
-      g.translate(0, 0.003, d.z)
-      parts.push(worldUV(g))
-    }
-    return parts
-  }, [plan])
-  const inlay = useMerged(() => {
-    const parts: THREE.BufferGeometry[] = []
-    for (const room of plan.rooms) {
-      const w = room.x1 - room.x0 - band * 2
-      const d = room.zFront - room.zBack - band * 2
-      const cz = (room.zFront + room.zBack) / 2
-      for (const [x, z, bw, bd] of [
-        [0, cz + d / 2, w, 0.025],
-        [0, cz - d / 2, w, 0.025],
-        [-w / 2, cz, 0.025, d],
-        [w / 2, cz, 0.025, d],
-      ]) {
-        const g = new THREE.PlaneGeometry(bw, bd)
-        g.rotateX(-Math.PI / 2)
-        g.translate(x, 0.004, z)
         parts.push(g)
       }
     }
     return parts
   }, [plan])
-  const material = useMemo(() => darkParquet(), [])
-  const inlayMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: '#c9a27a', roughness: 0.5 }), [])
-  useEffect(() => () => [material, inlayMaterial].forEach((m) => m.dispose()), [material, inlayMaterial])
+  const doorways = useMerged(() => {
+    const parts: THREE.BufferGeometry[] = []
+    for (const d of plan.doorways) {
+      const g = new THREE.PlaneGeometry(d.width, WALL + 0.02)
+      g.rotateX(-Math.PI / 2)
+      g.translate(0, 0.003, d.z)
+      parts.push(g)
+    }
+    return parts
+  }, [plan])
+  const shade = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: '#000000', alphaMap: edgeShade(), transparent: true, opacity: 0.42, depthWrite: false }),
+    [],
+  )
+  const flat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.42, depthWrite: false }), [])
+  useEffect(() => () => [shade, flat].forEach((m) => m.dispose()), [shade, flat])
   return (
     <group>
-      <mesh geometry={geometry} material={material} />
-      <mesh geometry={inlay} material={inlayMaterial} />
+      <mesh geometry={strips} material={shade} renderOrder={1} />
+      <mesh geometry={doorways} material={flat} renderOrder={1} />
     </group>
   )
 }
@@ -835,17 +803,36 @@ function Settee({ f, wood, gold }: { f: Feature; wood: THREE.Material; gold: THR
 /** A tall bronze torchère: a tripod foot, a turned stem, and a crown of five candles. */
 function Torchere({ f, gold }: { f: Feature; gold: THREE.Material }) {
   const bronze = useMemo(() => new THREE.MeshPhysicalMaterial({ color: '#6d4a26', metalness: 1, roughness: 0.4, clearcoat: 0.2 }), [])
+  // Tripod legs: each runs from a foot spread wide on the floor up to the base of the stem.
+  const legs = useMemo(
+    () =>
+      [0, 1, 2].map((i) => {
+        const a = (i / 3) * Math.PI * 2
+        const bottom = new THREE.Vector3(Math.cos(a) * 0.2, 0.03, Math.sin(a) * 0.2)
+        const top = new THREE.Vector3(Math.cos(a) * 0.035, 0.2, Math.sin(a) * 0.035)
+        const dir = top.clone().sub(bottom)
+        return {
+          position: bottom.clone().add(top).multiplyScalar(0.5),
+          quaternion: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize()),
+          length: dir.length(),
+          foot: bottom,
+        }
+      }),
+    [],
+  )
   useEffect(() => () => bronze.dispose(), [bronze])
   return (
     <group position={[f.x, 0, f.z]}>
-      {[0, 1, 2].map((i) => {
-        const a = (i / 3) * Math.PI * 2
-        return (
-          <mesh key={i} position={[Math.cos(a) * 0.12, 0.08, Math.sin(a) * 0.12]} rotation={[Math.sin(a) * 0.6, 0, -Math.cos(a) * 0.6]} material={bronze}>
-            <cylinderGeometry args={[0.018, 0.03, 0.2, 10]} />
+      {legs.map(({ position, quaternion, length, foot }, i) => (
+        <group key={i}>
+          <mesh position={position} quaternion={quaternion} material={bronze}>
+            <cylinderGeometry args={[0.02, 0.028, length, 10]} />
           </mesh>
-        )
-      })}
+          <mesh position={foot} material={gold}>
+            <sphereGeometry args={[0.03, 12, 10]} />
+          </mesh>
+        </group>
+      ))}
       <mesh position={[0, 0.2, 0]} material={gold}>
         <sphereGeometry args={[0.06, 20, 14]} />
       </mesh>
@@ -1041,23 +1028,24 @@ export function Window({ plan }: { plan: MuseumPlan }) {
 
       {/* The sheer, covering the whole window down to the floor, hung clear of the panelling's cap rail. */}
       <mesh geometry={sheerPanel} material={sheer} position={[0, 0.02, 0.13]} />
-      {/* Red drapes at the sides, from the pole to the floor, in front of the sheer. */}
+      {/* Red drapes at the sides, from the pole to the floor, a clear step in front of the sheer
+          (their folds never reach back into it). */}
       {[-1, 1].map((outer, i) => (
-        <mesh key={outer} geometry={drapes[i]} material={velvet} position={[outer * (w / 2 + 0.3), 0.02, 0.17]} />
+        <mesh key={outer} geometry={drapes[i]} material={velvet} position={[outer * (w / 2 + 0.3), 0.02, 0.27]} />
       ))}
-      <mesh position={[0, 3.46, 0.27]} rotation={[0, 0, Math.PI / 2]} material={gold}>
+      <mesh position={[0, 3.46, 0.36]} rotation={[0, 0, Math.PI / 2]} material={gold}>
         <cylinderGeometry args={[0.024, 0.024, w + 1.6, 16]} />
       </mesh>
       {[-1, 1].map((x) => (
-        <mesh key={x} position={[x * (w / 2 + 0.82), 3.46, 0.27]} material={gold}>
+        <mesh key={x} position={[x * (w / 2 + 0.82), 3.46, 0.36]} material={gold}>
           <sphereGeometry args={[0.05, 16, 12]} />
         </mesh>
       ))}
-      {/* Pelmet with a gold fringe. */}
-      <mesh position={[0, 3.43, 0.34]} material={velvet}>
+      {/* Pelmet with a gold fringe, in front of everything. */}
+      <mesh position={[0, 3.43, 0.44]} material={velvet}>
         <boxGeometry args={[w + 1.4, 0.3, 0.06]} />
       </mesh>
-      <mesh position={[0, 3.27, 0.37]} material={gold}>
+      <mesh position={[0, 3.27, 0.475]} material={gold}>
         <boxGeometry args={[w + 1.4, 0.04, 0.02]} />
       </mesh>
     </group>
