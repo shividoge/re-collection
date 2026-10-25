@@ -330,8 +330,20 @@
   object-fit: contain;
   user-select: none;
 }
+/* The museum's painted look over the picture, lifting away after the arrival (Painted.tsx). */
+.stepin-picture {
+  position: absolute;
+  inset: 0;
+}
+.stepin-painted {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
 /* A still photo is never quite still on the far side: a slow drift, as if breathing. */
-.stepin-full.drift {
+.stepin-picture.drift {
   animation: stepin-drift 26s ease-in-out infinite alternate;
 }
 @keyframes stepin-drift {
@@ -450,7 +462,7 @@
   text-decoration: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  .stepin-full.drift {
+  .stepin-picture.drift {
     animation: none;
   }
 }

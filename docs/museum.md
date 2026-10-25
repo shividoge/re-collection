@@ -23,8 +23,16 @@ side the picture's own world comes out of the blur (`StepIn.tsx`):
   talk about it there;
 - any other photo fills the view and drifts slowly; a video plays, its own sound rising gently.
 
+Every photo and video hangs in the museum as an old oil painting, so snapshots look at home in
+gilded frames (`web/src/museum/paint.ts`): soft brushwork that keeps edges, brush marks laid along
+the picture's contours, rich but deep colour under warm varnish, a canvas weave and darkened
+edges. The painting stays on through the dive and the arrival; then it lifts away over a few
+seconds, leaving the photo or video exactly as it was taken, while the picture's own sound rises
+at the same time (`Painted.tsx`). For a visit, the 3D room takes over once the paint has lifted.
+
 **‹ Museum** (or Escape) runs the same journey backwards: the world smears away into the warp,
-and the view pulls back out of the frame to where the visitor stood.
+and the view pulls back out of the frame to where the visitor stood. The picture becomes a
+painting again on the way out.
 
 Quiet music plays while walking: Erik Satie's *Gymnopédie No. 1*, a public domain recording by
 Robin Alciatore for Musopen (`web/public/museum/audio/`, credits there). It starts softly on the
