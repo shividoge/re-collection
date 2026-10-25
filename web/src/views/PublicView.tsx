@@ -36,7 +36,7 @@ export function PublicView({ id }: { id: string }) {
     <div className="page">
       <header className="bar">
         <a href="#/" className="back">
-          ← Braindance
+          ← Re:Collection
         </a>
         <div className="bar-title">
           <strong>{moment?.moment.title || manifest.title || 'Untitled visit'}</strong> <EstimatedBadge manifest={manifest} />
