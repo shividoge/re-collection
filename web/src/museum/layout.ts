@@ -6,10 +6,12 @@
 // down −z), joined by doorways in the middle of the walls between them. Pictures hang on the
 // side walls, alternating left and right from front to back, then on the far wall; Next and
 // Previous follow that order, so the visitor walks forward through the exhibition.
+//
+// The rooms are a classic picture gallery (rose-red fabric walls, dark wood panelling, a
+// skylight), kept to a modest height and a single row of large pictures, with arched doorways
+// and furniture to walk around (Classic.tsx).
 
-export type RoomStyle = 'classic' | 'calm' | 'gallery' | 'salon' | 'hall'
-
-export interface StyleSpec {
+export interface RoomSpec {
   /** Room size in meters. */
   width: number
   depth: number
@@ -26,20 +28,7 @@ export interface StyleSpec {
   hang: number
 }
 
-export const STYLES: Record<RoomStyle, StyleSpec> = {
-  // A classic picture gallery (rose-red fabric walls, dark wood panelling, a skylight), kept to
-  // a modest height and a single row of large pictures. The doorway is arched.
-  classic: { width: 7, depth: 9.5, height: 4.4, perSide: 3, maxW: 1.4, maxH: 1.05, doorW: 1.7, doorH: 2.45, hang: 1.85 },
-  // The calm room, for the person with dementia (docs/museum.md "Why the calm room"): the
-  // size of a living room, a home-height ceiling, few but large pictures per room.
-  calm: { width: 6.4, depth: 7.2, height: 3.1, perSide: 2, maxW: 1.45, maxH: 1.15, doorW: 1.6, doorH: 2.35, hang: 1.55 },
-  // A bright modern gallery: pale wood, white walls, a skylight.
-  gallery: { width: 9, depth: 12, height: 4.4, perSide: 3, maxW: 1.9, maxH: 1.35, doorW: 2.2, doorH: 3, hang: 1.55 },
-  // A warm salon: deep walls, parquet, gilded frames under picture lights.
-  salon: { width: 7.6, depth: 9.6, height: 4.6, perSide: 3, maxW: 1.5, maxH: 1.2, doorW: 1.8, doorH: 2.8, hang: 1.62 },
-  // A grand hall: tall, long, stone floor, arches.
-  hall: { width: 9, depth: 17, height: 7, perSide: 4, maxW: 2.2, maxH: 1.6, doorW: 2.6, doorH: 4.2, hang: 1.6 },
-}
+export const SPEC: RoomSpec = { width: 7, depth: 9.5, height: 4.4, perSide: 3, maxW: 1.4, maxH: 1.05, doorW: 1.7, doorH: 2.45, hang: 1.85 }
 
 /** Wall thickness (m). */
 export const WALL = 0.24
@@ -106,8 +95,7 @@ export interface Feature {
 const CLEARANCE = 0.25
 
 export interface MuseumPlan {
-  style: RoomStyle
-  spec: StyleSpec
+  spec: RoomSpec
   rooms: Room[]
   walls: WallPiece[]
   doorways: Doorway[]
@@ -118,19 +106,19 @@ export interface MuseumPlan {
 }
 
 /** How many pictures one room holds: both side walls, plus the far wall. */
-function capacity(spec: StyleSpec, last: boolean, style: RoomStyle): number {
-  // The far wall has a doorway unless it's the last room: then one picture either side of it,
-  // otherwise one picture in the middle (in the classic gallery, a window instead).
-  return spec.perSide * 2 + (last ? (style === 'classic' ? 0 : 1) : 2)
+function capacity(spec: RoomSpec, last: boolean): number {
+  // The far wall has a doorway, with a picture either side of it, except in the last room,
+  // where it has a window instead (Classic.tsx Window).
+  return spec.perSide * 2 + (last ? 0 : 2)
 }
 
 /** The rooms an exhibition of `count` pictures needs, with walls, doorways and picture slots. */
-export function planMuseum(count: number, style: RoomStyle): MuseumPlan {
-  const spec = STYLES[style]
+export function planMuseum(count: number): MuseumPlan {
+  const spec = SPEC
   let rooms = 1
   while (true) {
     let fits = 0
-    for (let r = 0; r < rooms; r++) fits += capacity(spec, r === rooms - 1, style)
+    for (let r = 0; r < rooms; r++) fits += capacity(spec, r === rooms - 1)
     if (fits >= count) break
     rooms++
   }
@@ -200,13 +188,8 @@ export function planMuseum(count: number, style: RoomStyle): MuseumPlan {
       }
     }
     if (left <= 0) break
-    if (last && style === 'classic') {
-      // The classic gallery's last room has a window on its far wall (Classic.tsx Window).
-    } else if (last) {
-      // The far wall of the last room: one picture, a little larger, in the middle.
-      add(room, [0, spec.hang, room.zBack], [0, 1], Math.min(spec.width * 0.4, spec.maxW * 1.2), spec.maxH * 1.15)
-      left--
-    } else {
+    // The last room's far wall has the window.
+    if (!last) {
       // Either side of the doorway, starting on the side the visitor is already on.
       const sideOfDoor = (half - spec.doorW / 2) / 2 + spec.doorW / 2
       const w = Math.min(spec.maxW, (half - spec.doorW / 2) * 0.7)
@@ -229,24 +212,22 @@ export function planMuseum(count: number, style: RoomStyle): MuseumPlan {
       })
     }
 
-  // The classic gallery is furnished: a round settee in the middle of each room, candle
+  // The rooms are furnished: a round settee in the middle of each room, candle
   // torchères halfway along the front wall (either side of the fireplace or the doorway, clear
   // of the pictures), a fireplace on the entrance wall, and pedestals with vases flanking the
   // window in the last room.
   const features: Feature[] = []
-  if (style === 'classic') {
-    for (const room of roomList) {
-      const cz = (room.zFront + room.zBack) / 2
-      features.push({ kind: 'settee', room: room.index, x: 0, z: cz, hw: 0.78, hd: 0.78 })
-      for (const side of [-1, 1]) {
-        features.push({ kind: 'torch', room: room.index, x: side * 2.15, z: room.zFront - 0.45, hw: 0.22, hd: 0.22 })
-        if (room.index === rooms - 1) features.push({ kind: 'pedestal', room: room.index, x: side * 2.35, z: room.zBack + 0.6, hw: 0.28, hd: 0.28 })
-      }
+  for (const room of roomList) {
+    const cz = (room.zFront + room.zBack) / 2
+    features.push({ kind: 'settee', room: room.index, x: 0, z: cz, hw: 0.78, hd: 0.78 })
+    for (const side of [-1, 1]) {
+      features.push({ kind: 'torch', room: room.index, x: side * 2.15, z: room.zFront - 0.45, hw: 0.22, hd: 0.22 })
+      if (room.index === rooms - 1) features.push({ kind: 'pedestal', room: room.index, x: side * 2.35, z: room.zBack + 0.6, hw: 0.28, hd: 0.28 })
     }
-    features.push({ kind: 'fireplace', room: 0, x: 0, z: roomList[0].zFront - 0.22, hw: 1.05, hd: 0.22 })
   }
+  features.push({ kind: 'fireplace', room: 0, x: 0, z: roomList[0].zFront - 0.22, hw: 1.05, hd: 0.22 })
 
-  return { style, spec, rooms: roomList, walls, doorways, slots, features, start: [0, roomList[0].zFront - 1.6] }
+  return { spec, rooms: roomList, walls, doorways, slots, features, start: [0, roomList[0].zFront - 1.6] }
 }
 
 /** Whether a visitor may stand at (x, z): inside a room, or in a doorway, away from walls. */

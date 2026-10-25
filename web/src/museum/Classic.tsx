@@ -45,7 +45,7 @@ let parquetMaps: SurfaceMaps | null = null
  * from one piece to the next.
  */
 export function darkParquet(): THREE.MeshPhysicalMaterial {
-  parquetMaps ??= woodFloor('herringbone', [112, 70, 42], [54, 31, 18], 23)
+  parquetMaps ??= woodFloor([112, 70, 42], [54, 31, 18], 23)
   const tile = (t: THREE.Texture) => {
     const c = t.clone()
     c.repeat.set(1 / 1.6, 1 / 1.6)

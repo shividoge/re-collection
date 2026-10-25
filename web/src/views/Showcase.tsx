@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 
 import { guide, publicGuide, STATIC } from '../api';
 import type { CaptureDetail, Fact, Moment, Progress, PublicCapture, PublicSession } from '../api';
@@ -6,6 +6,8 @@ import { RecallChart } from '../showcase/RecallChart';
 import { HeroCloud, MiniViewer } from '../showcase/Scenes';
 import type { Layers } from '../showcase/Scenes';
 import '../showcase/showcase.css';
+
+const MemoryLane = lazy(() => import('../showcase/MemoryLane'));
 
 type Entry = {
   capture: PublicCapture;
@@ -68,6 +70,7 @@ export function Showcase() {
       <nav className="site-nav">
         <a href="#/" className="sn-brand"><span className="mark">◉</span> Braindance</a>
         <div className="links">
+          <a href="#lane">Her museum</a>
           <a href="#how">How it works</a>
           <a href="#hood">Under the hood</a>
           {entries && entries.length > 0 && <a href="#moments">Moments</a>}
@@ -117,6 +120,12 @@ export function Showcase() {
           something they can walk back into, gently, at their pace, with the family in control of every word.
         </p>
       </section>
+
+      {entries && entries.length > 0 && (
+        <Suspense fallback={null}>
+          <MemoryLane captures={entries.map((e) => e.capture)} diveId={scene?.capture.id} />
+        </Suspense>
+      )}
 
       {entries && scene && <Walkthrough entries={entries} scene={scene} setSceneId={setSceneId} />}
 

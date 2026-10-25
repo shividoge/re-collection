@@ -10,7 +10,7 @@ const RUN = 3.2
 /**
  * Guided walks glide: they speed up gently, keep an unhurried pace (m/s), and slow down well
  * before the stop (accelerations in m/s²), and the view turns softly (a rate per second; higher
- * is quicker). The calm room goes slower still.
+ * is quicker).
  */
 const GUIDED_PACE = 1.15
 const ACCEL = 0.8
@@ -39,9 +39,6 @@ const smoothstep = (t: number) => {
  * - W A S D or the arrow keys to walk (Shift to walk faster).
  * - Guided walks (tap a picture or the floor, or Next / Previous) follow a route through the
  *   doorways and end facing the picture.
- * With `guided` (the calm room) there is no free walking at all: only slow, gentle guided
- * walks, and a softer drag to look, since sudden or self-steered movement in a 3D view is what
- * makes people dizzy and lost.
  * Whenever the visitor isn't on a guided walk, `onLook` reports which of the first `hung` slots
  * they're looking at (−1: none), so its label can show without pressing anything.
  */
@@ -51,7 +48,6 @@ export function Walker({
   onLook,
   hung = 0,
   ref,
-  guided = false,
   frozen = false,
 }: {
   frozen?: boolean
@@ -60,7 +56,6 @@ export function Walker({
   onLook?: (slot: number) => void
   hung?: number
   ref?: Ref<WalkerHandle>
-  guided?: boolean
 }) {
   const { camera, gl } = useThree()
   const pos = useRef<[number, number]>([plan.start[0], plan.start[1]])
@@ -120,7 +115,7 @@ export function Walker({
       const dy = e.clientY - last.y
       last = { x: e.clientX, y: e.clientY }
       // Finger and mouse both "grab" the view: drag left, the room turns left.
-      const k = (e.pointerType === 'touch' ? 0.006 : 0.0045) * (guided ? 0.6 : 1)
+      const k = e.pointerType === 'touch' ? 0.006 : 0.0045
       yaw.current += dx * k
       pitch.current = Math.max(-0.7, Math.min(0.6, pitch.current + dy * k))
       // Looking around by hand takes over from a guided turn.
@@ -139,7 +134,7 @@ export function Walker({
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
     }
-  }, [gl, guided])
+  }, [gl])
 
   useEffect(() => {
     const typing = (e: KeyboardEvent) => {
@@ -147,7 +142,7 @@ export function Walker({
       return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')
     }
     const down = (e: KeyboardEvent) => {
-      if (typing(e) || guided || frozenRef.current) return
+      if (typing(e) || frozenRef.current) return
       keys.current.add(e.code)
       if (e.code.startsWith('Arrow')) e.preventDefault()
     }
@@ -161,7 +156,7 @@ export function Walker({
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', blur)
     }
-  }, [guided])
+  }, [])
 
   useFrame((_, dt) => {
     // Stepped into a picture: the dive has the camera.
@@ -191,7 +186,7 @@ export function Walker({
         remaining += Math.hypot(p[0] - from[0], p[1] - from[1])
         from = p
       }
-      const pace = GUIDED_PACE * (guided ? 0.7 : 1)
+      const pace = GUIDED_PACE
       const target = Math.min(pace, Math.sqrt(2 * DECEL * remaining) + 0.05)
       speed.current += Math.max(-DECEL * 2 * step, Math.min(ACCEL * step, target - speed.current))
       let travel = speed.current * step
@@ -219,7 +214,7 @@ export function Walker({
         wantYaw = heading + turnBy(heading, lookGoal.current.yaw) * w
         wantPitch = lookGoal.current.pitch * w
       }
-      const ease = 1 - Math.exp(-TURN * (guided ? 0.7 : 1) * step)
+      const ease = 1 - Math.exp(-TURN * step)
       yaw.current += turnBy(yaw.current, wantYaw) * ease
       pitch.current += (wantPitch - pitch.current) * ease
       if (path.current.length === 0) {
@@ -229,7 +224,7 @@ export function Walker({
     } else if (lookGoal.current) {
       // At the stop: finish turning to the picture, softly.
       const g = lookGoal.current
-      const ease = 1 - Math.exp(-TURN * (guided ? 0.7 : 1) * step)
+      const ease = 1 - Math.exp(-TURN * step)
       const dy = turnBy(yaw.current, g.yaw)
       const dp = g.pitch - pitch.current
       yaw.current += dy * ease

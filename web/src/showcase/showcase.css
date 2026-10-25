@@ -208,3 +208,39 @@
 }
 
 .site .recall-svg { width: 100%; max-width: 640px; height: auto; color: var(--muted); background: var(--panel-solid); border-radius: var(--radius); }
+
+/* Memory Museum on the front page: scroll walks the hall, the last picture becomes the scan */
+.site .lane { position: relative; }
+.site .lane-sticky { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; background: #1b1210; }
+.site .lane-canvas { position: absolute !important; inset: 0; }
+.site .lane-copy { position: absolute; left: 0; right: 0; top: 0; padding: 88px 24px 0; max-width: var(--max); margin: 0 auto; pointer-events: none;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.6); transition: opacity 0.2s linear; }
+.site .lane-copy h2 { font-size: clamp(36px, 6vw, 68px); line-height: 1; letter-spacing: -0.03em; margin: 0; max-width: 14ch; }
+.site .lane-copy .muted { max-width: 46ch; margin-top: 14px; font-size: 17px; color: #e8ddd2; }
+.site .lane-label { position: absolute; left: 50%; bottom: 84px; transform: translate(-50%, 12px); display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 12px 22px; border-radius: 14px; background: rgba(20, 13, 12, 0.72); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(246, 238, 228, 0.14); text-align: center; opacity: 0; transition: opacity 0.5s ease, transform 0.5s ease; max-width: calc(100% - 32px); }
+.site .lane-label.on { opacity: 1; transform: translate(-50%, 0); }
+.site .lane-label strong { font-size: clamp(18px, 2.4vw, 24px); font-family: Georgia, 'Times New Roman', serif; font-weight: 500; }
+.site .lane-n { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; color: var(--accent); }
+.site .lane-end { position: absolute; inset: 0; background: var(--bg); }
+.site .lane-end .hero-cloud { opacity: 1; }
+.site .lane-end-copy { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 24px 96px; max-width: var(--max); margin: 0 auto;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.7); }
+.site .lane-end-copy h2 { font-size: clamp(30px, 5vw, 56px); line-height: 1.02; letter-spacing: -0.03em; margin: 0 0 10px; max-width: 18ch; }
+.site .lane-end-copy .muted { max-width: 46ch; margin-bottom: 22px; }
+.site .lane-tour { position: absolute; right: 20px; bottom: 24px; font: inherit; font-size: 14px; padding: 10px 16px; border-radius: 999px; cursor: pointer;
+  color: var(--text); background: rgba(20, 13, 12, 0.7); border: 1px solid rgba(246, 238, 228, 0.2); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.site .lane-tour:hover { border-color: var(--accent); }
+.site .lane-tour:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.site .lane-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(246, 238, 228, 0.08); }
+.site .lane-progress span { display: block; height: 100%; background: var(--accent); transform-origin: left; }
+@media (max-width: 700px) {
+  .site .lane-copy { padding-top: 72px; }
+  .site .lane-label { bottom: 76px; }
+  .site .lane-end-copy { padding-bottom: 84px; }
+}
+.site .lane-end::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(0deg, rgba(7, 8, 10, 0.92) 0%, rgba(7, 8, 10, 0.55) 34%, rgba(7, 8, 10, 0) 62%); }
+.site .lane-end-copy { z-index: 1; }
+.site .lane-end-actions { display: flex; gap: 12px; flex-wrap: wrap; }
