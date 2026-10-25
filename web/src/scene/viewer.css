@@ -303,6 +303,11 @@ html.bd-virtual-cursor * {
 .viewer-video-float .viewer-video {
   flex: 1;
 }
+.viewer-timeline .room-view {
+  display: flex;
+  gap: 4px;
+}
+.viewer-timeline .room-view button.on,
 .viewer-timeline .video-toggle.on {
   border-color: var(--bd-accent, #6ee7ff);
   color: var(--bd-accent, #6ee7ff);

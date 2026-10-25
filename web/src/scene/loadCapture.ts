@@ -3,7 +3,7 @@
 // substituted.
 
 import { captureFileUrl, fetchBytes, fetchText, guide } from '../api'
-import type { Manifest } from '../api'
+import type { Manifest, RoomSplat } from '../api'
 import { parseFramesJsonl, parseRoomBin, type FrameLog, type PointCloud } from './formats'
 
 export interface LoadedCapture {
@@ -15,6 +15,8 @@ export interface LoadedCapture {
   frames: FrameLog | null
   /** The recorded video. Its frames are stored sensor-landscape; the viewer turns them upright. */
   videoUrl: string | null
+  /** The room as 3D Gaussians, when the capture has one; the points stay available as the raw view. */
+  splat: (RoomSplat & { url: string }) | null
   errors: string[]
 }
 
@@ -44,6 +46,7 @@ export async function loadGuideCapture(id: string): Promise<LoadedCapture> {
     cloud,
     frames,
     videoUrl: manifest.video?.file ? captureFileUrl(id, manifest.video.file) : null,
+    splat: manifest.room?.splat ? { ...manifest.room.splat, url: captureFileUrl(id, manifest.room.splat.file) } : null,
     errors,
   }
 }
@@ -57,6 +60,7 @@ export async function loadRoomFile(file: File): Promise<LoadedCapture> {
     cloud: parseRoomBin(await file.arrayBuffer()),
     frames: null,
     videoUrl: null,
+    splat: null,
     errors: [],
   }
 }

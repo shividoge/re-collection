@@ -28,10 +28,19 @@ export type Manifest = {
   attendees: string[]
   video: { file: string; width: number; height: number; fps: number; durationSec: number; frameCount: number }
   depth: { file: string; confidenceFile: string; width: number; height: number; rateHz: number; count: number }
-  room?: { bin: string; ply: string; points: number; voxelMeters: number }
+  room?: { bin: string; ply: string; points: number; voxelMeters: number; source?: string; splat?: RoomSplat }
   transcript?: { file: string; locale: string }
   keyframes?: { dir: string; everySec: number; count: number }
   warnings: string[]
+}
+
+/** Optional 3D Gaussian splat of the static room (docs/capture-format.md "room splat"). Same world coordinates as room.bin. */
+export type RoomSplat = {
+  file: string
+  format: '3dgs-ply'
+  count: number
+  shDegree: number
+  source: 'trained-from-video' | 'trained-from-lidar-capture'
 }
 
 export type CaptureDetail = {
