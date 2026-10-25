@@ -53,7 +53,7 @@ describe('worker protocol', () => {
 
   test('claim → inputs → heartbeat progress → outputs → complete bake', async () => {
     const t = await completedCapture()
-    expect(await t.mutation(api.worker.claim, fedoraGpu)).toBeNull() // a GPU worker without bake takes nothing
+    expect(await t.mutation(api.worker.claim, { ...fedoraGpu, kinds: ['convert' as const] })).toBeNull() // a convert-only GPU worker takes nothing
     const claimed = await t.mutation(api.worker.claim, cpu)
     expect(claimed).toMatchObject({ kind: 'bake', captureId: CAPTURE_ID, attempt: 1 })
     expect(await t.mutation(api.worker.claim, cpu)).toBeNull() // leased, not handed out twice
@@ -267,6 +267,58 @@ describe('worker protocol', () => {
     const job = await t.mutation(api.worker.claim, cpu)
     await t.mutation(api.captures.remove, { captureId: CAPTURE_ID })
     expect(await t.mutation(api.worker.heartbeat, as(job))).toEqual({ ok: false, cancelled: true })
+  })
+})
+
+describe('phone capture → room splat', () => {
+  const lidarSplat = { file: 'room.spz', format: 'spz' as const, count: 1000, shDegree: 1, source: 'trained-from-lidar-capture' as const }
+
+  test('a valid upload queues the splat for any GPU worker; done, it is in the manifest and never queued again', async () => {
+    const t = await completedCapture()
+    expect(await statusOf(t)).toMatchObject({ source: 'phone', upload: 'done', bake: 'queued', splat: 'queued' })
+    expect(await t.mutation(api.worker.claim, cpu)).toMatchObject({ kind: 'bake' }) // the bake worker never gets it
+    const job = await t.mutation(api.worker.claim, fedoraGpu) // no frame needs: the 16 GB card can take it
+    expect(job).toMatchObject({ kind: 'splat', captureId: CAPTURE_ID })
+    expect((await jobRow(t, job!.jobId))?.needs).toEqual({ gpu: true })
+    await writeOutputs(t, job!, [{ name: 'room.spz', area: 'raw', bytes: new Uint8Array(100), contentType: 'application/octet-stream' }])
+    await t.mutation(api.worker.complete, { ...as(job), result: { kind: 'splat', splat: lidarSplat } })
+    const detail = await t.query(api.captures.get, { captureId: CAPTURE_ID })
+    expect(JSON.parse(detail!.manifestJson).room.splat).toEqual(lidarSplat)
+    expect(detail?.status.splat).toBe('done')
+
+    // The phone sends the package again: re-baked, but the splat stays and isn't trained again.
+    await uploadCapture(t, tinyCapture())
+    await t.action(api.captures.complete, { captureId: CAPTURE_ID })
+    expect(await statusOf(t)).toMatchObject({ splat: 'done', bake: 'queued' })
+    expect(JSON.parse((await t.query(api.captures.get, { captureId: CAPTURE_ID }))!.manifestJson).room.splat).toEqual(lidarSplat)
+    expect(await t.mutation(api.worker.claim, fedoraGpu)).toBeNull()
+    await runScheduled(t)
+  })
+
+  test('backfill: dry run lists, the real run queues once, finished or unfinished captures are left alone', async () => {
+    const t = await completedCapture()
+    // As captures from before this change: complete, splat skipped, no job.
+    await t.run(async (ctx) => {
+      for (const job of await ctx.db.query('jobs').collect()) if (job.kind === 'splat') await ctx.db.delete(job._id)
+      const c = (await ctx.db.query('captures').collect())[0]
+      await ctx.db.patch(c._id, { status: { ...c.status, splat: 'skipped' } })
+    })
+    const OTHER = '99999999-2222-4333-8444-555555555555'
+    const other = tinyCapture({ id: OTHER })
+    await t.mutation(api.captures.begin, { manifestJson: other.manifestJson }) // still receiving
+
+    const results = (r: { captureId: string; result: string }[]) => Object.fromEntries(r.map((x) => [x.captureId, x.result]))
+    expect(results(await t.mutation(internal.splats.backfill, { dryRun: true }))).toEqual({ [CAPTURE_ID]: 'would queue', [OTHER]: 'upload receiving' })
+    expect((await statusOf(t))?.splat).toBe('skipped')
+    expect(results(await t.mutation(internal.splats.backfill, { dryRun: false }))[CAPTURE_ID]).toBe('queued')
+    expect((await statusOf(t))?.splat).toBe('queued')
+    expect(results(await t.mutation(internal.splats.backfill, { dryRun: false }))[CAPTURE_ID]).toBe('already queued')
+
+    const job = await t.mutation(api.worker.claim, fedoraGpu)
+    await writeOutputs(t, job!, [{ name: 'room.spz', area: 'raw', bytes: new Uint8Array(100), contentType: 'application/octet-stream' }])
+    await t.mutation(api.worker.complete, { ...as(job), result: { kind: 'splat', splat: lidarSplat } })
+    expect(results(await t.mutation(internal.splats.backfill, { dryRun: false }))[CAPTURE_ID]).toBe('has a splat')
+    await runScheduled(t)
   })
 })
 

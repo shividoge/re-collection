@@ -256,9 +256,14 @@ class OutOfMemoryError(RuntimeError):
 MANIFEST = '{\r\n  "id": "cap1", "title": "Grandma’s birthday"\n}'
 
 
+# What a splat job downloads for this manifest (a converted video's, depth v2).
+SPLAT_MANIFEST = json.dumps({"id": "cap1", "source": "video", "video": {"file": "video.mp4"}, "room": {"bin": "room.bin"},
+                             "depth": {"file": "depth.bin", "index": "depth.index.json", "encoding": "v2"}})
+SPLAT_INPUTS = ("manifest.json", "frames.jsonl", "video.mp4", "room.bin", "depth.bin", "depth.index.json")
+
+
 class FakePipeline:
     max_frames = 67
-    splat_inputs = ("manifest.json", "frames.jsonl", "video.mp4", "room.bin")
 
     def __init__(self, mode: str = "ok") -> None:
         self.mode = mode
@@ -343,11 +348,11 @@ class Harness:
         return self.convex.add_job("convert", files={"source.mov": ("video", b"MOVIE" * 1000)},
                                    manifest_json=stub, **kw)  # type: ignore[arg-type]
 
-    def splat_job(self) -> str:
-        files = {n: ("raw", f"{n} bytes".encode()) for n in self.pipeline.splat_inputs}
+    def splat_job(self, manifest_json: str = SPLAT_MANIFEST, inputs: tuple[str, ...] = SPLAT_INPUTS) -> str:
+        files = {n: ("raw", f"{n} bytes".encode()) for n in inputs}
         files["keyframes/k0000.jpg"] = ("raw", b"not needed")
         files["source.mov"] = ("video", b"not needed")
-        return self.convex.add_job("splat", files=files)
+        return self.convex.add_job("splat", files=files, manifest_json=manifest_json)
 
     def job_dir_gone(self, job_id: str) -> bool:
         return not (self.workdir / job_id).exists()
@@ -400,10 +405,41 @@ def test_splat_happy_path(harness: Harness) -> None:
     j = harness.convex.jobs[job]
     assert j["result"] == {"kind": "splat", "splat": {"file": "room.spz", "format": "spz", "count": 1234,
                                                       "shDegree": 0, "source": "trained-from-video"}}
-    assert harness.pipeline.calls[0]["inputs"] == sorted(harness.pipeline.splat_inputs)
-    assert sorted(harness.store.gets) == sorted(f"{job}/{n}" for n in harness.pipeline.splat_inputs)
+    assert harness.pipeline.calls[0]["inputs"] == sorted(SPLAT_INPUTS)
+    assert sorted(harness.store.gets) == sorted(f"{job}/{n}" for n in SPLAT_INPUTS)
     assert harness.convex.objects == {"room.spz": harness.pipeline.written["room.spz"]}
     assert harness.job_dir_gone(job)
+
+
+def test_splat_phone_capture_downloads_its_own_files(harness: Harness) -> None:
+    # An older phone capture: HEVC video.mov and depth v1 with confidence.bin.
+    manifest = json.dumps({"id": "cap1", "video": {"file": "video.mov"}, "room": {"bin": "room.bin"},
+                           "depth": {"file": "depth.bin", "confidenceFile": "confidence.bin"}})
+    inputs = ("manifest.json", "frames.jsonl", "video.mov", "room.bin", "depth.bin", "confidence.bin")
+    job = harness.splat_job(manifest, inputs)
+    harness.worker.run(once=True)
+
+    assert harness.convex.jobs[job]["status"] == "done"
+    assert harness.pipeline.calls[0]["inputs"] == sorted(inputs)
+    assert sorted(harness.store.gets) == sorted(f"{job}/{n}" for n in inputs)
+
+
+def test_splat_without_usable_manifest_fails_for_good(harness: Harness) -> None:
+    job = harness.splat_job(json.dumps({"id": "cap1", "video": {"file": "video.mp4"}}))
+    harness.worker.run(once=True)
+
+    j = harness.convex.jobs[job]
+    assert j["status"] == "failed" and "manifest" in str(j["error"])
+    assert harness.pipeline.calls == []
+
+
+def test_splat_missing_input_fails_for_good(harness: Harness) -> None:
+    job = harness.splat_job(inputs=SPLAT_INPUTS[:-1])
+    harness.worker.run(once=True)
+
+    j = harness.convex.jobs[job]
+    assert j["status"] == "failed" and "depth.index.json" in str(j["error"])
+    assert harness.pipeline.calls == []
 
 
 @pytest.mark.parametrize("how", ["cancelled", "lease_lost"])

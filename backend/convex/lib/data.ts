@@ -50,6 +50,19 @@ export async function getPerson(ctx: Ctx): Promise<Person> {
   return row ? { displayName: row.displayName, preferredAddress: row.preferredAddress } : { displayName: '', preferredAddress: '' }
 }
 
+/**
+ * A manifest the phone (re)sends, keeping the splat the splat job added to the capture's current
+ * one when the new manifest doesn't list one (the phone never knows about it).
+ */
+export function keepSplat(capture: Pick<Doc<'captures'>, 'manifestJson'>, manifestJson: string): string {
+  const splat = manifestOf(capture)?.room?.splat
+  if (!splat) return manifestJson
+  const next = JSON.parse(manifestJson) as { room?: Record<string, unknown> }
+  if (!next.room || next.room.splat) return manifestJson
+  next.room.splat = splat
+  return JSON.stringify(next)
+}
+
 /** The capture's manifest, or null while a video capture is still waiting for its conversion. */
 export function manifestOf(capture: Pick<Doc<'captures'>, 'manifestJson'>): Manifest | null {
   try {

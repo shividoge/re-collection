@@ -8,8 +8,8 @@ import { action, internalQuery, mutation } from './_generated/server'
 import { getCapture, invalid, listFiles, patchStatus, workerKey } from './lib/data'
 import { canRun, cancelled, enqueue, heartbeat as extendLease, holdsLease, lease, markDone, markFailed, requireLease, requireToken, seeWorker } from './lib/jobs'
 import { r2Config, stableGetUrl } from './lib/r2'
-import { completeUpload, publishOutputs } from './lib/stages'
-import { convertFrames, isFileName } from './lib/validate'
+import { SPLAT_NEEDS, completeUpload, publishOutputs } from './lib/stages'
+import { isFileName } from './lib/validate'
 import { createTarget, finishUpload, loadUpload } from './uploads'
 import { shown } from './lib/errors'
 import { area, derived, finishedPart, jobKind, progress, uploadTarget, type Area, type UploadTarget } from './validators'
@@ -178,7 +178,7 @@ export const complete = mutation({
       await markDone(ctx, job)
       const fresh = (await ctx.db.get(capture._id)) ?? capture
       if (manifest.room?.splat) await patchStatus(ctx, fresh, { splat: 'done' })
-      else await enqueue(ctx, fresh, 'splat', { gpu: true, frames: convertFrames(manifest.video.durationSec) })
+      else await enqueue(ctx, fresh, 'splat', SPLAT_NEEDS)
     } else {
       if (!uploadedHere('raw', result.splat.file)) throw invalid(`${result.splat.file} wasn't uploaded by this attempt (finish it with worker.finishOutput first).`)
       const manifest = JSON.parse(capture.manifestJson) as { room?: Record<string, unknown> }

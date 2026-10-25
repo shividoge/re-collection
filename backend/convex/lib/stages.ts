@@ -100,8 +100,29 @@ export async function completeUpload(ctx: MutationCtx, capture: Doc<'captures'>)
     await ctx.db.patch(running._id, { status: 'failed', error: 'A newer upload replaced its inputs.', leaseUntil: null, updatedAt: Date.now() })
   }
   if (running?.status !== 'queued') await enqueue(ctx, (await ctx.db.get(capture._id)) ?? capture, 'bake', { gpu: false })
+  // A video capture's splat is queued when its conversion completes (worker.complete).
+  if (capture.status.source === 'phone') await maybeQueueSplat(ctx, capture)
   return check
 }
+
+/**
+ * Queues the room splat (§4.5) for a capture whose room doesn't have one yet: a phone capture
+ * trains it on its own video frames, LiDAR depth and ARKit poses, a converted video on its
+ * estimates. Returns why it didn't when it doesn't. Never replaces a splat or a finished job.
+ */
+export async function maybeQueueSplat(ctx: MutationCtx, capture: Doc<'captures'>, { dryRun = false } = {}): Promise<'queued' | 'would queue' | 'has a splat' | 'no room' | 'already queued'> {
+  const fresh = (await ctx.db.get(capture._id)) ?? capture
+  const manifest = manifestOf(fresh)
+  if (!manifest?.room) return 'no room'
+  if (manifest.room.splat || fresh.status.splat === 'done') return 'has a splat'
+  if (await activeJob(ctx, fresh.captureId, 'splat')) return 'already queued'
+  if (dryRun) return 'would queue'
+  await enqueue(ctx, fresh, 'splat', SPLAT_NEEDS)
+  return 'queued'
+}
+
+/** Any GPU worker: training uses at most 240 views (a 30 s phone capture peaked at 9.5 GB). */
+export const SPLAT_NEEDS = { gpu: true }
 
 /**
  * Publishes what the job's lease-holding attempt stored (worker.finishOutput stages files; only

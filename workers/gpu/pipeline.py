@@ -6,7 +6,8 @@ on the GX10) divided by what one model frame costs at the peak (`estimate.frames
 A convert job runs DA3 in one pass when its frames fit, else in overlapping windows; if free
 memory has shrunk since startup (a shared GPU), the windows shrink with it.
 
-A splat job trains from the raw capture files. On a small card, DA3's weights move to the CPU
+A splat job trains from the raw capture files: a converted video's, or a phone capture's (its
+measured LiDAR depth and ARKit poses). On a small card, DA3's weights move to the CPU
 while the splat trains and come back afterwards.
 """
 
@@ -45,8 +46,6 @@ def _checkpoint(should_stop: Callable[[], bool]) -> Callable[[], None]:
 
 
 class GpuPipeline:
-    splat_inputs = ("manifest.json", "frames.jsonl", "video.mp4", "room.bin", "depth.bin", "depth.index.json")
-
     def __init__(self, model: str = DEFAULT_MODEL, device: str | None = None, max_frames: int | None = None,
                  log: Callable[[str], None] = print) -> None:
         import torch
@@ -117,7 +116,7 @@ class GpuPipeline:
         out.mkdir(parents=True, exist_ok=True)
         spz.write_spz(out / "room.spz", g["means"], g["scales"], g["quats"], g["opacities"], g["sh"])
         return {"file": "room.spz", "format": "spz", "count": int(len(g["means"])), "shDegree": 1,
-                "source": "trained-from-video"}
+                "source": "trained-from-lidar-capture" if splat.is_lidar(capture) else "trained-from-video"}
 
 
 PIPELINE_KEYS = ("BRAINDANCE_DA3_MODEL", "WORKER_MAX_FRAMES", "FFMPEG", "FFPROBE")
