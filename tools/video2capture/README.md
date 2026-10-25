@@ -10,25 +10,32 @@ training). Everything it makes is an estimate; the manifest says so (`"source": 
 
 ## What it does
 
-1. Samples up to 10 frames per second (as many as fit in GPU memory; longer videos are sampled
-   more sparsely) and runs Depth Anything 3 on all of them at once: depth, poses, intrinsics, scale.
-2. Turns the world so gravity points down (a handheld camera keeps its x axis level).
-3. Decides which pixels may become part of the **static room**. It drops:
-   - pixels at depth jumps (the "flying pixels" that streak between a person and the wall);
-   - pixels that neighbouring frames contradict (floaters, double walls);
-   - the least confident 5%, and sky;
-   - people and pets (torchvision Mask R-CNN).
-4. Fuses the rest into `room.bin` at 1 cm, at twice the model's resolution, coloured from the
-   full-resolution video.
-5. `--splat train` (default): trains `room.splat.ply` on the frames with gsplat (3DGS-MCMC,
-   people masked out of the loss, depth kept close to the model's, a per-frame exposure
-   correction), starting from the fused room. `--splat none` skips it. Format: `docs/capture-format.md`,
-   "room splat". The viewer draws it with Spark and keeps "Points (raw)" a click away.
-6. Writes `depth.bin` for the people replay from every model frame (people kept, depth edges
-   removed), `frames.jsonl` with each video frame's real timestamp and pose, keyframes, the manifest.
+The stages live in `convert.py` and `splat.py`; the CLI and the GPU worker (`workers/gpu`) run
+the same code, and the worker keeps the models loaded between jobs.
 
-Differences from a phone capture: depth comes at the model's sample rate (up to 10 Hz, written
-in `depth.rateHz`), on the same 256×192 grid; there's no scan phase and no transcript.
+1. Reads the video once (PyAV): frame timestamps from the container, the model's frames and the
+   keyframes (1 per second) in one decode pass. `video.mp4` (H.264) is transcoded by one ffmpeg
+   process at the same time, keeping every frame's own timestamp (checked afterwards).
+2. Runs Depth Anything 3 on 10 frames per second of video: depth, poses, intrinsics, metric scale.
+   When the frames don't fit in GPU memory in one pass, it runs overlapping windows and chains
+   them with a rigid fit on the frames they share (`align.py`); big windows are needed for that
+   to stay accurate (see `workers/gpu/README.md`, "Routing").
+3. Turns the world so gravity points down (a handheld camera keeps its x axis level).
+4. Decides which pixels may become part of the **static room**. It drops pixels at depth jumps,
+   pixels neighbouring frames contradict, the least confident 5%, sky, and people and pets
+   (torchvision Mask R-CNN).
+5. Fuses the rest into `room.bin` at 1.5 cm at the model's own resolution, each voxel the
+   confidence-weighted average of the pixels in it, coloured from the video.
+6. Writes depth for the people replay from every model frame on the 256×192 grid (people kept,
+   depth edges removed, nearest sampling only), `frames.jsonl` with each video frame's real
+   timestamp and pose, keyframes, the manifest.
+7. `--splat train` (default): trains the room splat with gsplat (3DGS-MCMC, 4 frames per step,
+   30 passes over the frames, people masked out of the loss, depth kept close to the model's, a
+   per-frame exposure correction), then keeps the 500,000 Gaussians that show most in the
+   frames (exact per-Gaussian blending weight) and drops the ones no frame showed.
+
+`--format v1` (default) writes what the guide imports (depth.bin + confidence.bin, room.ply,
+`room.splat.ply`); `--format v3` writes the architecture-v3 package (depth v2, `room.spz`).
 
 The script stops with an error instead of writing a capture if the model's depth, scale, poses or
 intrinsics aren't finite. Pixels without usable depth are written as depth 0, confidence 0.
@@ -42,7 +49,8 @@ git clone https://github.com/ByteDance-Seed/Depth-Anything-3 da3
 uv pip install --python .venv/bin/python -e da3 moviepy==1.0.3 addict matplotlib pycolmap evo
 ```
 
-ffmpeg from Homebrew (`brew install ffmpeg`) has everything the script needs.
+ffmpeg from Homebrew (`brew install ffmpeg`) has everything the script needs. Also `uv pip install av`
+(PyAV) in every setup.
 
 ## Setup on Linux with an NVIDIA GPU (CUDA), once
 
@@ -174,17 +182,15 @@ data and validates it (`guide/src/validate.mjs`). Without `--import`, import it 
 capture right away (viewer, Memory Window, museum), but only queues fact extraction: restart the guide
 to start it.
 
-Options: `--out` (default `out`), `--sample-fps` (default 10), `--max-frames` (default: what fits
-in GPU memory), `--voxel` (default 0.01 m) and `--max-points` (default 2,000,000; big scenes get
-coarser voxels), `--splat train|none`, `--splat-steps` (7000), `--splat-max` (1,000,000 Gaussians),
-`--splat-width` (training image width, 1280), `--device mps|cuda|cpu`, `--model <folder>`. Check the
-result in the viewer: if the room looks upside down or mirrored, the pose conversion in
-`to_capture_pose` is the place to look.
+Options: `--out` (default `out`), `--format v1|v3`, `--sample-fps` (default 10), `--max-frames`
+(frames per model pass; default what fits), `--overlap`, `--voxel` (default 0.015 m), `--max-points`
+(default 2,000,000), `--splat train|none`, `--splat-passes` (30), `--splat-batch` (4), `--splat-max`
+(800,000 while training), `--splat-keep` (500,000 in the file), `--splat-width` (1280),
+`--device mps|cuda|cpu`, `--model <folder>`.
 
-Speed (3–10 s clips, 32–67 model frames, end to end): about 6 minutes on an RTX 5060 Ti, nearly
-all of it the 7000 training steps; about 40 s with `--splat none`. The GX10 trains 2–3 times
-slower than the 5060 Ti (it has less memory bandwidth), so use it only for videos that need more
-frames than a 16 GB card holds.
+Speed on the team clips (3–10 s), end to end with the splat: 50–150 s on the RTX 5060 Ti and
+43–132 s on the GX10 (was about 6 minutes, nearly all of it 7000 single-frame training steps).
+The splat file is SPZ, about 8 MB (the PLY was 42–77 MB).
 
 ## Checking quality
 
@@ -194,7 +200,7 @@ and coverage, people and pets excluded), and draws a comparison sheet that ends 
 outside the recorded path:
 
 ```bash
-.venv/bin/python video2capture.py clip.mov --holdout 8 --out out
+.venv/bin/python video2capture.py clip.mov --holdout 8 --out out   # or --holdout-frames <older run>.holdout.json
 .venv/bin/python evaluate.py --holdout out/capture-<id>.holdout.json \
   --capture before=<older capture of the same clip> --capture after=out/capture-<id> --sheet compare.jpg
 ```
