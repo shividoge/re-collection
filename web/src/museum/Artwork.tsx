@@ -38,34 +38,38 @@ function loadImage(src: string, done: (p: Picture) => void, failed: () => void):
 
 /**
  * A picture's texture and shape (w / h), loaded from its URL; null until it's ready or if it
- * fails. A video shows its poster until its first frame is ready, and keeps the poster if this
- * browser can't play it (an HEVC .mov in Chrome, say).
+ * fails. A video shows its poster until it plays, and keeps the poster if this browser can't
+ * play it (an HEVC .mov in Chrome, say). Also returns a video's element from the start, so it
+ * can be started while its poster is still showing.
  */
-function usePicture(art: Art): Picture | null {
+function usePicture(art: Art): { picture: Picture | null; video: HTMLVideoElement | null } {
   const [state, setState] = useState<Picture | null>(null)
+  const [video, setVideo] = useState<HTMLVideoElement | null>(null)
   useEffect(() => {
     if (art.kind === 'photo') return loadImage(art.src, setState, () => setState(null))
     let cancelled = false
     let videoTexture: THREE.Texture | null = null
     const stopPoster = art.poster ? loadImage(art.poster, (p) => !cancelled && setState((s) => (s?.video ? s : p)), () => {}) : () => {}
     const v = document.createElement('video')
+    setVideo(v)
     v.src = art.src
     v.crossOrigin = 'anonymous'
     v.muted = true
     v.loop = true
     v.playsInline = true
     v.preload = 'auto'
-    v.addEventListener(
-      'loadeddata',
-      () => {
-        if (cancelled) return
-        const t = new THREE.VideoTexture(v)
-        t.colorSpace = THREE.SRGBColorSpace
-        videoTexture = t
-        setState({ texture: t, aspect: v.videoWidth / v.videoHeight || 16 / 9, video: v })
-      },
-      { once: true },
-    )
+    // Swap the poster for the video only once it's actually playing: until then the video
+    // texture has no frame on the GPU and would show black. Without a poster, show the video as
+    // soon as its first frame is ready.
+    const show = () => {
+      if (cancelled || videoTexture) return
+      const t = new THREE.VideoTexture(v)
+      t.colorSpace = THREE.SRGBColorSpace
+      videoTexture = t
+      setState({ texture: t, aspect: v.videoWidth / v.videoHeight || 16 / 9, video: v })
+    }
+    v.addEventListener('playing', show, { once: true })
+    if (!art.poster) v.addEventListener('loadeddata', show, { once: true })
     return () => {
       cancelled = true
       stopPoster()
@@ -73,9 +77,10 @@ function usePicture(art: Art): Picture | null {
       v.pause()
       v.removeAttribute('src')
       v.load()
+      setVideo(null)
     }
   }, [art.kind, art.src, art.poster])
-  return state
+  return { picture: state, video }
 }
 
 /**
@@ -96,7 +101,7 @@ export function Artwork({
   focused: boolean
   onSelect: (slot: number) => void
 }) {
-  const picture = usePicture(art)
+  const { picture, video } = usePicture(art)
   const aspect = picture?.aspect ?? 4 / 3
   const { w, h } = fitPicture(slot, aspect)
   const { border, depth } = look.frame
@@ -133,7 +138,7 @@ export function Artwork({
   const group = useRef<THREE.Group>(null)
   const playing = useRef(false)
   useFrame(({ camera }) => {
-    const v = picture?.video
+    const v = video
     if (!v || !group.current) return
     const near = focused || camera.position.distanceTo(group.current.position) < PLAY_DISTANCE
     if (near && !playing.current) {

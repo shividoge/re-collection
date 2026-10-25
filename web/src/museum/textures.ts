@@ -333,6 +333,218 @@ export function carpet(color: RGB, seed = 9, size = 512): SurfaceMaps {
   return finish(size, b, 2.5, [1, 1])
 }
 
+/**
+ * A painted porcelain surface for a vase turned on a lathe: u runs round the vase, v from foot
+ * (0) to top (1), so decoration is drawn in horizontal bands.
+ * - 'blue-and-white': Chinese export porcelain: cobalt lotus panels, flower scrolls, a key
+ *   pattern on the shoulder, a dotted lid.
+ * - 'sevres': royal blue ground with gilt lines, and a white reserve on front and back painted
+ *   with roses.
+ */
+export function porcelainTexture(kind: 'blue-and-white' | 'sevres'): THREE.CanvasTexture {
+  const W = 1024
+  const H = 1024
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')!
+  // Canvas y grows downward; v grows upward: v → y = (1 − v)·H.
+  const Y = (v: number) => (1 - v) * H
+  const r = rng(kind === 'sevres' ? 31 : 29)
+  if (kind === 'blue-and-white') {
+    const white = '#f3f5f6'
+    const cobalt = '#1f3f8f'
+    const pale = '#4f6fb8'
+    ctx.fillStyle = white
+    ctx.fillRect(0, 0, W, H)
+    ctx.strokeStyle = cobalt
+    ctx.fillStyle = cobalt
+    // Foot and neck bands.
+    ctx.fillRect(0, Y(0.05), W, Y(0) - Y(0.05))
+    ctx.lineWidth = 4
+    for (const v of [0.06, 0.3, 0.72, 0.82, 0.86, 0.89]) {
+      ctx.beginPath()
+      ctx.moveTo(0, Y(v))
+      ctx.lineTo(W, Y(v))
+      ctx.stroke()
+    }
+    // Lotus petal panels round the lower body.
+    const petals = 12
+    for (let i = 0; i < petals; i++) {
+      const x0 = (i / petals) * W
+      const w = W / petals
+      ctx.beginPath()
+      ctx.moveTo(x0 + 6, Y(0.07))
+      ctx.lineTo(x0 + 6, Y(0.2))
+      ctx.quadraticCurveTo(x0 + w / 2, Y(0.33), x0 + w - 6, Y(0.2))
+      ctx.lineTo(x0 + w - 6, Y(0.07))
+      ctx.stroke()
+      ctx.fillStyle = pale
+      ctx.beginPath()
+      ctx.ellipse(x0 + w / 2, Y(0.14), w * 0.16, (Y(0.07) - Y(0.21)) * 0.3, 0, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    // Flower scrolls: blooms on a winding stem with leaves.
+    ctx.strokeStyle = cobalt
+    ctx.lineWidth = 5
+    ctx.beginPath()
+    for (let x = 0; x <= W; x += 8) {
+      const v = 0.51 + Math.sin((x / W) * Math.PI * 8) * 0.08
+      if (x === 0) ctx.moveTo(x, Y(v))
+      else ctx.lineTo(x, Y(v))
+    }
+    ctx.stroke()
+    for (let i = 0; i < 8; i++) {
+      const x = ((i + 0.25) / 8) * W
+      const v = 0.51 + Math.sin(((i + 0.25) / 8) * Math.PI * 8) * 0.08
+      const cx = x
+      const cy = Y(v + (i % 2 ? -0.06 : 0.06))
+      // A peony: rings of petals round a dark heart.
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2
+        ctx.fillStyle = k % 2 ? cobalt : pale
+        ctx.beginPath()
+        ctx.ellipse(cx + Math.cos(a) * 26, cy + Math.sin(a) * 26, 24, 14, a, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.fillStyle = cobalt
+      ctx.beginPath()
+      ctx.arc(cx, cy, 14, 0, Math.PI * 2)
+      ctx.fill()
+      for (const side of [-1, 1]) {
+        ctx.fillStyle = pale
+        ctx.beginPath()
+        ctx.ellipse(cx + side * 62, cy + 30 * side, 26, 9, side * 0.6 + r(), 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+    // Key (meander) pattern on the shoulder.
+    const keyY0 = Y(0.81)
+    const keyH = Y(0.73) - Y(0.81)
+    ctx.lineWidth = 5
+    for (let x = 0; x < W; x += keyH * 1.2) {
+      ctx.beginPath()
+      ctx.moveTo(x, keyY0 + keyH)
+      ctx.lineTo(x, keyY0)
+      ctx.lineTo(x + keyH, keyY0)
+      ctx.lineTo(x + keyH, keyY0 + keyH * 0.7)
+      ctx.lineTo(x + keyH * 0.35, keyY0 + keyH * 0.7)
+      ctx.lineTo(x + keyH * 0.35, keyY0 + keyH * 0.35)
+      ctx.stroke()
+    }
+    // The lid: cobalt with white dots.
+    ctx.fillStyle = cobalt
+    ctx.fillRect(0, 0, W, Y(0.9))
+    ctx.fillStyle = white
+    for (let i = 0; i < 60; i++) {
+      ctx.beginPath()
+      ctx.arc(r() * W, r() * Y(0.9), 5, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  } else {
+    const blue = '#1c2f78'
+    const gilt = '#d9b25e'
+    ctx.fillStyle = blue
+    ctx.fillRect(0, 0, W, H)
+    // A faint glaze pooling: lighter blue in places.
+    for (let i = 0; i < 400; i++) {
+      ctx.fillStyle = `rgba(80,110,200,${0.03 + r() * 0.04})`
+      ctx.beginPath()
+      ctx.arc(r() * W, r() * H, 10 + r() * 40, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.fillStyle = gilt
+    for (const [v0, v1] of [
+      [0, 0.1],
+      [0.155, 0.17],
+      [0.7, 0.72],
+      [0.94, 1],
+    ])
+      ctx.fillRect(0, Y(v1), W, Y(v0) - Y(v1))
+    // Gilt garland dots under the shoulder.
+    for (let x = 0; x < W; x += 24) {
+      ctx.beginPath()
+      ctx.arc(x, Y(0.68), 4, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    // The reserves: white ovals framed in gilt, front (u = 0) and back (u = 0.5), with roses.
+    for (const u of [0, 0.5, 1]) {
+      const cx = u * W
+      const cy = Y(0.43)
+      const rx = W * 0.11
+      const ry = (Y(0.24) - Y(0.62)) / 2
+      ctx.fillStyle = gilt
+      ctx.beginPath()
+      ctx.ellipse(cx, cy, rx + 10, ry + 10, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#fbf7ef'
+      ctx.beginPath()
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
+      ctx.fill()
+      // A small bouquet: roses and leaves.
+      for (const [dx, dy, c] of [
+        [0, -10, '#c8425a'],
+        [-34, 22, '#e07a8a'],
+        [32, 26, '#b8304a'],
+        [-6, 46, '#f0a3ad'],
+      ] as [number, number, string][]) {
+        for (const [lx, ly, a] of [
+          [-22, 8, -0.7],
+          [22, 10, 0.7],
+        ])
+          {
+            ctx.fillStyle = '#4f7a3a'
+            ctx.beginPath()
+            ctx.ellipse(cx + dx + lx, cy + dy + ly, 16, 7, a, 0, Math.PI * 2)
+            ctx.fill()
+          }
+        ctx.fillStyle = c
+        ctx.beginPath()
+        ctx.arc(cx + dx, cy + dy, 17, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.strokeStyle = 'rgba(90,10,30,0.5)'
+        ctx.lineWidth = 3
+        ctx.beginPath()
+        ctx.arc(cx + dx, cy + dy, 9, 0.5, 5)
+        ctx.stroke()
+      }
+    }
+  }
+  const t = new THREE.CanvasTexture(canvas)
+  t.colorSpace = THREE.SRGBColorSpace
+  t.anisotropy = 8
+  t.wrapS = THREE.RepeatWrapping
+  return t
+}
+
+/**
+ * Frosted window glass with daylight behind it: bright, soft, brighter toward the top, with
+ * the faint mottling of etched glass. Nothing outside can be seen through it.
+ */
+export function frostedGlassTexture(): THREE.CanvasTexture {
+  const W = 256
+  const H = 512
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')!
+  const g = ctx.createLinearGradient(0, 0, 0, H)
+  g.addColorStop(0, '#fffaf0')
+  g.addColorStop(1, '#efe6d8')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, W, H)
+  const r = rng(41)
+  for (let i = 0; i < 1500; i++) {
+    ctx.fillStyle = `rgba(255,255,255,${r() * 0.12})`
+    ctx.beginPath()
+    ctx.arc(r() * W, r() * H, 2 + r() * 6, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  const t = new THREE.CanvasTexture(canvas)
+  t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+
 /** Fonts the museum uses for wall text: a warm serif, as printed museum labels are. */
 export const SERIF = '"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif'
 export const SANS = '-apple-system, "Segoe UI", system-ui, sans-serif'

@@ -118,10 +118,10 @@ export interface MuseumPlan {
 }
 
 /** How many pictures one room holds: both side walls, plus the far wall. */
-function capacity(spec: StyleSpec, last: boolean): number {
+function capacity(spec: StyleSpec, last: boolean, style: RoomStyle): number {
   // The far wall has a doorway unless it's the last room: then one picture either side of it,
-  // otherwise one picture in the middle.
-  return spec.perSide * 2 + (last ? 1 : 2)
+  // otherwise one picture in the middle (in the classic gallery, a window instead).
+  return spec.perSide * 2 + (last ? (style === 'classic' ? 0 : 1) : 2)
 }
 
 /** The rooms an exhibition of `count` pictures needs, with walls, doorways and picture slots. */
@@ -130,7 +130,7 @@ export function planMuseum(count: number, style: RoomStyle): MuseumPlan {
   let rooms = 1
   while (true) {
     let fits = 0
-    for (let r = 0; r < rooms; r++) fits += capacity(spec, r === rooms - 1)
+    for (let r = 0; r < rooms; r++) fits += capacity(spec, r === rooms - 1, style)
     if (fits >= count) break
     rooms++
   }
@@ -195,7 +195,9 @@ export function planMuseum(count: number, style: RoomStyle): MuseumPlan {
       left--
     }
     if (left <= 0) break
-    if (last) {
+    if (last && style === 'classic') {
+      // The classic gallery's last room has a window on its far wall (Classic.tsx Window).
+    } else if (last) {
       // The far wall of the last room: one picture, a little larger, in the middle.
       add(room, [0, spec.hang, room.zBack], [0, 1], Math.min(spec.width * 0.4, spec.maxW * 1.2), spec.maxH * 1.15)
       left--
@@ -212,17 +214,17 @@ export function planMuseum(count: number, style: RoomStyle): MuseumPlan {
   }
 
   // The classic gallery is furnished: a round settee in the middle of each room, candle
-  // torchères in the front corners, a fireplace on the entrance wall, and pedestals with urns
-  // in the far corners of the last room (no picture hangs in front of any of them).
+  // torchères halfway along the front wall (either side of the fireplace or the doorway, clear
+  // of the pictures), a fireplace on the entrance wall, and pedestals with vases flanking the
+  // window in the last room.
   const features: Feature[] = []
   if (style === 'classic') {
     for (const room of roomList) {
       const cz = (room.zFront + room.zBack) / 2
       features.push({ kind: 'settee', room: room.index, x: 0, z: cz, hw: 0.78, hd: 0.78 })
-      const corner = half - 0.6
-      for (const x of [-corner, corner]) {
-        features.push({ kind: 'torch', room: room.index, x, z: room.zFront - 0.6, hw: 0.22, hd: 0.22 })
-        if (room.index === rooms - 1) features.push({ kind: 'pedestal', room: room.index, x, z: room.zBack + 0.65, hw: 0.28, hd: 0.28 })
+      for (const side of [-1, 1]) {
+        features.push({ kind: 'torch', room: room.index, x: side * 2.15, z: room.zFront - 0.45, hw: 0.22, hd: 0.22 })
+        if (room.index === rooms - 1) features.push({ kind: 'pedestal', room: room.index, x: side * (half - 0.6), z: room.zBack + 0.65, hw: 0.28, hd: 0.28 })
       }
     }
     features.push({ kind: 'fireplace', room: 0, x: 0, z: roomList[0].zFront - 0.22, hw: 1.05, hd: 0.22 })

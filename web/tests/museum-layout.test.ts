@@ -10,9 +10,9 @@ describe('museum layout', () => {
       for (const n of [1, 5, 9, 17, 40]) {
         const plan = planMuseum(n, style)
         expect(plan.slots.length).toBe(n)
-        // One room fewer wouldn't hold them all.
+        // No more rooms than needed (the last room may hold two fewer: a window, or a single centerpiece).
         const perRoom = STYLES[style].perSide * 2 + 2
-        expect(plan.rooms.length).toBeLessThanOrEqual(Math.ceil(n / (perRoom - 1)))
+        expect(plan.rooms.length).toBeLessThanOrEqual(Math.ceil((n + 2) / perRoom))
         expect(plan.doorways.length).toBe(plan.rooms.length - 1)
       }
     }

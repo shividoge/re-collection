@@ -20,7 +20,7 @@ Five styles, chosen per exhibition with the buttons at the top (remembered on th
 
 | Style | Room | Frames |
 |---|---|---|
-| **Classic gallery** (default) | a classic picture gallery at a modest scale: rose-red fabric walls, raised-panel wainscot, ivory cornice with gilded brackets, a skylight lantern, herringbone floor with a dark wood border and a plain rug, arched doorways; a round tufted settee with an urn in each room, candle torchères, candle sconces between pictures, a marble fireplace on the entrance wall, pedestals with urns | ornate gilded frames (beads, cove, corner rosettes), three large pictures per side wall above the panelling |
+| **Classic gallery** (default) | a classic picture gallery at a modest scale: rose-red fabric walls, raised-panel wainscot, ivory cornice with gilded brackets, a skylight lantern, herringbone floor with a dark wood border and a plain rug, arched doorways; a round tufted settee with a blue-and-white porcelain jar in each room, candle torchères either side of the fireplace or doorway, candle sconces between pictures, a marble fireplace on the entrance wall, a curtained window with frosted panes on the last room's far wall, Sèvres-style vases on pedestals | ornate gilded frames (beads, cove, corner rosettes), three large pictures per side wall above the panelling |
 | **Calm room** (default) | living-room size, home-height ceiling, plain matte boards, warm light walls, bright even light | dark wood frames, cream mats, 4–6 large pieces per room |
 | Sunlit gallery | pale oak floor, white walls, a skylight | thin black frames, white mats |
 | Warm salon | herringbone parquet, plum walls with a dark lower panel, chandelier | gilded frames |
@@ -60,9 +60,12 @@ tested in a virtual museum, so treat it as the best available guess:
 
 The classic gallery is furnished like an old picture gallery, none of it pretending to be part
 of the family's exhibition: a round tufted velvet settee in the middle of each room with a
-pedestal and bronze urn rising from it, bronze candle torchères in the corners, brass candle
-sconces between the pictures, a carved marble fireplace with a flickering fire and candelabra
-on the entrance wall, and pedestals with marble urns in the last room. Visitors walk around all
+pedestal and a Chinese blue-and-white lidded jar rising from it, bronze candle torchères either
+side of the fireplace or doorway, brass candle sconces between the pictures, a carved marble
+fireplace with a flickering fire and candelabra on the entrance wall, and in the last room a
+tall window with long velvet curtains (frosted panes glowing with daylight; nothing outside is
+shown) between a pair of Sèvres-style vases on pedestals. Royal interiors of the period showed
+Sèvres and Chinese porcelain side by side, which is where the pairing comes from. Visitors walk around all
 of it, and guided walks step round it.
 
 ## Putting things in an exhibition

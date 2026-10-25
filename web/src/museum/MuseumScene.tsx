@@ -5,7 +5,7 @@ import { ToneMappingMode } from 'postprocessing'
 import { useMemo, type Ref } from 'react'
 import * as THREE from 'three'
 import { Artwork } from './Artwork'
-import { Furniture, Sconces } from './Classic'
+import { Furniture, Sconces, Window } from './Classic'
 import type { Exhibition } from './exhibitions'
 import { walkable, type MuseumPlan } from './layout'
 import { LOOKS } from './looks'
@@ -76,6 +76,7 @@ export function MuseumScene({
         <>
           <Furniture plan={plan} />
           <Sconces plan={plan} count={exhibition.items.length} />
+          <Window plan={plan} />
         </>
       )}
       {/* An invisible floor to tap on (the visible one is a reflector). */}
