@@ -23,9 +23,10 @@ import align
 from decode import ConvertError
 
 FLIP = np.diag([1.0, -1.0, -1.0, 1.0])  # OpenCV <-> ARKit axes, for camera and world frames
-# Measured with workers/gpu/calibrate.py at DA3's 504 px processing size on the RTX 5060 Ti:
-# above the resident weights, a pass peaks at 1.85 GiB + 0.070 GiB per frame (16-80 frames).
-GIB_PER_FRAME = 0.070
+# Measured with workers/gpu/calibrate.py at DA3's 504 px processing size: above the resident
+# weights a pass peaks at 1.85 GiB + 0.070 GiB per frame on the RTX 5060 Ti (16-80 frames) and
+# 1.65 GiB + 0.074 GiB per frame on the GX10 (16-240 frames). The larger of each is used.
+GIB_PER_FRAME = 0.074
 PASS_CONSTANT_GIB = 1.85
 MAX_PASS_FRAMES = 240
 

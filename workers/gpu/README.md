@@ -23,7 +23,7 @@ local mode (`run.py`) and a memory calibration (`calibrate.py`).
   `min(240, max(16, floor(durationSec × 10) + 1))` (`convert.frames_needed`; 10 frames per second
   of video, at least 16, at most 240). The backend sets it from `videos.create`'s `durationSec`.
 - A worker advertises `maxFrames` = frames one pass fits, measured at startup after the models
-  are loaded: `(free GPU memory − 1.85 GiB − 0.5 GiB margin) / 0.070 GiB` (measured with `calibrate.py`), capped at 240 (`estimate.frames_that_fit`).
+  are loaded: `(free GPU memory − 1.85 GiB − 0.5 GiB margin) / 0.074 GiB` (measured with `calibrate.py`), capped at 240 (`estimate.frames_that_fit`).
   Override with `WORKER_MAX_FRAMES`. Measured values are in the table below.
 - So the 5060 Ti takes videos up to its `maxFrames / 10` seconds; longer ones wait for the GX10.
   Videos longer than 24 s run on the GX10 in overlapping windows of 240 frames, chained with a

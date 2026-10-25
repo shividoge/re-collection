@@ -30,6 +30,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-splat", action="store_true")
     ap.add_argument("--max-frames", type=int, default=None, help="frames per model pass (default: measured)")
     ap.add_argument("--window", type=int, default=None, help="force windows of this many frames (testing)")
+    ap.add_argument("--sample-fps", type=float, default=None, help="model frames per second (default 10)")
     ap.add_argument("--holdout", type=int, default=0, help="leave every Nth model frame out (evaluation)")
     ap.add_argument("--holdout-frames", type=Path, default=None, help="holdout.json of another run (evaluation)")
     args = ap.parse_args(argv)
@@ -50,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
     options: dict[str, object] = {"holdout": args.holdout}
     if args.window:
         options["window"] = args.window
+    if args.sample_fps:
+        options["sample_fps"] = args.sample_fps
     if args.holdout_frames:
         options["holdout_frames"] = json.loads(args.holdout_frames.read_text())["frames"]
     if args.window:
