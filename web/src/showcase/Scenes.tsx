@@ -6,10 +6,6 @@ import type { CaptureAssets } from '../data/assets'
 import { CameraPath } from '../scene/CameraPath'
 import { PlaybackDriver, SceneReplay, SceneRoom, useCaptureScene, usePlayback, usePlaybackState } from '../scene'
 
-/** Fewest room points that still read as a room at these sizes (the full viewer draws more). */
-const HERO_BUDGET = 250_000
-const MINI_BUDGET = 150_000
-
 /**
  * Whether an element is on screen. Off-screen scenes stop rendering (the canvases render on
  * demand) and pause their clips.
@@ -63,7 +59,7 @@ export function HeroCloud({ assets }: { assets: CaptureAssets }) {
         <Canvas flat frameloop="demand" dpr={[1, 1.5]} camera={{ fov: 52, near: 0.05, far: 100 }}>
           <color attach="background" args={['#07080a']} />
           <AutoOrbit center={scene.bounds.center} radius={scene.bounds.radius} running={onScreen} />
-          <SceneRoom scene={scene} view="points" budget={HERO_BUDGET} />
+          <SceneRoom scene={scene} view="points" />
         </Canvas>
       )}
     </div>
@@ -114,7 +110,7 @@ export function MiniViewer({ assets, layers, label }: { assets: CaptureAssets; l
           >
             <color attach="background" args={['#07080a']} />
             <PlaybackDriver playback={playback} />
-            {layers.room && <SceneRoom scene={scene} view="points" budget={MINI_BUDGET} dim={layers.people && playing ? 0.5 : 1} />}
+            {layers.room && <SceneRoom scene={scene} view="points" dim={layers.people && playing ? 0.5 : 1} />}
             {layers.path && scene.moment.length > 0 && <CameraPath frames={scene.moment} timeRef={playback.timeRef} color="#ff7a57" />}
             {layers.people && videoEl && <SceneReplay scene={scene} video={videoEl} timeRef={playback.timeRef} masked={false} />}
             <OrbitControls makeDefault target={scene.bounds.center} enableZoom={false} enabled={explore} enableDamping />
