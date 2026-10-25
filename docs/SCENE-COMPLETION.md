@@ -93,10 +93,12 @@ The GPU is a GB10 with 128 GB unified memory; architecture is aarch64. Existing 
 `~/braindance/video2capture/.venv/bin/python`, torch 2.14.1/cu130. No worker was running when
 inspected. Keep experiments under `~/braindance/scene-completion/`; do not replace the converter.
 
-The official SAM 3D source is cloned at `~/braindance/scene-completion/sam-3d-objects`. The user
-says their account has approved model access, but neither machine has a saved Hugging Face
-credential. Their login is pending. Credentials belong in the machine's private HF cache,
-never in this repo. Videos need not be uploaded to Hugging Face to run local inference.
+The official SAM 3D source is cloned at `~/braindance/scene-completion/sam-3d-objects`.
+On Oct 25 the GX10 was authenticated as `srinivasib` using `hf auth login` and its browser
+device-authorization flow. Credentials stay in the GX10's private HF cache, never in this
+repo. `HfApi().whoami()` succeeds, but downloading `facebook/sam-3d-objects/pipeline.yaml`
+returns `GatedRepoError`. This account still shows Meta's access-request form; model access
+must be approved before downloading weights. Videos need not be uploaded to Hugging Face.
 
 Meta's published environment pins x86-64/CUDA 12.1 packages, including native spconv,
 PyTorch3D and Kaolin dependencies. The GX10 needs a compatible isolated ARM/CUDA environment.

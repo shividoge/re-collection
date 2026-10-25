@@ -270,7 +270,7 @@ authorized generated completion for ordinary video, kept separate from recorded 
 Local high-detail splat training and a default-off generated layer are implemented; the first
 real lab clip improves PSNR 22.16 → 22.83 dB, but coverage slips 96.7 → 96.2%. Plane filling is
 an experiment, not learned furniture completion. Full object/room completion remains unfinished.
-GX10 SSH is verified; SAM weights login and an ARM-compatible runtime are pending. Exact
+GX10 SSH and Hugging Face login are verified; SAM model-access approval and an ARM-compatible runtime are pending. Exact
 connection, commands, measurements and remaining work: `docs/SCENE-COMPLETION.md`.
 
 **Last updated:** Sat Oct 24, 16:30 PT, by Shivin's Claude session. **What's left, who does it and the timeline: the top of `TASKS.md` ("Everything left until submission").** The final feature's plan: `docs/LAST-STEP.md`. Sponsor plan: `docs/SPONSOR-PLAN.md`. Theme: `docs/THEME.md` (public name **Relive With A Smile**; "Braindance" stays the internal code name).
@@ -354,3 +354,4 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 - 2026-10-25 01:05 | Srinivas + Claude | `web/palace-live-v3`: #57's live visit on Convex (palace.ts: visit key, presence, her view, WebRTC signals, μ-law relay; web live/ client on reactive queries; editor shows her link). Backend 136 tests, web 219 pass | deploy to dev (`bunx convex dev --once`), two-device test, then port the rest of #57
 
 - 2026-10-25 04:40 CT | Srinivas + Codex | local detailed-splat experiment and separate generated-plane layer; lab held-out PSNR 22.16 to 22.83 dB, coverage 96.7 to 96.2%; browser toggle/orbit verified, Python/web/shared checks pass | Full object completion unfinished: authenticate approved SAM weights on GX10, resolve isolated ARM runtime, then implement and evaluate object generation; see docs/SCENE-COMPLETION.md
+- 2026-10-25 | Srinivas + Codex | authenticated GX10 Hugging Face CLI as srinivasib through browser device authorization; verified whoami | SAM configuration download still returns GatedRepoError; user must complete Meta's model-access form or use an approved account. ARM runtime and object generation remain unfinished.
