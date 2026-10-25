@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 
 import { guide, publicGuide, STATIC } from '../api';
 import type { CaptureDetail, Fact, Moment, Progress, PublicCapture, PublicSession } from '../api';
-import { RecallChart } from '../showcase/RecallChart';
 import { HeroCloud, MiniViewer } from '../showcase/Scenes';
 import type { Layers } from '../showcase/Scenes';
 import '../showcase/showcase.css';
@@ -136,7 +135,6 @@ export function Showcase() {
           <ApprovalStep entry={lead} />
           <GroundingStep entry={lead} />
           <RevisitStep entry={lead} />
-          <RecallStep entries={entries} />
         </>
       )}
 
@@ -536,55 +534,6 @@ function RevisitStep({ entry }: { entry: Entry }) {
             </p>
           ))}
       </div>
-    </StepShell>
-  );
-}
-
-function RecallStep({ entries }: { entries: Entry[] }) {
-  // Only sessions where someone actually talked back count as recall.
-  const withTalk = entries
-    .map((e) => {
-      const ids = new Set(e.sessions.filter((s) => s.turns.some((t) => t.speaker === 'patient')).map((s) => s.id));
-      return { entry: e, sessions: (e.progress?.sessions ?? []).filter((s) => ids.has(s.sessionId)) };
-    })
-    .find((x) => x.sessions.length > 0);
-  const latest = withTalk?.sessions.at(-1);
-  return (
-    <StepShell
-      n="8"
-      title="The family sees what stayed"
-      text={
-        <>
-          <p>
-            After each session Claude (Opus 5.5) marks which details they brought up on their own, which only after a hint, and which not at all. Code
-            decides "on their own" versus "after a hint" from what Claude had already said.
-          </p>
-          <p>
-            Times are the real times of the sessions, never relabelled as "day 3", and they are never shown a score. Revisits are suggested at +1, +3, +7 and +14 days.
-          </p>
-        </>
-      }
-    >
-      {withTalk ? (
-        <div className="recall">
-          <RecallChart sessions={withTalk.sessions} total={withTalk.entry.progress?.facts.length ?? 0} />
-          {latest?.note && <p className="muted small">{latest.note}</p>}
-          {latest && latest.branches.length > 0 && <p className="branch">An older memory came up: “{latest.branches[0].quote}”</p>}
-        </div>
-      ) : (
-        <div className="recall empty">
-          <svg viewBox="0 0 420 200" role="img" aria-label="An empty recall chart">
-            <line x1="40" y1="160" x2="400" y2="160" stroke="currentColor" opacity=".3" />
-            <line x1="40" y1="20" x2="40" y2="160" stroke="currentColor" opacity=".3" />
-            <text x="48" y="36" fontSize="11" fill="currentColor" opacity=".6">facts recalled</text>
-            <text x="320" y="182" fontSize="11" fill="currentColor" opacity=".6">real session time</text>
-          </svg>
-          <p>
-            <strong>No recall data yet.</strong> The chart fills in only after a loved one has talked with Claude about a capture. We won't invent it: the
-            sessions here so far had Claude narrating alone.
-          </p>
-        </div>
-      )}
     </StepShell>
   );
 }

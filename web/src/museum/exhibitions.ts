@@ -69,6 +69,9 @@ const formatDate = (iso: string | null) =>
  * "Our visits": every finished capture on the guide, oldest first. Each visit hangs as its video
  * (the moment itself), followed by up to two of its keyframes as photographs.
  */
+/** Pictures that fill two rooms of the gallery (layout.ts: 8 in the first, 6 in the last). */
+const TWO_ROOMS = 14
+
 async function visits(): Promise<Exhibition | null> {
   let list
   try {
@@ -82,6 +85,8 @@ async function visits(): Promise<Exhibition | null> {
   const done = list.filter((c) => c.status.upload === 'done').sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
   if (done.length === 0) return null
   const items: Artwork[] = []
+  // Stills to fill the second room with: a few more moments from each visit.
+  const stills: Artwork[][] = []
   for (const c of done) {
     try {
       const { manifest } = await guide.capture(c.id)
@@ -99,10 +104,26 @@ async function visits(): Promise<Exhibition | null> {
       } else if (poster) {
         items.push({ id: `${c.id}-thumb`, kind: 'photo', src: poster, title, date, captureId: c.id, t: 0 })
       }
+      stills.push(
+        kf && kf.count > 0
+          ? [0.25, 0.75, 0.4, 0.9].map((f) => {
+              const k = Math.min(kf.count - 1, Math.floor(kf.count * f))
+              return { id: `${c.id}-s${k}`, kind: 'photo' as const, src: captureFileUrl(c.id, `${kf.dir}/k${String(k).padStart(4, '0')}.jpg`), title, date, captureId: c.id, t: k * kf.everySec }
+            })
+          : poster
+            ? [{ id: `${c.id}-s0`, kind: 'photo' as const, src: poster, title, date, captureId: c.id, t: 0 }]
+            : [],
+      )
     } catch {
       // A capture whose manifest can't be read is left out, not guessed at.
     }
   }
+  // Always two rooms: after one picture per visit, more stills from the visits fill the second
+  // room (repeats are fine until the old videos' renders hang there too).
+  for (let round = 0; items.length < TWO_ROOMS && stills.some((v) => v.length > round); round++) {
+    for (const v of stills) if (v[round] && items.length < TWO_ROOMS) items.push(v[round])
+  }
+  for (let i = 0; items.length < TWO_ROOMS && items.length > 0; i++) items.push({ ...items[i], id: `${items[i].id}-again${i}` })
   return { id: 'visits', title: 'Our visits', subtitle: 'Every visit the family filmed, oldest first', items, source: 'visits' }
 }
 
