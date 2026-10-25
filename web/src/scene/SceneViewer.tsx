@@ -118,6 +118,7 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
   const moment = scene?.moment ?? NO_FRAMES
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null)
   const [showPath, setShowPath] = useState(true)
+  const [showCompletion, setShowCompletion] = useState(false)
   // The room as one connected surface (fused from the scan's depth frames), or as raw points.
   const [showSurface, setShowSurface] = useState(true)
   // The splat when there is one; the points (what was measured or estimated) are always a click away.
@@ -328,6 +329,7 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
                 video={hasVideo ? videoEl : null}
                 playback={playback}
                 showPath={showPath && canFollow}
+                showCompletion={showCompletion && shown === 'splat'}
                 onSplatStatus={setSplatStatus}
                 onNote={onNote}
               />
@@ -371,6 +373,7 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
           )}
 
           <div className="viewer-foot">
+            {showCompletion && shown === 'splat' && <span>Generated completion · unseen surfaces are estimated</span>}
             <FootNotes room={room} shown={shown} splatStatus={splatStatus} roomView={roomView} />
             {liveNotes.map((n) => (
               <span key={n} className="err">
@@ -413,6 +416,7 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
           </div>
         )}
         <div className="layers">
+          {manifest?.room?.completion && <Layer label="Generated completion" on={showCompletion} disabled={shown !== 'splat'} set={setShowCompletion} />}
           <Layer label="Surface" on={showSurface} disabled={scene?.surface?.status !== 'ready'} set={setShowSurface} />
           <Layer label="Path" on={showPath} disabled={!canFollow} set={setShowPath} />
         </div>
@@ -437,6 +441,7 @@ function ViewerScene({
   video,
   playback,
   showPath,
+  showCompletion,
   onSplatStatus,
   onNote,
 }: {
@@ -449,6 +454,7 @@ function ViewerScene({
   video: HTMLVideoElement | null
   playback: Playback
   showPath: boolean
+  showCompletion: boolean
   onSplatStatus: (s: SplatStatus) => void
   onNote: SceneNote
 }) {
@@ -458,7 +464,7 @@ function ViewerScene({
   return (
     <>
       {scene ? (
-        <SceneRoom scene={scene} view={view} selection={tint} onSplatStatus={onSplatStatus} onNote={onNote} />
+        <SceneRoom scene={scene} view={view} selection={tint} onSplatStatus={onSplatStatus} onNote={onNote} showCompletion={showCompletion} />
       ) : (
         <>
           <HoleFill />

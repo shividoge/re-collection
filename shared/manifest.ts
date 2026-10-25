@@ -13,6 +13,11 @@ export type RoomSplat = {
   source: 'trained-from-video' | 'trained-from-lidar-capture'
 }
 
+export type RoomCompletion = Omit<RoomSplat, 'source'> & {
+  source: 'generated'
+  report: string
+}
+
 export type Manifest = {
   format?: 'braindance.capture'
   version?: number
@@ -28,7 +33,7 @@ export type Manifest = {
   depth: DepthInfo
   /** "video" when rebuilt from an ordinary video (estimated); absent for LiDAR scans. */
   source?: string
-  room?: { bin: string; ply?: string; points: number; voxelMeters: number; source?: string; splat?: RoomSplat }
+  room?: { bin: string; ply?: string; points: number; voxelMeters: number; source?: string; splat?: RoomSplat; completion?: RoomCompletion }
   phases?: { scan?: { tStart: number; tEnd: number }; moment: { tStart: number; tEnd: number } }
   transcript?: { file: string; locale: string; onDevice?: boolean }
   keyframes?: { dir: string; everySec: number; count: number }
@@ -51,6 +56,13 @@ export function parseManifest(json: string): Manifest {
   if (typeof m.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.id)) throw new ManifestError('manifest.json needs an "id" that is a UUID.')
   if (!isObj(m.video) || typeof m.video.file !== 'string') throw new ManifestError('manifest.json needs "video.file".')
   if (!isObj(m.depth) || typeof m.depth.file !== 'string' || typeof m.depth.count !== 'number') throw new ManifestError('manifest.json needs "depth.file" and "depth.count".')
+  if (isObj(m.room) && m.room.completion !== undefined) {
+    const c = m.room.completion
+    const fileName = (s: unknown) => typeof s === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(s) && !s.includes('..')
+    if (!isObj(c) || c.source !== 'generated' || !fileName(c.file) || !fileName(c.report)
+      || !['spz', '3dgs-ply'].includes(String(c.format)) || !Number.isInteger(c.count) || Number(c.count) <= 0 || c.shDegree !== 0)
+      throw new ManifestError('room.completion needs generated provenance, safe file names, a positive count and degree-0 splats.')
+  }
   const out = m as unknown as Manifest
   out.id = out.id.toLowerCase()
   out.title ??= ''

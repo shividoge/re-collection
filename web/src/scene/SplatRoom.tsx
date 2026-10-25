@@ -14,6 +14,10 @@ interface Props {
   /** Brightness multiplier, like StaticCloud's `dim`. */
   dim?: number
   onStatus: (status: SplatStatus) => void
+  completionUrl?: string | null
+  completionFormat?: 'spz' | '3dgs-ply'
+  showCompletion?: boolean
+  onCompletionStatus?: (status: SplatStatus) => void
 }
 
 /**
@@ -25,10 +29,33 @@ interface Props {
  *
  * Loaded lazily (Spark is ~3 MB with its inlined WASM), so captures without a splat never pay for it.
  */
-export default function SplatRoom({ url, format, visible = true, dim = 1, onStatus }: Props) {
+export default function SplatRoom({ url, format, visible = true, dim = 1, onStatus,
+  completionUrl, completionFormat = 'spz', showCompletion = false, onCompletionStatus }: Props) {
   const gl = useThree((s) => s.gl)
   const invalidate = useThree((s) => s.invalidate)
   const [objects, setObjects] = useState<{ spark: SparkRenderer; mesh: SplatMesh } | null>(null)
+  const [completion, setCompletion] = useState<SplatMesh | null>(null)
+
+  useEffect(() => {
+    if (!completionUrl || !showCompletion) return
+    const mesh = new SplatMesh({ url: completionUrl, fileType: completionFormat === 'spz' ? SplatFileType.SPZ : SplatFileType.PLY })
+    let live = true
+    onCompletionStatus?.({ state: 'loading' })
+    mesh.initialized.then(() => {
+      if (!live) return
+      setCompletion(mesh)
+      onCompletionStatus?.({ state: 'ready' })
+      invalidate()
+    }, (e: unknown) => {
+      if (live) onCompletionStatus?.({ state: 'failed', message: e instanceof Error ? e.message : String(e) })
+    })
+    return () => {
+      live = false
+      setCompletion(null)
+      mesh.dispose()
+      invalidate()
+    }
+  }, [completionUrl, completionFormat, showCompletion, onCompletionStatus, invalidate])
 
   useEffect(() => {
     // The canvas renders on demand; Spark says when a sort or load finished and it needs a frame.
@@ -62,6 +89,7 @@ export default function SplatRoom({ url, format, visible = true, dim = 1, onStat
     <>
       <primitive object={objects.spark} />
       <primitive object={objects.mesh} visible={visible} recolor={recolor} />
+      {completion && <primitive object={completion} visible={visible && showCompletion} recolor={recolor} />}
     </>
   )
 }

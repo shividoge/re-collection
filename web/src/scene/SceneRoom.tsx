@@ -42,13 +42,14 @@ interface RoomProps {
   onSplatStatus?: (status: SplatStatus) => void
   /** Live problems to show next to the view (the room's photos failing). */
   onNote?: SceneNote
+  showCompletion?: boolean
 }
 
 /**
  * The room: the fused surface, the points (with hole filling), or the splat. Everything loaded
  * stays mounted and switching only toggles visibility, so nothing is uploaded twice.
  */
-export function SceneRoom({ scene, view = 'auto', dim = 1, selection = null, budget, holeFill = true, onSplatStatus, onNote }: RoomProps) {
+export function SceneRoom({ scene, view = 'auto', dim = 1, selection = null, budget, holeFill = true, onSplatStatus, onNote, showCompletion = false }: RoomProps) {
   const invalidate = useThree((s) => s.invalidate)
   const [splatStatus, setSplatStatus] = useState<SplatStatus>({ state: 'loading' })
   const onStatus = useCallback(
@@ -58,6 +59,15 @@ export function SceneRoom({ scene, view = 'auto', dim = 1, selection = null, bud
     },
     [onSplatStatus],
   )
+  const completion = scene.manifest.room?.completion
+  const completionUrl = completion ? scene.assets.rawUrl(completion.file) : null
+  const onCompletionStatus = useCallback((s: SplatStatus) => {
+    onNote?.('completion', s.state === 'failed' ? `Generated completion failed: ${s.message}` : s.state === 'loading' ? 'Loading generated completion…' : null)
+  }, [onNote])
+  useEffect(() => {
+    if (!showCompletion) onNote?.('completion', null)
+    else if (!completionUrl) onNote?.('completion', 'Generated completion is listed but its file is unavailable.')
+  }, [showCompletion, completionUrl, onNote])
   const surface = ready(scene.surface)
   const points = ready(scene.points)
   const shown = shownRoom(scene, view, splatStatus)
@@ -75,7 +85,8 @@ export function SceneRoom({ scene, view = 'auto', dim = 1, selection = null, bud
       {points && <RoomPoints points={points} budget={budget} dim={dim} visible={shown === 'points'} />}
       {scene.splat && splatStatus.state !== 'failed' && (
         <Suspense fallback={null}>
-          <SplatRoom url={scene.splat.url} format={scene.splat.format} visible={shown === 'splat'} dim={selection ? 0.45 * dim : dim} onStatus={onStatus} />
+          <SplatRoom url={scene.splat.url} format={scene.splat.format} visible={shown === 'splat'} dim={selection ? 0.45 * dim : dim} onStatus={onStatus}
+            completionUrl={completionUrl} completionFormat={completion?.format} showCompletion={showCompletion} onCompletionStatus={onCompletionStatus} />
         </Suspense>
       )}
     </>
