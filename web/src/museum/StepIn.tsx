@@ -217,8 +217,8 @@ export function StepIn({
       </div>
       <div className={`stepin-ui${showUi ? ' shown' : ''}`}>
         {canLeave && (
-          <button className="stepin-back" onClick={onBack}>
-            <span aria-hidden="true">‹</span> Museum
+          <button className="stepin-back" onClick={onBack} aria-label="Back to the Memory Palace">
+            <span aria-hidden="true">‹</span> Palace
           </button>
         )}
         {hasRoom ? (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react'
 import type * as THREE from 'three'
 import { followIndex, visits, type Exhibition } from './exhibitions'
 import { planMuseum, walkTarget } from './layout'
@@ -18,6 +18,11 @@ import type { Pose, WalkerHandle } from './Walker'
 import { IN_MS, LEAVE_MS, OUT_MS, type Dive } from './warp'
 import './museum.css'
 
+/** What the editor can do with the palace it shows: walk to a picture. */
+export interface MuseumHandle {
+  goTo: (i: number) => void
+}
+
 /**
  * Her museum: walk through the pictures the caretaker hung, in real-looking rooms, and step into
  * any of them. This is the patient's page, so it changes nothing: no adding, no taking down, no
@@ -28,19 +33,34 @@ import './museum.css'
  * walks with them (`join` is set only on the helper's phone). Either can open a visit's Memory
  * Window on the iPad.
  *
- * Live visit: with the palace's visit key (`#/museum?visit=<key>`, then remembered on the device),
+ * Live visit: with the palace's visit key (`#/palace?visit=<key>`, then remembered on the device),
  * the page asks who's visiting each time it opens. She leads; family follow her walk, step in and
  * out with her, and everyone talks (live/).
+ *
+ * The editor shows this same palace as its preview: `preview` is the arrangement being edited
+ * (instead of the saved one, and with no visits or rooms), `onFocus` says which picture the visitor
+ * is at, and `ref` walks to one.
  */
-export function MuseumPage({ join }: { id?: string; join?: string }) {
+export function MuseumPage({
+  join,
+  preview,
+  onFocus,
+  ref,
+}: {
+  id?: string
+  join?: string
+  preview?: Exhibition
+  onFocus?: (i: number) => void
+  ref?: Ref<MuseumHandle>
+}) {
   const helper = join !== undefined
-  const together = dataMode === 'live'
+  const together = dataMode === 'live' && !preview
   const room = useMuseumRoom(helper ? 'helper' : 'patient', { join, enabled: together })
-  const [exhibition, setExhibition] = useState<Exhibition | null | undefined>(undefined)
+  const [loaded, setExhibition] = useState<Exhibition | null | undefined>(undefined)
+  const exhibition = preview ?? loaded
   const [error, setError] = useState<string | null>(null)
   const [focus, setFocus] = useState(-1)
   const [arrived, setArrived] = useState(false)
-  const [hint, setHint] = useState(true)
   const walker = useRef<WalkerHandle>(null)
   // Stepping into a picture: which one, and how far: diving in, inside, leaving, or (`surfacing`)
   // back through the frame and pulling out of it to where the visitor stood.
@@ -92,19 +112,16 @@ export function MuseumPage({ join }: { id?: string; join?: string }) {
   const [measured, setMeasured] = useState(0)
 
   useEffect(() => {
+    if (preview) return
     visits()
       .then(setExhibition)
       .catch((e: Error) => setError(e.message))
-  }, [])
+  }, [preview])
 
   // Rooms are planned for the number of pictures; adding one may add a room.
   const count = Math.max(1, exhibition?.items.length ?? 1)
   const plan = useMemo(() => planMuseum(count), [count])
 
-  useEffect(() => {
-    const t = setTimeout(() => setHint(false), 9000)
-    return () => clearTimeout(t)
-  }, [])
 
   // The last guided walk asked for in this exhibition. The walker may not be there yet (the
   // shared walk can arrive before the museum is drawn) or may start again at the entrance (a new
@@ -123,7 +140,6 @@ export function MuseumPage({ join }: { id?: string; join?: string }) {
       if (!exhibition || i < -1 || i >= exhibition.items.length) return
       setFocus(i)
       setArrived(false)
-      setHint(false)
       destination.current = { exhibition: exhibition.id, index: i }
       walkToDestination()
       if (share) room.setAt(i, i >= 0 ? (exhibition.items[i].captureId ?? null) : null)
@@ -131,6 +147,8 @@ export function MuseumPage({ join }: { id?: string; join?: string }) {
     [exhibition, room, walkToDestination],
   )
   const goTo = useCallback((i: number) => walkTo(i, true), [walkTo])
+  useImperativeHandle(ref, () => ({ goTo }), [goTo])
+  useEffect(() => onFocus?.(focus), [focus, onFocus])
 
   // Visit together: both screens follow the shared walk.
   const items = exhibition?.items
@@ -202,7 +220,6 @@ export function MuseumPage({ join }: { id?: string; join?: string }) {
       sound.musicTo(0, 1.6)
       sound.warp('in', IN_MS / 1000)
       setWarp({ dir: 'in', cross: t + IN_MS })
-      setHint(false)
       setInside({ index: i, stage: 'diving' })
     },
     [exhibition, inside, plan, sound],
@@ -302,7 +319,8 @@ export function MuseumPage({ join }: { id?: string; join?: string }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT')) return
+      // Not while typing (in the editor's labels, say).
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       if (inside || led) return
       if (e.code === 'KeyN' || e.code === 'PageDown') goTo(focus + 1)
       if (e.code === 'KeyP' || e.code === 'PageUp') goTo(Math.max(0, focus - 1))
@@ -314,8 +332,8 @@ export function MuseumPage({ join }: { id?: string; join?: string }) {
   }, [focus, arrived, inside, goTo, stepIn, led])
 
   if (error) return <div className="museum-message">{error}</div>
-  if (exhibition === undefined) return <div className="museum-message">Opening the museum…</div>
-  if (exhibition === null) return <div className="museum-message">The museum is being set up. Nothing hangs here yet.</div>
+  if (exhibition === undefined) return <div className="museum-message">Opening your Memory Palace…</div>
+  if (exhibition === null) return <div className="museum-message">Your family is still getting this ready.</div>
 
   // The label shows once the visitor has arrived at a piece or is looking at one.
   const current = focus >= 0 && arrived ? exhibition.items[focus] : null
@@ -378,12 +396,6 @@ export function MuseumPage({ join }: { id?: string; join?: string }) {
         </button>
       </header>
 
-      {hint && total > 0 && !led && chosen && (
-        <p className="museum-hint">
-          Drag to look around · W A S D or arrows to walk · tap a picture or the floor to go there
-        </p>
-      )}
-
       {total === 0 && (
         <div className="museum-empty">
           <h2>{exhibition.title}</h2>
@@ -422,7 +434,7 @@ export function MuseumPage({ join }: { id?: string; join?: string }) {
               <div key="title" className="museum-caption-body">
                 <strong>{exhibition.title}</strong>
                 <span className="museum-date">
-                  {total} {total === 1 ? 'piece' : 'pieces'} · press → to begin, or look at a picture
+                  {total} {total === 1 ? 'memory' : 'memories'} · tap → to begin
                 </span>
               </div>
             )}

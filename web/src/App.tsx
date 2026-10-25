@@ -31,9 +31,9 @@ const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
   // The walkable museum: #/museum, or #/museum/<exhibition id>; #/museum?join=CODE is a helper's
   // phone joining the iPad's walk ("Visit together"); #/museum?visit=<key> carries the live visit's
   // key (read by the page itself).
-  [/^#\/museum(?:\/([\w-]+))?(?:\?join=([A-Za-z]*)|\?visit=[A-Za-z0-9_-]+)?$/, (id, join) => <MuseumPage key="museum" id={id} join={join} />],
+  [/^#\/(?:palace|museum)(?:\/([\w-]+))?(?:\?join=([A-Za-z]*)|\?visit=[A-Za-z0-9_-]+)?$/, (id, join) => <MuseumPage key="museum" id={id} join={join} />],
   // The caretaker's editor for that museum (after the line above, so it wins over an exhibition id).
-  [/^#\/museum\/edit$/, () => <MuseumEditor />],
+  [/^#\/(?:palace|museum)\/edit$/, () => <MuseumEditor />],
 ]
 
 function view(hash: string): React.ReactNode {
