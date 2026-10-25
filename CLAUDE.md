@@ -265,6 +265,8 @@ Never cut: real capture, grounded facts with family approval, grounding enforcem
 
 ## Status
 
+**Oct 25, recorder avatar (`t3/camera-path-avatar`):** the viewer and showcase replace the camera path/frustum with a 1.7 m dot figure and dotted heading marker. The Recorder toggle replaces Path; Camera view hides it. X/Z and yaw interpolate directly from video time; Y stays fixed using the room floor estimate, with a nominal eye-height fallback. Browser checked on Wooden hatches at port 5174: play/pause, forward/reverse scrubbing, toggle and mode switches; exact X/Z match at five seeks while camera height varied 24 cm. Web typecheck passes; lint exits successfully with existing warnings and none in RecorderAvatar. No tests added.
+
 **Oct 25, dense scene defaults (`t3/start-project-preview`):** the dev backend now supports linked
 reconstruction packages, selecting the densest completed scene while retaining the original
 memory ID, facts, sessions and files. Wooden hatches defaults to 4,430,861 points and Hallway to
@@ -362,3 +364,5 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 - 2026-10-25 08:40 | Srinivas + Claude | PR #68: the palace turns phone visits' sideways pictures upright from the camera poses (Hallway, Wooden hatches); captures list and front page thumbnails still sideways (needs the turn stored by the bake) | try #68 in a browser and on the iPad, then merge
 
 - 2026-10-25 08:16 PT | Srinivas | `t3/start-project-preview`: dev selects linked, fully baked dense reconstructions without replacing memory identity/facts/sessions; Wooden hatches 4,430,861 points, Hallway 5,403,276, aligned with all colors/points preserved; connected Points default, palace Camera view, lazy splat loading, CORS-safe image caching. Verified a real UI video upload produced and played 4,425,268 points, then removed it; web 222 and backend 153 tests pass, 13 external-storage tests skipped; both typechecks pass. | Merge this branch before the next backend deployment; import other completed alternatives with backend/scripts/import-reconstruction.ts.
+
+- 2026-10-25 08:32 PT | Srinivas | `t3/camera-path-avatar`: dot recorder avatar replaces path, fixed floor height and playhead interpolation; Recorder toggle and showcase copy updated. Verified real capture playback/scrubbing, fixed Y, toggle and camera/orbit switching in this worktree at http://127.0.0.1:5174; typecheck and lint pass. | Review and merge the PR; server remains available for visual review.

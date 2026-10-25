@@ -23,7 +23,7 @@ bun run --cwd web test         # vitest: parsers, pose math, data layer, uploads
 - `#/` **Front page:** public moments only. The 3D scenes load after the page (the first download has no three.js).
 - `#/p/<id>` a public moment: the viewer with the family's approved facts.
 - `#/captures` **Captures:** drop a capture zip from the phone, or an old video (turned into an estimated 3D moment), or open a `room.bin` on its own. Cards show live per-stage status (facts, room bake, video → 3D, splat), the running job's progress, and which workers are online. Also: who the visits are for, and how Claude addresses them.
-- `#/capture/<id>` **Viewer + Revisit:** the room, people replayed in 3D, the phone's path, synced video, and the narrated visit.
+- `#/capture/<id>` **Viewer + Revisit:** the room, people replayed in 3D, a dot avatar showing the recorder at a fixed floor height, synced video, and the narrated visit.
 - `#/facts/<id>` **Fact review:** live; approve, edit, reject, "don't bring this up", ask Claude again.
 - `#/dashboard`, `#/dashboard/<id>` **Dashboard:** recall per session at real times, older memories, distress alerts, next revisits.
 - `#/museum`, `#/museum/edit`, `#/window/<id>`: the museum, its editor, the Memory Window.
