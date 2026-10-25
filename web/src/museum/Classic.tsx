@@ -380,10 +380,7 @@ export function ArchDoorways({ plan, wallMaterial }: { plan: MuseumPlan; wallMat
   )
 }
 
-/**
- * Rugs: one room shows the bare herringbone, the next a Persian medallion rug, and so on, so the
- * family can compare the two looks room by room.
- */
+/** A Persian medallion rug in the middle of every room, on the herringbone. */
 export function Carpets({ plan }: { plan: MuseumPlan }) {
   const inset = 0.85
   const room = plan.rooms[0]
@@ -400,13 +397,11 @@ export function Carpets({ plan }: { plan: MuseumPlan }) {
   useEffect(() => () => (material.map?.dispose(), material.dispose()), [material])
   return (
     <group>
-      {plan.rooms
-        .filter((r) => r.index % 2 === 1)
-        .map((r) => (
-          <mesh key={r.index} position={[0, 0.008, (r.zFront + r.zBack) / 2]} rotation={[-Math.PI / 2, 0, 0]} material={material}>
-            <planeGeometry args={[w, d]} />
-          </mesh>
-        ))}
+      {plan.rooms.map((r) => (
+        <mesh key={r.index} position={[0, 0.008, (r.zFront + r.zBack) / 2]} rotation={[-Math.PI / 2, 0, 0]} material={material}>
+          <planeGeometry args={[w, d]} />
+        </mesh>
+      ))}
     </group>
   )
 }
