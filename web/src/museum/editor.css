@@ -302,6 +302,31 @@
 .me-link {
   margin: 8px 0 4px;
 }
+.me-visit-link .me-hint {
+  margin: 0 0 6px;
+  color: var(--m-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.me-link-tools {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.me-link-tools button:first-child {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--m-line);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.me-link-tools button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .me-reset {
   padding: 0;
   border: 0;

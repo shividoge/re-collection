@@ -284,6 +284,7 @@ Never cut: real capture, grounded facts with family approval, grounding enforcem
 - `web/museum-together` (to create): a family member joins the museum from their phone (IBS27, M3).
 - `web/hide-triggers`: "Hide from her" (guide side done, web side paused).
 - PR #16 (Firdavs, render quality) needs to go on top of #25. PR #24 (IBS27, plan v3) waits for Shivin.
+- `web/palace-live-v3` (Srinivas, PR to open): PR #57's **live visit** (family join her Memory Palace from anywhere, follow her and talk) ported onto Convex, gated by a secret visit key in her link (`#/museum?visit=<key>`, from the editor). Contract `docs/architecture-v3.md` §6.6 "Live visit". Tests pass; needs a deploy to the dev deployment and a two-device check (venue Wi-Fi and mobile data, for the voice relay). The rest of #57 (Memory Palace names, folding editor, louder music, uploads) is still to port.
 
 **Next:** follow the Must list in `TASKS.md`. Demo visit filming at 20:00; real Revisit sessions 01:00–04:00; submit by 08:30.
 
@@ -342,3 +343,4 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 
 **For people:** open Claude Code in your clone of the repo and say: **"Read CLAUDE.md and TASKS.md. I'm <name>. Continue from my next step."**
 - 2026-10-25 01:30 | Srinivas + Claude | v3 rebuild on `arch/v3`: Convex backend, R2 storage, bake worker, GPU worker, web on baked files, museum perf, iOS uploads + depth v2; reviewed by GPT 6.1 Sol and fixed; 7 captures imported and baked live | Shivin: build iOS on the Mac (`ios/VERIFY.md`); iPad check of museum/viewer; then the cutover checklist
+- 2026-10-25 01:05 | Srinivas + Claude | `web/palace-live-v3`: #57's live visit on Convex (palace.ts: visit key, presence, her view, WebRTC signals, μ-law relay; web live/ client on reactive queries; editor shows her link). Backend 136 tests, web 219 pass | deploy to dev (`bunx convex dev --once`), two-device test, then port the rest of #57

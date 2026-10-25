@@ -19,3 +19,4 @@ export const fetchText = (url: string): Promise<string> => pageCache.fetchText(u
 // Live mode only (family tools, Revisit sessions, Visit together).
 export { useHealth, useCaptures, useMoment, useProgress, useProgressMany, usePerson, useCaptureStatus, useNow, family, sessions, uploadsApi, onlineWorkers, WORKER_ONLINE_MS, type UploadsApi } from './live'
 export { loadVisitSources, arrangements, rooms, guide, type GuideWords, type GuideAnswer, type VisitSource } from './museum'
+export { palaceLive, type LiveAudio, type LiveSignal } from './palace'

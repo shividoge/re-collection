@@ -73,7 +73,8 @@ export function useGuide({
     lastIntro.current = null
     // The music steps back while the guide talks: gradually, never to silence.
     v.onSpeaking = (speaking) => {
-      const base = now.current.inside ? 0 : 1
+      // Back to wherever the music was (lower while family talk in a live visit; silent inside a memory).
+      const base = now.current.inside ? 0 : sound.level
       sound.musicTo(speaking ? base * DUCK : base, speaking ? DUCK_DOWN_S : DUCK_UP_S)
     }
     const stopWords = guide.watch((all) => (words.current = new Map(all.map((w) => [w.key, w]))))
@@ -96,7 +97,7 @@ export function useGuide({
       stopWords()
       v.close()
       voice.current = null
-      const base = now.current.inside ? 0 : 1
+      const base = now.current.inside ? 0 : sound.level
       sound.musicTo(base, DUCK_UP_S)
       setState({ saying: '', listening: false, thinking: false, problem: null })
     }

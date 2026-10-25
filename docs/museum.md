@@ -81,6 +81,19 @@ moves the other. Every picture from a visit has a **Memory Window** button (on t
 returns both. The old hall's address, `#/memories` (and `#/memories?join=CODE`), now opens
 `#/museum`.
 
+## Live visit (family join from anywhere and talk)
+
+The editor shows **her link**, `#/museum?visit=<key>`, the same for her iPad and for family. With
+it, the palace asks **"Who's visiting?"** each time it opens: a big **Enter the Memory Palace** for
+her, or **Family joining…** with a name. She leads: family screens glide after her walk, step into
+the same memory with the same dive and come back out when she does, and their controls are off.
+Everyone hears everyone (a direct call per pair of screens, or voice relayed through Convex where
+that can't connect). Presence notes say who's here ("Sam is here with you", "Following Grandma"),
+a name glows while that person speaks, and the music steps back while others are here. The
+Memory Window button hides while others are with her (it leaves the palace, which ends the visit
+on that screen). **Make a new link** in the editor ends the visit and stops the old link working,
+on her iPad too. The rules and API: `architecture-v3.md` §6.6 "Live visit"; the code: `live/`.
+
 ## Keeping it light on a tablet
 
 The museum draws only when something changes (walking, looking, a dive, a video frame); between

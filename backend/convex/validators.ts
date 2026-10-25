@@ -233,6 +233,21 @@ export const arrangement = v.object({
   updatedAt: v.string(),
 })
 
+// ---- live visit (palace.ts) -------------------------------------------------------------
+
+export const palaceRole = v.union(v.literal('patient'), v.literal('family'))
+export const palaceViewFields = {
+  x: v.number(),
+  z: v.number(),
+  yaw: v.number(),
+  pitch: v.number(),
+  inside: v.union(v.object({ index: v.number(), stage: v.union(v.literal('diving'), v.literal('here'), v.literal('leaving')) }), v.null()),
+  music: v.boolean(),
+}
+export const palaceView = v.object(palaceViewFields)
+export const palaceMember = v.object({ id: v.string(), role: palaceRole, name: v.string() })
+export const iceServer = v.object({ urls: v.union(v.string(), v.array(v.string())), username: v.optional(v.string()), credential: v.optional(v.string()) })
+
 // ---- jobs -------------------------------------------------------------------------------
 
 export const jobKind = v.union(v.literal('facts'), v.literal('bake'), v.literal('convert'), v.literal('splat'))

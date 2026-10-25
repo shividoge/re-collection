@@ -7,6 +7,8 @@ const crons = cronJobs()
 crons.interval('re-queue expired job leases', { seconds: 30 }, internal.jobsCron.reap, {})
 // Museum rooms nobody has used for three hours, and screens that left.
 crons.interval('sweep museum rooms', { minutes: 10 }, internal.museum.sweep, {})
+// Live visit: screens that left without saying so, their unread call setup, and old relayed voice.
+crons.interval('sweep the live visit', { minutes: 1 }, internal.palace.sweep, {})
 
 // Uploads started but abandoned for 7 days (removed like captures.remove does).
 crons.daily('remove abandoned uploads', { hourUTC: 11, minuteUTC: 0 }, internal.captures.sweepAbandoned, {})
