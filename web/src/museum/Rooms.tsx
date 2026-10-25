@@ -2,7 +2,7 @@ import { MeshReflectorMaterial, RoundedBox } from '@react-three/drei'
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js'
-import { ArchDoorways, Carpets, ClassicBench, Cornice, Lantern, Wainscot } from './Classic'
+import { ArchDoorways, Carpets, Cornice, Lantern, varnishedWood, Wainscot } from './Classic'
 import { WALL, type MuseumPlan, type Room } from './layout'
 import type { Look } from './looks'
 import { fabric, plaster, stoneFloor, titleTexture, woodFloor, type SurfaceMaps } from './textures'
@@ -124,10 +124,11 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
     return new THREE.MeshStandardMaterial({ map: m.map, normalMap: m.normalMap, normalScale: new THREE.Vector2(0.35, 0.35), roughnessMap: m.roughnessMap, roughness: 1, envMapIntensity: 0.6 })
   }, [look])
   const wainscotMaterial = useMemo(() => {
+    if (classic) return varnishedWood()
     if (!look.wainscot) return null
     const m = plasterMaps(look.wainscot)
     return new THREE.MeshStandardMaterial({ map: m.map, normalMap: m.normalMap, roughness: 0.7, envMapIntensity: 0.8 })
-  }, [look])
+  }, [look, classic])
   const trimMaterial = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
@@ -400,7 +401,8 @@ function Ceiling({ style, room, width, look }: { style: MuseumPlan['style']; roo
 
 /** Somewhere to sit and look, in the middle of each room. */
 function Bench({ style, room, look }: { style: MuseumPlan['style']; room: Room; look: Look }) {
-  if (style === 'classic') return <ClassicBench room={room} />
+  // The classic gallery's furniture is placed from the plan (Classic.tsx Furniture).
+  if (style === 'classic') return null
   const cz = (room.zFront + room.zBack) / 2
   if (style === 'calm') {
     // A soft upholstered seat, like a sofa at home, facing the front of the room.

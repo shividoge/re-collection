@@ -60,6 +60,22 @@ describe('museum layout', () => {
     expect(along[0]).toBeCloseTo(r.x0 + 1)
   })
 
+  it('walks around furniture on the way to every picture', () => {
+    const plan = planMuseum(14, 'classic')
+    expect(plan.features.length).toBeGreaterThan(4)
+    let from = plan.start
+    for (const s of plan.slots) {
+      const path = route(plan, from, s.view)
+      let at = from
+      for (const p of path) {
+        // Every point along every leg stays clear of furniture and walls.
+        for (let t = 0; t <= 1; t += 0.02) expect(walkable(plan, at[0] + (p[0] - at[0]) * t, at[1] + (p[1] - at[1]) * t)).toBe(true)
+        at = p
+      }
+      from = s.view
+    }
+  })
+
   it('routes between rooms through the doorways', () => {
     const plan = planMuseum(30, 'salon')
     const last = plan.slots[plan.slots.length - 1]

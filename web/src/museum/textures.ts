@@ -221,6 +221,29 @@ export function woodFloor(pattern: 'planks' | 'boards' | 'herringbone', light: R
   return finish(size, b, 2.0, [1, 1])
 }
 
+/**
+ * Wood grain with no seams, for panelling and furniture: long streaks of grain with faint
+ * growth rings and the odd darker figure, running along u.
+ */
+export function woodGrain(light: RGB, dark: RGB, seed = 21, size = 512): SurfaceMaps {
+  const b = makeBuffers(size)
+  const streak = fbm(6, 4, seed)
+  const figure = fbm(3, 3, seed + 1)
+  const fine = fbm(64, 2, seed + 2)
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const u = x / size
+      const v = y / size
+      // Grain runs along u: stretch the noise that way and bend the rings with it.
+      const g = streak(u * 0.15, v)
+      const rings = 0.5 + 0.5 * Math.sin((v * 22 + g * 6 + figure(u, v) * 2) * Math.PI)
+      const f = fine(u, v)
+      const c = mix(light, dark, 0.35 + (g - 0.5) * 0.7 + rings * 0.18 + (f - 0.5) * 0.1)
+      put(b, y * size + x, c, g * 0.4 + rings * 0.08, 0.45 + (1 - rings) * 0.08)
+    }
+  return finish(size, b, 0.8, [1, 1])
+}
+
 /** Polished stone: soft clouds of tone, a few darker veins, tiny speckles, high polish. */
 export function stoneFloor(base: RGB, vein: RGB, seed = 11, size = 1024): SurfaceMaps {
   const b = makeBuffers(size)

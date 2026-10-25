@@ -87,6 +87,23 @@ export interface Slot {
   view: [number, number]
 }
 
+/**
+ * Something standing on the floor that visitors walk around: a bench, a vitrine (a glass case
+ * with a visit's 3D scan inside), or a plinth with a sculpture. A rectangle on the floor.
+ */
+export interface Feature {
+  kind: 'bench' | 'vitrine' | 'plinth'
+  room: number
+  x: number
+  z: number
+  /** Half its width (along x) and depth (along z), in meters. */
+  hw: number
+  hd: number
+}
+
+/** How far visitors keep from furniture (m). */
+const CLEARANCE = 0.25
+
 export interface MuseumPlan {
   style: RoomStyle
   spec: StyleSpec
@@ -94,6 +111,7 @@ export interface MuseumPlan {
   walls: WallPiece[]
   doorways: Doorway[]
   slots: Slot[]
+  features: Feature[]
   /** Where the visitor starts (x, z), facing −z. */
   start: [number, number]
 }
@@ -192,11 +210,28 @@ export function planMuseum(count: number, style: RoomStyle): MuseumPlan {
     }
   }
 
-  return { style, spec, rooms: roomList, walls, doorways, slots, start: [0, roomList[0].zFront - 1.6] }
+  // The classic gallery is furnished: a bench and a vitrine down the middle of each room,
+  // sculptures on plinths in the corners that have no picture in front of them.
+  const features: Feature[] = []
+  if (style === 'classic') {
+    for (const room of roomList) {
+      const cz = (room.zFront + room.zBack) / 2
+      features.push({ kind: 'bench', room: room.index, x: 0, z: cz + 1.9, hw: 0.8, hd: 0.32 })
+      features.push({ kind: 'vitrine', room: room.index, x: 0, z: cz - 1, hw: 0.42, hd: 0.42 })
+      const corner = half - 0.75
+      for (const x of [-corner, corner]) {
+        features.push({ kind: 'plinth', room: room.index, x, z: room.zFront - 0.75, hw: 0.3, hd: 0.3 })
+        if (room.index === rooms - 1) features.push({ kind: 'plinth', room: room.index, x, z: room.zBack + 0.75, hw: 0.3, hd: 0.3 })
+      }
+    }
+  }
+
+  return { style, spec, rooms: roomList, walls, doorways, slots, features, start: [0, roomList[0].zFront - 1.6] }
 }
 
 /** Whether a visitor may stand at (x, z): inside a room, or in a doorway, away from walls. */
 export function walkable(plan: MuseumPlan, x: number, z: number): boolean {
+  for (const f of plan.features) if (Math.abs(x - f.x) < f.hw + CLEARANCE && Math.abs(z - f.z) < f.hd + CLEARANCE) return false
   for (const r of plan.rooms) {
     if (x > r.x0 + MARGIN && x < r.x1 - MARGIN && z < r.zFront - MARGIN && z > r.zBack + MARGIN) return true
   }
@@ -231,11 +266,48 @@ export function roomAt(plan: MuseumPlan, z: number): number {
 export function route(plan: MuseumPlan, from: [number, number], to: [number, number]): [number, number][] {
   const a = roomAt(plan, from[1])
   const b = roomAt(plan, to[1])
+  const stops: [number, number][] = []
+  if (a < b) for (let r = a; r < b; r++) stops.push([0, plan.doorways[r].z])
+  else for (let r = a - 1; r >= b; r--) stops.push([0, plan.doorways[r].z])
+  stops.push(to)
+  // Step around furniture in the way, going round it on the side the walk is already nearer:
+  // walking mostly forward, pass it to the left or right; walking mostly across, pass in front
+  // of it or behind it.
   const points: [number, number][] = []
-  if (a < b) for (let r = a; r < b; r++) points.push([0, plan.doorways[r].z])
-  else for (let r = a - 1; r >= b; r--) points.push([0, plan.doorways[r].z])
-  points.push(to)
+  let at = from
+  for (const stop of stops) {
+    const blocking = plan.features
+      .filter((f) => crosses(at, stop, f))
+      .sort((p, q) => Math.hypot(p.x - at[0], p.z - at[1]) - Math.hypot(q.x - at[0], q.z - at[1]))
+    for (const f of blocking) {
+      const ox = f.hw + CLEARANCE + 0.35
+      const oz = f.hd + CLEARANCE + 0.35
+      if (Math.abs(stop[1] - at[1]) >= Math.abs(stop[0] - at[0])) {
+        const x = f.x + ((stop[0] + at[0]) / 2 >= f.x ? ox : -ox)
+        const dir = stop[1] < at[1] ? -1 : 1
+        points.push([x, f.z - dir * oz], [x, f.z + dir * oz])
+      } else {
+        const z = f.z + ((stop[1] + at[1]) / 2 >= f.z ? oz : -oz)
+        const dir = stop[0] < at[0] ? -1 : 1
+        points.push([f.x - dir * ox, z], [f.x + dir * ox, z])
+      }
+    }
+    points.push(stop)
+    at = stop
+  }
   return points
+}
+
+/** Whether the straight line from `a` to `b` passes through `f` (with the clearance around it). */
+function crosses(a: [number, number], b: [number, number], f: Feature): boolean {
+  const steps = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.05)
+  for (let i = 0; i <= steps; i++) {
+    const t = i / Math.max(1, steps)
+    const x = a[0] + (b[0] - a[0]) * t
+    const z = a[1] + (b[1] - a[1]) * t
+    if (Math.abs(x - f.x) < f.hw + CLEARANCE && Math.abs(z - f.z) < f.hd + CLEARANCE) return true
+  }
+  return false
 }
 
 /** The size a picture of aspect `aspect` (w/h) is hung at in `slot`. */

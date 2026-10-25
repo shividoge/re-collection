@@ -39,9 +39,8 @@ export interface Look {
 
 export const LOOKS: Record<RoomStyle, Look> = {
   // A classic picture gallery, after the old public galleries families know: rose-red fabric
-  // walls, dark wood panelling, an ivory cornice touched with gold, a skylight, gilded frames.
-  // It keeps the calm room's rules: a plain matte carpet (no shine, no busy pattern), bright
-  // even light from above, one row of large pictures, guided movement only.
+  // walls, varnished dark wood panelling, an ivory cornice touched with gold, a skylight,
+  // ornate gilded frames, a herringbone floor with a plain rug, and furniture to walk around.
   classic: {
     label: 'Classic gallery',
     wall: [170, 74, 68],
@@ -50,8 +49,9 @@ export const LOOKS: Record<RoomStyle, Look> = {
     wainscotHeight: 1.05,
     trim: '#efe3cc',
     ceiling: '#f1e6d4',
-    floor: { kind: 'boards', light: [92, 58, 38], dark: [70, 43, 28], metersPerTile: 2.6, mirror: 0 },
-    frame: { color: '#caa253', metalness: 0.9, roughness: 0.32, border: 0.08, depth: 0.07 },
+    // The salon's herringbone, with only a faint reflection, under the rug.
+    floor: { kind: 'herringbone', light: [164, 108, 66], dark: [82, 48, 28], metersPerTile: 1.6, mirror: 0.2 },
+    frame: { color: '#caa253', metalness: 0.9, roughness: 0.32, border: 0.13, depth: 0.07 },
     mat: 0.035,
     matColor: '#eee3cc',
     light: '#fff3e0',
@@ -63,7 +63,7 @@ export const LOOKS: Record<RoomStyle, Look> = {
     background: '#2a1714',
     vignette: false,
     occlusion: 1.4,
-    guided: true,
+    guided: false,
   },
   // Made for the person with dementia, after the design research in docs/museum.md: warm and
   // homelike, a plain matte floor (no pattern to read as a step, no shine to read as water),

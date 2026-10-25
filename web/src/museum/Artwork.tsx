@@ -1,6 +1,7 @@
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
+import { gilding, ornateFrameGeometry } from './Classic'
 import type { Artwork as Art } from './exhibitions'
 import { fitPicture, type Slot } from './layout'
 import type { Look } from './looks'
@@ -107,11 +108,26 @@ export function Artwork({
   useEffect(() => () => label.texture.dispose(), [label])
   const labelW = 0.26
 
+  // Gilded frames are carved (ornate profile, one mesh); the others are plain rails.
+  const gilded = look.frame.metalness > 0.5
   const frameMaterial = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: look.frame.color, metalness: look.frame.metalness, roughness: look.frame.roughness, envMapIntensity: 1.3 }),
-    [look],
+    () =>
+      gilded
+        ? gilding()
+        : new THREE.MeshPhysicalMaterial({
+            color: look.frame.color,
+            metalness: look.frame.metalness,
+            roughness: look.frame.roughness,
+            // A thin varnish, so wooden and painted frames catch a soft highlight.
+            clearcoat: 0.4,
+            clearcoatRoughness: 0.3,
+            envMapIntensity: 1.3,
+          }),
+    [look, gilded],
   )
   useEffect(() => () => frameMaterial.dispose(), [frameMaterial])
+  const ornate = useMemo(() => (gilded ? ornateFrameGeometry(outerW, outerH, border) : null), [gilded, outerW, outerH, border])
+  useEffect(() => () => ornate?.dispose(), [ornate])
 
   // Videos play only while the visitor is near (or looking at this one), to spare the device.
   const group = useRef<THREE.Group>(null)
@@ -147,29 +163,21 @@ export function Artwork({
         <meshBasicMaterial map={pool} color={look.pool} transparent opacity={look.poolStrength * (focused ? 1.25 : 1)} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
 
-      {/* Frame: four rails around the mount. */}
-      {[
-        [0, outerH / 2 - border / 2, outerW, border],
-        [0, -outerH / 2 + border / 2, outerW, border],
-        [-outerW / 2 + border / 2, 0, border, outerH - border * 2],
-        [outerW / 2 - border / 2, 0, border, outerH - border * 2],
-      ].map(([x, y, bw, bh], i) => (
-        <mesh key={i} position={[x, y, depth / 2]} material={frameMaterial} castShadow>
-          <boxGeometry args={[bw, bh, depth]} />
-        </mesh>
-      ))}
-      {/* A gilded frame gets an inner lip, as carved frames have. */}
-      {look.frame.metalness > 0.5 &&
+      {ornate ? (
+        <mesh geometry={ornate} material={frameMaterial} castShadow />
+      ) : (
+        // Frame: four rails around the mount.
         [
-          [0, h / 2 + mat + 0.008, w + mat * 2 + 0.016, 0.016],
-          [0, -h / 2 - mat - 0.008, w + mat * 2 + 0.016, 0.016],
-          [-w / 2 - mat - 0.008, 0, 0.016, h + mat * 2],
-          [w / 2 + mat + 0.008, 0, 0.016, h + mat * 2],
+          [0, outerH / 2 - border / 2, outerW, border],
+          [0, -outerH / 2 + border / 2, outerW, border],
+          [-outerW / 2 + border / 2, 0, border, outerH - border * 2],
+          [outerW / 2 - border / 2, 0, border, outerH - border * 2],
         ].map(([x, y, bw, bh], i) => (
-          <mesh key={`lip${i}`} position={[x, y, depth * 0.75]} material={frameMaterial}>
-            <boxGeometry args={[bw, bh, depth * 0.5]} />
+          <mesh key={i} position={[x, y, depth / 2]} material={frameMaterial} castShadow>
+            <boxGeometry args={[bw, bh, depth]} />
           </mesh>
-        ))}
+        ))
+      )}
 
       {mat > 0 && (
         <mesh position={[0, 0, depth * 0.45]}>
