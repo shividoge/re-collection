@@ -166,8 +166,9 @@ export function Rooms({ plan, look, title, subtitle, reflections }: { plan: Muse
         </group>
       ))}
 
-      {/* The exhibition's title, lettered on the entrance wall above the fireplace. */}
-      <mesh position={[0, 2.65, first.zFront - 0.006]} rotation={[0, Math.PI, 0]}>
+      {/* The exhibition's title, lettered on the entrance wall above the fireplace. Not merged
+          (live): renaming the exhibition changes the plane's height, not just its picture. */}
+      <mesh position={[0, 2.65, first.zFront - 0.006]} rotation={[0, Math.PI, 0]} userData={{ live: true }}>
         <planeGeometry args={[titleW, titleW / titleArt.aspect]} />
         <meshBasicMaterial map={titleArt.texture} transparent toneMapped={false} />
       </mesh>
