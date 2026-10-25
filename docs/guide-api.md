@@ -44,6 +44,10 @@ guide/data/
     status.json             pipeline status (written by the guide)
   sessions/<sessionId>.json one revisit session: turns, dropped sentences, scores
   people.json               who the patient is, e.g. { "displayName": "Grandma", "preferredAddress": "Mom" }
+  museum.json               the caretaker's museum arrangement
+  museum-uploads/           photos and videos the caretaker uploaded for the museum
+    <uploadId>.<ext>        the file, as uploaded
+    index.json              [{ id, kind, type, name, bytes, createdAt }], newest last
 ```
 
 The capture id is the manifest's `id`.
@@ -219,14 +223,34 @@ The caretaker sets up the patient's museum at `#/museum/edit`: which pictures ha
 
 ```
 GET    /api/museum/arrangement   → { arrangement: Arrangement | null }
-PUT    /api/museum/arrangement   ← { title, subtitle, items: [{ capture, piece, title, caption }] }   → { arrangement }
+PUT    /api/museum/arrangement   ← { title, subtitle, items: [{ capture, piece, title, caption } | { upload, title, caption }] }   → { arrangement }
 DELETE /api/museum/arrangement   → { arrangement: null }   (back to the automatic museum)
 GET    /public/museum/arrangement → the same, with only pictures from public captures
 ```
 
-- `capture` must be an existing capture id. `piece` is `video`, `thumb` or a keyframe `kNNNN` (never a path).
+- An item is a piece of a capture or an upload. `capture` must be an existing capture id, and `piece` is `video`, `thumb` or a keyframe `kNNNN` (never a path). `upload` must be an existing upload id (below).
 - At most 60 items; `title` and the museum title up to 80 characters, `caption` up to 240 (cut, whitespace collapsed). 400 with a reason otherwise.
 - The static export writes the public copy to `data/museum/arrangement.json` when one is saved. On the static site the editor saves into that browser only.
+- Uploads are the family's own photos and videos, so they're never public: `/public/museum/arrangement` and the static export leave upload items out.
+
+### Museum uploads (the caretaker's own photos and videos)
+
+```
+POST   /api/museum/uploads?name=<file name>   ← the file's bytes, with its Content-Type   → { upload: Upload }
+GET    /api/museum/uploads                    → { uploads: Upload[] }   (oldest first)
+DELETE /api/museum/uploads/:id                → { ok: true }   (409 while the saved arrangement uses it)
+GET    /files/museum/:id                      → the file (Range supported; ?key= works, for <img> and <video>)
+```
+
+```ts
+type Upload = { id: string; kind: 'photo' | 'video'; type: string; name: string; bytes: number; createdAt: string; url: string };
+// id: a UUID made by the guide. url: "/files/museum/<id>". name: the original file name, at most 120 characters.
+```
+
+- **Types:** photos `image/jpeg`, `image/png`, `image/webp`, `image/gif`; videos `video/mp4`, `video/quicktime`, `video/webm`. Anything else → 415 with the list. (iPhone HEIC photos arrive as JPEG when the page asks for these types.)
+- **Size:** photos up to 40 MB, videos up to 1 GB; larger → 413. The body is streamed to a `.part` file and renamed when complete, as with capture files; a dropped or short upload → 400 and nothing is kept.
+- **Delete:** removes the file and its index entry. While the saved arrangement still hangs it → 409 (take it off the walls and save first).
+- Uploads are written only by these routes and never appear under `/public`.
 
 ## Public routes (visitors, no key)
 
