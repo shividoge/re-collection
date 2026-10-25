@@ -142,8 +142,11 @@ export class DepthSource {
 /** "Couldn't load the people for 0:12–0:13. Retrying…": the failed chunk as visit times. */
 export function failureNote(frames: FrameRecord[], f: ChunkFailure): string {
   const times = frames.filter((r) => r.d !== null && r.d >= f.first && r.d < f.first + f.n).map((r) => r.t)
-  const span = times.length ? `${clock(Math.min(...times))}–${clock(Math.max(...times))}` : `depth frames ${f.first}–${f.first + f.n - 1}`
-  return `Couldn't load the people for ${span} (${f.message}). Retrying…`
+  const span = times.length ? `${clock(Math.floor(Math.min(...times)))}–${clock(Math.ceil(Math.max(...times)))}` : `depth frames ${f.first}–${f.first + f.n - 1}`
+  return `Couldn't load the people for ${span}. Retrying… (${trimStop(f.message)})`
 }
 
-const clock = (t: number): string => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
+const clock = (s: number): string => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+
+/** A reason without its closing period, to sit inside parentheses. */
+export const trimStop = (message: string): string => message.replace(/\.\s*$/, '')

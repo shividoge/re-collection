@@ -13,6 +13,7 @@ import type { SceneBounds } from './packs'
 import { dominantQuarterTurns, type Vec3 } from './pose'
 import { ProcessingStatus } from './ProcessingStatus'
 import { SceneReplay, SceneRoom, shownRoom, type RoomView } from './SceneRoom'
+import { trimStop } from './depthSource'
 import { useSelectionTint } from './selectionTint'
 import type { SplatStatus } from './SplatRoom'
 import { StaticCloud } from './StaticCloud'
@@ -491,7 +492,7 @@ function FootNotes({ room, shown, splatStatus, roomView }: { room: ViewerRoom; s
         </span>
       )}
       {scene.splat && roomView === 'splat' && splatStatus.state === 'loading' && <span>Loading the splat…</span>}
-      {splatStatus.state === 'failed' && <span className="err">The splat didn't load ({splatStatus.message}), so the room is drawn from its points.</span>}
+      {splatStatus.state === 'failed' && <span className="err">The splat didn't load ({trimStop(splatStatus.message)}), so the room is drawn from its points.</span>}
       {part(scene.points, "room's points")}
       {part(scene.surface, "room's surface")}
       {part(scene.timeline, "visit's timeline")}

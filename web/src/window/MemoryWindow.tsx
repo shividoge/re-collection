@@ -2,6 +2,7 @@ import { Canvas } from '@react-three/fiber'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CaptureAssets } from '../data/assets'
 import type { NavMode } from '../scene/SceneViewer'
+import { trimStop } from '../scene/depthSource'
 import type { SplatStatus } from '../scene/SplatRoom'
 // TEMPORARY: the real exports come from '../data' and '../scene' once they land.
 import { useCaptureAssets } from '../data'
@@ -55,7 +56,7 @@ function WindowStage({ scene, back, room }: { scene: CaptureScene; back: string;
   // What didn't load (the splat, the room's photos, the people for a stretch), said plainly.
   const [notes, onNote] = useSceneNotes()
   const onSplatStatus = useCallback(
-    (s: SplatStatus) => onNote('splat', s.state === 'failed' ? `The splat didn't load (${s.message}), so the room is drawn from its points.` : null),
+    (s: SplatStatus) => onNote('splat', s.state === 'failed' ? `The splat didn't load (${trimStop(s.message)}), so the room is drawn from its points.` : null),
     [onNote],
   )
 

@@ -72,8 +72,8 @@ describe('depth chunks that fail', () => {
   })
 
   it('reads as the stretch of the visit the people are missing for', () => {
-    const frames: FrameRecord[] = [0, 1, 2, 3].map((d) => ({ t: 12 + d * 0.4, T: [], K: [], d }))
-    expect(failureNote(frames, { chunk: 1, first: 2, n: 2, attempts: 1, retryAt: 0, message: 'HTTP 503' })).toBe("Couldn't load the people for 0:12–0:13 (HTTP 503). Retrying…")
+    const frames: FrameRecord[] = [0, 1, 2, 3].map((d) => ({ t: 12 + d * 0.3, T: [], K: [], d }))
+    expect(failureNote(frames, { chunk: 1, first: 2, n: 2, attempts: 1, retryAt: 0, message: 'HTTP 503.' })).toBe("Couldn't load the people for 0:12–0:13. Retrying… (HTTP 503)")
   })
 })
 

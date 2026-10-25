@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { useKeyframeTexture } from './keyframeTexture'
 import type { SurfaceData } from './packs'
 import { SELECTION_GLSL, applySelection, selectionUniforms, type SelectionTint } from './selectionTint'
+import { trimStop } from './depthSource'
 import type { SceneNote } from './useCaptureScene'
 
 /**
@@ -49,7 +50,7 @@ export function RoomSurfaceMesh({
   const keysFailed = keys.status === 'failed' ? keys.message : null
   useEffect(() => {
     if (!onNote) return
-    onNote('keyframes', keysFailed && `Couldn't load the room's photos (${keysFailed}); showing measured colors.`)
+    onNote('keyframes', keysFailed && `Couldn't load the room's photos (${trimStop(keysFailed)}); showing measured colors.`)
     return () => onNote('keyframes', null)
   }, [onNote, keysFailed])
 
