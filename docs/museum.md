@@ -104,9 +104,9 @@ of it, and guided walks step round it.
 1. **Drop** photos or videos anywhere on the museum page (or press "Add photos or videos" on an
    iPad). They hang in the exhibition that's open and stay on that device (IndexedDB). "Take down"
    removes one again.
-2. **Our visits** fills itself from the guide: each finished capture hangs as its video, followed
-   by two of its keyframes, with the title and date the family gave it. Stepping into any of them
-   opens the visit's 3D room at that moment.
+2. **Our visits** fills itself from the guide: each finished capture hangs once, as its video (a still
+   if it has none), with the title and date the family gave it, so every frame is a different
+   memory. Stepping into it opens the visit's 3D room.
 3. **Curated exhibitions** come from `web/public/museum/exhibitions.json`:
 
 ```json
