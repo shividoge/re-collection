@@ -1,5 +1,5 @@
 import { useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useMemo, useRef, type RefObject } from 'react'
+import { useMemo, type RefObject } from 'react'
 import * as THREE from 'three'
 import type { FrameRecord } from './formats'
 import { dominantQuarterTurns, frameIndexAtTime, rollColumnMajor } from './pose'
@@ -19,47 +19,6 @@ function uprightPoses(frames: FrameRecord[]): { positions: Float32Array; quatern
     q.toArray(quaternions, i * 4)
   })
   return { positions, quaternions }
-}
-
-/** The recorder's path as a faint line, plus a small frustum at the current playhead. */
-export function CameraPath({ frames, timeRef, color = '#ff5c3a' }: { frames: FrameRecord[]; timeRef: RefObject<number>; color?: string }) {
-  const line = useMemo(() => {
-    const pts = new Float32Array(frames.length * 3)
-    frames.forEach((f, i) => pts.set([f.T[12], f.T[13], f.T[14]], i * 3))
-    const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.BufferAttribute(pts, 3))
-    return new THREE.Line(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.35 }))
-  }, [frames, color])
-  useEffect(
-    () => () => {
-      line.geometry.dispose()
-      ;(line.material as THREE.Material).dispose()
-    },
-    [line],
-  )
-  const poses = useMemo(() => uprightPoses(frames), [frames])
-  const marker = useRef<THREE.Group>(null)
-
-  useFrame(() => {
-    const m = marker.current
-    if (!m || frames.length === 0) return
-    const i = frameIndexAtTime(frames, timeRef.current ?? 0)
-    m.position.fromArray(poses.positions, i * 3)
-    m.quaternion.fromArray(poses.quaternions, i * 4)
-  })
-
-  return (
-    <>
-      <primitive object={line} />
-      <group ref={marker}>
-        {/* Frustum: apex at the camera, opening down −z like the camera it marks. */}
-        <mesh position={[0, 0, -0.06]} rotation={[Math.PI / 2, 0, 0]}>
-          <coneGeometry args={[0.05, 0.12, 4, 1, true]} />
-          <meshBasicMaterial color={color} wireframe />
-        </mesh>
-      </group>
-    </>
-  )
 }
 
 /** Drives the viewer camera along the recorded poses, smoothed, upright. */

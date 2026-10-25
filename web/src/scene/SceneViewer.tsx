@@ -3,7 +3,8 @@ import { Canvas } from '@react-three/fiber'
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as THREE from 'three'
 import type { CaptureAssets } from '../data/assets'
-import { CameraPath, FollowCamera } from './CameraPath'
+import { FollowCamera } from './CameraPath'
+import { RecorderAvatar } from './RecorderAvatar'
 import { cloudBounds } from './cloudBounds'
 import type { FrameRecord, PointCloud } from './formats'
 import { HoleFill } from './HoleFill'
@@ -120,7 +121,7 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
   const manifest = scene?.manifest ?? null
   const moment = scene?.moment ?? NO_FRAMES
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null)
-  const [showPath, setShowPath] = useState(true)
+  const [showRecorder, setShowRecorder] = useState(true)
   // The room as one connected surface (fused from the scan's depth frames), or as raw points.
   const [showSurface, setShowSurface] = useState(true)
   const [chosenView, setRoomView] = useState<RoomChoice>('points')
@@ -329,7 +330,7 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
                 selection={selection}
                 video={hasVideo ? videoEl : null}
                 playback={playback}
-                showPath={showPath && canFollow}
+                showRecorder={showRecorder && canFollow && mode !== 'follow'}
                 onSplatStatus={setSplatStatus}
                 onNote={onNote}
               />
@@ -428,7 +429,7 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
         )}
         <div className="layers">
           <Layer label="Surface" on={showSurface && roomView === 'points' && scene?.surface?.status === 'ready'} disabled={roomView !== 'points' || scene?.surface?.status !== 'ready'} set={setShowSurface} />
-          <Layer label="Path" on={showPath} disabled={!canFollow} set={setShowPath} />
+          <Layer title={mode === 'follow' ? 'Switch to Orbit or Fly to see the recorder' : 'Show the person recording as a dot avatar at a fixed height'} label="Recorder" on={showRecorder} disabled={!canFollow || mode === 'follow'} set={setShowRecorder} />
         </div>
         {showVideo && (
           <button className={`video-toggle${videoOpen ? ' on' : ''}`} onClick={() => setVideoOpen((o) => !o)} title="Show or hide the video (V)">
@@ -440,7 +441,7 @@ function Viewer({ room, initialMode = 'orbit', rate = 1, showVideo = true, inter
   )
 }
 
-/** Everything inside the canvas: the room, the selection, the path and the people replay. */
+/** Everything inside the canvas: the room, the selection, the recorder and the people replay. */
 function ViewerScene({
   room,
   view,
@@ -450,7 +451,7 @@ function ViewerScene({
   selection,
   video,
   playback,
-  showPath,
+  showRecorder,
   onSplatStatus,
   onNote,
 }: {
@@ -462,7 +463,7 @@ function ViewerScene({
   selection: Selection | null
   video: HTMLVideoElement | null
   playback: Playback
-  showPath: boolean
+  showRecorder: boolean
   onSplatStatus: (s: SplatStatus) => void
   onNote: SceneNote
 }) {
@@ -485,7 +486,7 @@ function ViewerScene({
           <SelectionBox selection={selection} />
         </>
       )}
-      {scene && showPath && <CameraPath frames={scene.moment} timeRef={playback.timeRef} />}
+      {scene && showRecorder && <RecorderAvatar frames={scene.moment} points={scene.points?.status === 'ready' ? scene.points.data : null} timeRef={playback.timeRef} />}
       {scene && video && <SceneReplay scene={scene} video={video} timeRef={playback.timeRef} masked={shown === 'surface'} selection={tint} onNote={onNote} />}
     </>
   )
@@ -555,9 +556,9 @@ function pivotOf(sel: Selection): Vec3 {
   return sel.kind === 'object' ? sel.bounds.center : sel.hit
 }
 
-function Layer({ label, on, set, disabled }: { label: string; on: boolean; set: (on: boolean) => void; disabled?: boolean }) {
+function Layer({ label, on, set, disabled, title }: { label: string; on: boolean; set: (on: boolean) => void; disabled?: boolean; title?: string }) {
   return (
-    <label className={`layer${disabled ? ' disabled' : ''}`}>
+    <label className={`layer${disabled ? ' disabled' : ''}`} title={title}>
       <input type="checkbox" checked={on && !disabled} disabled={disabled} onChange={(e) => set(e.target.checked)} />
       {label}
     </label>
