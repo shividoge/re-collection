@@ -1,4 +1,6 @@
 // Downloads from and uploads to presigned R2 URLs, with retries. `fetch` is injectable for tests.
+import { mkdir } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import type { UploadTarget } from '../../../backend/convex/validators'
 
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>
@@ -62,6 +64,7 @@ export async function download(url: string, path: string, bytes: number, o: Retr
     const res = await ok(await f(url), 'GET')
     if (!res.body) throw new Error('the response has no body')
     // Stream chunk by chunk: Bun 1.4's Bun.write(path, response) stalls forever on large R2 bodies.
+    await mkdir(dirname(path), { recursive: true })
     const sink = Bun.file(path).writer()
     let written = 0
     try {

@@ -21,3 +21,10 @@ test('the per-try timeout grows with the file size', () => {
   expect(transferTimeoutMs(0)).toBe(30_000)
   expect(transferTimeoutMs(100_000_000)).toBeGreaterThan(200_000)
 })
+
+test('a download into a folder that does not exist yet creates it', async () => {
+  const dir = `/tmp/bd-transfer-mkdir-${process.pid}`
+  const fetch: Fetch = () => Promise.resolve(new Response(new Uint8Array([9])))
+  await download('https://example.invalid/k', `${dir}/keyframes/k0000.jpg`, 1, { fetch })
+  expect(new Uint8Array(await Bun.file(`${dir}/keyframes/k0000.jpg`).arrayBuffer())).toEqual(new Uint8Array([9]))
+})
