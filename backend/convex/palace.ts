@@ -1,6 +1,7 @@
 // The live visit: family join her Memory Palace from anywhere, follow her walk and talk
 // (docs/architecture-v3.md §6.6 "Live visit"). Reactive queries replace the guide's polling.
-// Every function needs the palace's visit key; rules in lib/palace.ts.
+// Every function needs the palace's visit key, and a screen's own calls its member token (the row
+// id is only its public name for the others). Rules in lib/palace.ts.
 import { ConvexError, v } from 'convex/values'
 import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
@@ -75,15 +76,15 @@ export const storeKey = internalMutation({
 
 const fresh = (m: Doc<'palaceMembers'>, now: number) => now - m.lastSeen <= GONE_MS
 
-/** This screen's member row, or null (unknown id, or already removed). */
-async function memberOf(ctx: QueryCtx, me: string): Promise<Doc<'palaceMembers'> | null> {
-  const id = ctx.db.normalizeId('palaceMembers', me)
-  return id ? ctx.db.get(id) : null
+/** The member a token belongs to, or null (unknown, or already removed). */
+async function memberOf(ctx: QueryCtx, token: string): Promise<Doc<'palaceMembers'> | null> {
+  if (!KEY_PATTERN.test(token)) return null
+  return ctx.db.query('palaceMembers').withIndex('by_token', (q) => q.eq('token', token)).unique()
 }
 
-async function requireMember(ctx: QueryCtx, key: string, me: string): Promise<Doc<'palaceMembers'>> {
+async function requireMember(ctx: QueryCtx, key: string, token: string): Promise<Doc<'palaceMembers'>> {
   await requireKey(ctx, key)
-  const member = await memberOf(ctx, me)
+  const member = await memberOf(ctx, token)
   if (!member) throw notFound(NOT_HERE)
   return member
 }
@@ -96,7 +97,10 @@ async function removeMember(ctx: MutationCtx, id: Id<'palaceMembers'>) {
   if (await ctx.db.get(id)) await ctx.db.delete(id)
 }
 
-/** Drops members gone for a while (bounded, so a join never does much). */
+/**
+ * Drops members gone for a while (bounded). Run by every heartbeat too: queries only re-run when
+ * rows they read change, so a screen that went quiet must be deleted for the others to see it go.
+ */
 async function dropGone(ctx: MutationCtx, now: number, limit: number) {
   const gone = await ctx.db
     .query('palaceMembers')
@@ -107,7 +111,7 @@ async function dropGone(ctx: MutationCtx, now: number, limit: number) {
 
 export const join = mutation({
   args: { key: v.string(), role: palaceRole, name: v.optional(v.string()) },
-  returns: v.object({ me: v.string(), iceServers: v.array(iceServer) }),
+  returns: v.object({ me: v.string(), token: v.string(), iceServers: v.array(iceServer) }),
   handler: async (ctx, { key, role, name }) => {
     await requireKey(ctx, key)
     const now = Date.now()
@@ -117,27 +121,30 @@ export const join = mutation({
     if (!clean) throw invalid('Family members join with a name.')
     const here = (await ctx.db.query('palaceMembers').collect()).filter((m) => fresh(m, now))
     if (here.length >= MAX_MEMBERS) throw invalid(`The visit is full (${MAX_MEMBERS} screens). Try again when someone leaves.`)
-    const me = await ctx.db.insert('palaceMembers', { role, name: clean, lastSeen: now })
-    return { me, iceServers: iceServersFrom(process.env.ICE_SERVERS) }
+    const token = encodeKey(crypto.getRandomValues(new Uint8Array(24)))
+    const me = await ctx.db.insert('palaceMembers', { role, name: clean, token, lastSeen: now })
+    return { me, token, iceServers: iceServersFrom(process.env.ICE_SERVERS) }
   },
 })
 
 export const heartbeat = mutation({
-  args: { key: v.string(), me: v.string() },
+  args: { key: v.string(), token: v.string() },
   returns: v.object({ ok: v.literal(true) }),
-  handler: async (ctx, { key, me }) => {
-    const member = await requireMember(ctx, key, me)
-    await ctx.db.patch(member._id, { lastSeen: Date.now() })
+  handler: async (ctx, { key, token }) => {
+    const member = await requireMember(ctx, key, token)
+    const now = Date.now()
+    await ctx.db.patch(member._id, { lastSeen: now })
+    await dropGone(ctx, now, 5)
     return { ok: true as const }
   },
 })
 
 export const leave = mutation({
-  args: { key: v.string(), me: v.string() },
+  args: { key: v.string(), token: v.string() },
   returns: v.null(),
-  handler: async (ctx, { key, me }) => {
+  handler: async (ctx, { key, token }) => {
     await requireKey(ctx, key)
-    const member = await memberOf(ctx, me)
+    const member = await memberOf(ctx, token)
     if (member) await removeMember(ctx, member._id)
     return null
   },
@@ -145,27 +152,26 @@ export const leave = mutation({
 
 /** Who's here (heard from in the last 10 s), oldest first. `here` false: this screen was dropped. */
 export const members = query({
-  args: { key: v.string(), me: v.string() },
+  args: { key: v.string(), token: v.string() },
   returns: v.object({ here: v.boolean(), members: v.array(palaceMember) }),
-  handler: async (ctx, { key, me }) => {
+  handler: async (ctx, { key, token }) => {
     await requireKey(ctx, key)
     const now = Date.now()
+    const self = await memberOf(ctx, token)
+    if (!self || !fresh(self, now)) return { here: false, members: [] }
     const list = (await ctx.db.query('palaceMembers').collect()).filter((m) => fresh(m, now))
-    return {
-      here: list.some((m) => m._id === me),
-      members: list.map((m) => ({ id: m._id as string, role: m.role, name: m.name })),
-    }
+    return { here: true, members: list.map((m) => ({ id: m._id as string, role: m.role, name: m.name })) }
   },
 })
 
 // ---- her view ------------------------------------------------------------------------------
 
-/** Where she is, while a patient is in the visit. */
+/** Where she is, while a patient is in the visit (for members only). */
 export const view = query({
-  args: { key: v.string() },
+  args: { key: v.string(), token: v.string() },
   returns: v.union(v.object({ ...palaceView.fields, rev: v.number(), updatedAt: v.string() }), v.null()),
-  handler: async (ctx, { key }) => {
-    await requireKey(ctx, key)
+  handler: async (ctx, { key, token }) => {
+    await requireMember(ctx, key, token)
     const row = await ctx.db.query('palaceView').first()
     if (!row) return null
     const leader = await ctx.db.get(row.member)
@@ -176,10 +182,10 @@ export const view = query({
 })
 
 export const setView = mutation({
-  args: { key: v.string(), me: v.string(), view: palaceView },
+  args: { key: v.string(), token: v.string(), view: palaceView },
   returns: v.object({ rev: v.number() }),
-  handler: async (ctx, { key, me, view }) => {
-    const member = await requireMember(ctx, key, me)
+  handler: async (ctx, { key, token, view }) => {
+    const member = await requireMember(ctx, key, token)
     if (member.role !== 'patient') throw forbidden('Only the person the palace is for leads the visit.')
     const parsed = parseView(view)
     if (!parsed.ok) throw invalid(parsed.error)
@@ -195,12 +201,13 @@ export const setView = mutation({
 // ---- call setup ----------------------------------------------------------------------------
 
 export const signal = mutation({
-  args: { key: v.string(), me: v.string(), to: v.string(), data: v.string() },
+  args: { key: v.string(), token: v.string(), to: v.string(), data: v.string() },
   returns: v.null(),
-  handler: async (ctx, { key, me, to, data }) => {
-    const member = await requireMember(ctx, key, me)
+  handler: async (ctx, { key, token, to, data }) => {
+    const member = await requireMember(ctx, key, token)
     if (data.length > SIGNAL_MAX_BYTES) throw invalid(`A call setup message is at most ${SIGNAL_MAX_BYTES / 1024} KB.`)
-    const target = await memberOf(ctx, to)
+    const toId = ctx.db.normalizeId('palaceMembers', to)
+    const target = toId ? await ctx.db.get(toId) : null
     if (!target) throw notFound('That person has left the visit.')
     await ctx.db.insert('palaceSignals', { to: target._id, from: member._id, data, createdAt: Date.now() })
     // Keep the newest few hundred for a screen that isn't reading.
@@ -211,26 +218,24 @@ export const signal = mutation({
 })
 
 export const signals = query({
-  args: { key: v.string(), me: v.string() },
+  args: { key: v.string(), token: v.string() },
   returns: v.array(v.object({ id: v.string(), from: v.string(), data: v.string() })),
-  handler: async (ctx, { key, me }) => {
-    await requireKey(ctx, key)
-    const id = ctx.db.normalizeId('palaceMembers', me)
-    if (!id) return []
-    const list = await ctx.db.query('palaceSignals').withIndex('by_to', (q) => q.eq('to', id)).take(100)
+  handler: async (ctx, { key, token }) => {
+    const member = await requireMember(ctx, key, token)
+    const list = await ctx.db.query('palaceSignals').withIndex('by_to', (q) => q.eq('to', member._id)).take(100)
     return list.map((s) => ({ id: s._id as string, from: s.from as string, data: s.data }))
   },
 })
 
 export const ackSignals = mutation({
-  args: { key: v.string(), me: v.string(), ids: v.array(v.string()) },
+  args: { key: v.string(), token: v.string(), ids: v.array(v.string()) },
   returns: v.null(),
-  handler: async (ctx, { key, me, ids }) => {
-    await requireKey(ctx, key)
+  handler: async (ctx, { key, token, ids }) => {
+    const member = await requireMember(ctx, key, token)
     for (const raw of ids.slice(0, 100)) {
       const id = ctx.db.normalizeId('palaceSignals', raw)
       const s = id ? await ctx.db.get(id) : null
-      if (s && s.to === me) await ctx.db.delete(s._id)
+      if (s && s.to === member._id) await ctx.db.delete(s._id)
     }
     return null
   },
@@ -239,13 +244,14 @@ export const ackSignals = mutation({
 // ---- relayed voice -------------------------------------------------------------------------
 
 export const sendAudio = mutation({
-  args: { key: v.string(), me: v.string(), data: v.bytes() },
+  args: { key: v.string(), token: v.string(), data: v.bytes() },
   returns: v.object({ seq: v.number() }),
-  handler: async (ctx, { key, me, data }) => {
-    const member = await requireMember(ctx, key, me)
+  handler: async (ctx, { key, token, data }) => {
+    const member = await requireMember(ctx, key, token)
     if (data.byteLength === 0) throw invalid('Empty audio chunk.')
     if (data.byteLength > AUDIO_MAX_BYTES) throw invalid(`Audio chunks are at most ${AUDIO_MAX_BYTES / 1024} KB.`)
     const now = Date.now()
+    // The newest chunk is never deleted (here or in the sweep), so the count never starts over.
     const last = await ctx.db.query('palaceAudio').withIndex('by_seq').order('desc').first()
     const seq = (last?.seq ?? 0) + 1
     await ctx.db.insert('palaceAudio', { seq, from: member._id, data, createdAt: now })
@@ -256,13 +262,13 @@ export const sendAudio = mutation({
 
 /** The last few chunks from everyone else (newest last), and the newest seq from anyone. */
 export const audio = query({
-  args: { key: v.string(), me: v.string() },
+  args: { key: v.string(), token: v.string() },
   returns: v.object({ latest: v.number(), chunks: v.array(v.object({ seq: v.number(), from: v.string(), data: v.bytes() })) }),
-  handler: async (ctx, { key, me }) => {
-    await requireKey(ctx, key)
+  handler: async (ctx, { key, token }) => {
+    const member = await requireMember(ctx, key, token)
     const recent = await ctx.db.query('palaceAudio').withIndex('by_seq').order('desc').take(AUDIO_RECENT * 3)
     const chunks = recent
-      .filter((c) => c.from !== me)
+      .filter((c) => c.from !== member._id)
       .slice(0, AUDIO_RECENT)
       .reverse()
       .map((c) => ({ seq: c.seq, from: c.from as string, data: c.data }))
@@ -272,7 +278,7 @@ export const audio = query({
 
 // ---- cleanup -------------------------------------------------------------------------------
 
-/** Cron: screens that left without saying so, call setup nobody read, and old voice. */
+/** Cron: screens that left without saying so, call setup nobody read, and old voice (but the newest chunk). */
 export const sweep = internalMutation({
   args: {},
   returns: v.null(),
@@ -280,7 +286,10 @@ export const sweep = internalMutation({
     const now = Date.now()
     await dropGone(ctx, now, 200)
     for (const s of await ctx.db.query('palaceSignals').withIndex('by_createdAt', (q) => q.lt('createdAt', now - 60_000)).take(500)) await ctx.db.delete(s._id)
-    for (const a of await ctx.db.query('palaceAudio').withIndex('by_createdAt', (q) => q.lt('createdAt', now - AUDIO_KEEP_MS)).take(500)) await ctx.db.delete(a._id)
+    const newest = await ctx.db.query('palaceAudio').withIndex('by_seq').order('desc').first()
+    for (const a of await ctx.db.query('palaceAudio').withIndex('by_createdAt', (q) => q.lt('createdAt', now - AUDIO_KEEP_MS)).take(500)) {
+      if (a._id !== newest?._id) await ctx.db.delete(a._id)
+    }
     return null
   },
 })

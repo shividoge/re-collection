@@ -48,14 +48,14 @@ describe('the visit key', () => {
     const key = await opened(t)
     expect(key).toMatch(/^[A-Za-z0-9_-]{32}$/)
     expect(await opened(t)).toBe(key)
-    const { me } = await t.mutation(api.palace.join, { key, role: 'family', name: 'Sam' })
+    const { token } = await t.mutation(api.palace.join, { key, role: 'family', name: 'Sam' })
 
     const { key: next } = await t.action(api.palace.makeVisitKey, { replace: true })
     expect(next).not.toBe(key)
     expect(await t.query(api.palace.visitKey, {})).toEqual({ key: next })
     await expect(t.mutation(api.palace.join, { key, role: 'patient' })).rejects.toThrow(/no longer works/)
-    await expect(t.query(api.palace.members, { key, me })).rejects.toThrow(/no longer works/)
-    expect((await t.query(api.palace.members, { key: next, me })).members).toEqual([])
+    await expect(t.query(api.palace.members, { key, token })).rejects.toThrow(/no longer works/)
+    expect(await t.query(api.palace.members, { key: next, token })).toEqual({ here: false, members: [] })
   })
 
   test('nothing works without the right key', async () => {
@@ -63,7 +63,7 @@ describe('the visit key', () => {
     await expect(t.mutation(api.palace.join, { key: 'A'.repeat(32), role: 'patient' })).rejects.toThrow(/no longer works/)
     await opened(t)
     await expect(t.mutation(api.palace.join, { key: 'A'.repeat(32), role: 'patient' })).rejects.toThrow(/no longer works/)
-    await expect(t.query(api.palace.view, { key: 'short' })).rejects.toThrow(/no longer works/)
+    await expect(t.query(api.palace.view, { key: 'short', token: 'x'.repeat(32) })).rejects.toThrow(/no longer works/)
   })
 })
 
@@ -76,7 +76,7 @@ describe('the live visit', () => {
     await expect(t.mutation(api.palace.join, { key, role: 'family', name: '   ' })).rejects.toThrow(/with a name/)
     const sam = await t.mutation(api.palace.join, { key, role: 'family', name: '  Sam  ' })
 
-    const seen = await t.query(api.palace.members, { key, me: sam.me })
+    const seen = await t.query(api.palace.members, { key, token: sam.token })
     expect(seen.here).toBe(true)
     // No name given: the person the palace is for (people.displayName), else "Grandma".
     expect(seen.members.map((m) => [m.role, m.name])).toEqual([
@@ -84,21 +84,21 @@ describe('the live visit', () => {
       ['family', 'Sam'],
     ])
 
-    expect(await t.query(api.palace.view, { key })).toBeNull()
-    await expect(t.mutation(api.palace.setView, { key, me: sam.me, view: VIEW })).rejects.toThrow(/leads the visit/)
-    await expect(t.mutation(api.palace.setView, { key, me: patient.me, view: { ...VIEW, inside: { index: 1000, stage: 'here' } } })).rejects.toThrow(/0 to 999/)
-    expect(await t.mutation(api.palace.setView, { key, me: patient.me, view: { ...VIEW, inside: { index: 2, stage: 'diving' } } })).toEqual({ rev: 1 })
-    expect(await t.mutation(api.palace.setView, { key, me: patient.me, view: { ...VIEW, inside: { index: 2, stage: 'here' } } })).toEqual({ rev: 2 })
-    expect(await t.query(api.palace.view, { key })).toMatchObject({ inside: { index: 2, stage: 'here' }, rev: 2, music: true })
+    expect(await t.query(api.palace.view, { key, token: sam.token })).toBeNull()
+    await expect(t.mutation(api.palace.setView, { key, token: sam.token, view: VIEW })).rejects.toThrow(/leads the visit/)
+    await expect(t.mutation(api.palace.setView, { key, token: patient.token, view: { ...VIEW, inside: { index: 1000, stage: 'here' } } })).rejects.toThrow(/0 to 999/)
+    expect(await t.mutation(api.palace.setView, { key, token: patient.token, view: { ...VIEW, inside: { index: 2, stage: 'diving' } } })).toEqual({ rev: 1 })
+    expect(await t.mutation(api.palace.setView, { key, token: patient.token, view: { ...VIEW, inside: { index: 2, stage: 'here' } } })).toEqual({ rev: 2 })
+    expect(await t.query(api.palace.view, { key, token: sam.token })).toMatchObject({ inside: { index: 2, stage: 'here' }, rev: 2, music: true })
 
     // She leaves: the view goes, and Sam is alone.
-    await t.mutation(api.palace.leave, { key, me: patient.me })
-    expect(await t.query(api.palace.view, { key })).toBeNull()
-    expect((await t.query(api.palace.members, { key, me: sam.me })).members.map((m) => m.name)).toEqual(['Sam'])
-    await t.mutation(api.palace.leave, { key, me: sam.me })
-    await t.mutation(api.palace.leave, { key, me: sam.me }) // twice is fine
-    expect(await t.query(api.palace.members, { key, me: sam.me })).toEqual({ here: false, members: [] })
-    await expect(t.mutation(api.palace.heartbeat, { key, me: sam.me })).rejects.toThrow(/Join again/)
+    await t.mutation(api.palace.leave, { key, token: patient.token })
+    expect(await t.query(api.palace.view, { key, token: sam.token })).toBeNull()
+    expect((await t.query(api.palace.members, { key, token: sam.token })).members.map((m) => m.name)).toEqual(['Sam'])
+    await t.mutation(api.palace.leave, { key, token: sam.token })
+    await t.mutation(api.palace.leave, { key, token: sam.token }) // twice is fine
+    expect(await t.query(api.palace.members, { key, token: sam.token })).toEqual({ here: false, members: [] })
+    await expect(t.mutation(api.palace.heartbeat, { key, token: sam.token })).rejects.toThrow(/Join again/)
   })
 
   test('a screen not heard from for 10 s is gone, and so is her view', async () => {
@@ -107,19 +107,26 @@ describe('the live visit', () => {
     const key = await opened(t)
     const patient = await t.mutation(api.palace.join, { key, role: 'patient', name: 'Mom' })
     const sam = await t.mutation(api.palace.join, { key, role: 'family', name: 'Sam' })
-    await t.mutation(api.palace.setView, { key, me: patient.me, view: VIEW })
+    await t.mutation(api.palace.setView, { key, token: patient.token, view: VIEW })
 
     vi.advanceTimersByTime(6_000)
-    await t.mutation(api.palace.heartbeat, { key, me: sam.me })
+    await t.mutation(api.palace.heartbeat, { key, token: sam.token })
     vi.advanceTimersByTime(6_000)
     // Sam kept beating; she didn't.
-    expect(await t.query(api.palace.members, { key, me: sam.me })).toMatchObject({ here: true, members: [{ name: 'Sam' }] })
-    expect((await t.query(api.palace.members, { key, me: patient.me })).here).toBe(false)
-    expect(await t.query(api.palace.view, { key })).toBeNull()
+    expect(await t.query(api.palace.members, { key, token: sam.token })).toMatchObject({ here: true, members: [{ name: 'Sam' }] })
+    expect((await t.query(api.palace.members, { key, token: patient.token })).here).toBe(false)
+    expect(await t.query(api.palace.view, { key, token: sam.token })).toBeNull()
 
-    // The cron forgets her for good.
+    // Sam's next heartbeat deletes her row and her view, so every query sees her go (queries only
+    // re-run when rows they read change).
+    await t.mutation(api.palace.heartbeat, { key, token: sam.token })
+    expect(await t.run(async (ctx) => [(await ctx.db.query('palaceMembers').collect()).length, (await ctx.db.query('palaceView').collect()).length])).toEqual([1, 0])
+    await expect(t.mutation(api.palace.heartbeat, { key, token: patient.token })).rejects.toThrow(/Join again/)
+
+    // With nobody left to beat, the cron does it.
+    vi.advanceTimersByTime(11_000)
     await t.mutation(internal.palace.sweep, {})
-    await expect(t.mutation(api.palace.heartbeat, { key, me: patient.me })).rejects.toThrow(/Join again/)
+    expect(await t.run(async (ctx) => (await ctx.db.query('palaceMembers').collect()).length)).toBe(0)
   })
 
   test('the visit holds at most 8 screens', async () => {
@@ -134,23 +141,24 @@ describe('the live visit', () => {
     const key = await opened(t)
     const a = await t.mutation(api.palace.join, { key, role: 'family', name: 'A' })
     const b = await t.mutation(api.palace.join, { key, role: 'family', name: 'B' })
-    await t.mutation(api.palace.signal, { key, me: a.me, to: b.me, data: '{"type":"offer","sdp":"x"}' })
-    const got = await t.query(api.palace.signals, { key, me: b.me })
+    await t.mutation(api.palace.signal, { key, token: a.token, to: b.me, data: '{"type":"offer","sdp":"x"}' })
+    const got = await t.query(api.palace.signals, { key, token: b.token })
     expect(got.map((s) => [s.from, s.data])).toEqual([[a.me, '{"type":"offer","sdp":"x"}']])
-    expect(await t.query(api.palace.signals, { key, me: a.me })).toEqual([])
+    expect(await t.query(api.palace.signals, { key, token: a.token })).toEqual([])
 
     // Only the recipient can delete its messages.
-    await t.mutation(api.palace.ackSignals, { key, me: a.me, ids: got.map((s) => s.id) })
-    expect(await t.query(api.palace.signals, { key, me: b.me })).toHaveLength(1)
-    await t.mutation(api.palace.ackSignals, { key, me: b.me, ids: [...got.map((s) => s.id), 'junk'] })
-    expect(await t.query(api.palace.signals, { key, me: b.me })).toEqual([])
+    await t.mutation(api.palace.ackSignals, { key, token: a.token, ids: got.map((s) => s.id) })
+    expect(await t.query(api.palace.signals, { key, token: b.token })).toHaveLength(1)
+    await t.mutation(api.palace.ackSignals, { key, token: b.token, ids: [...got.map((s) => s.id), 'junk'] })
+    expect(await t.query(api.palace.signals, { key, token: b.token })).toEqual([])
 
-    await expect(t.mutation(api.palace.signal, { key, me: a.me, to: 'nobody', data: '{}' })).rejects.toThrow(/has left/)
-    await expect(t.mutation(api.palace.signal, { key, me: a.me, to: b.me, data: 'x'.repeat(16 * 1024 + 1) })).rejects.toThrow(/16 KB/)
+    await expect(t.mutation(api.palace.signal, { key, token: a.token, to: 'nobody', data: '{}' })).rejects.toThrow(/has left/)
+    await expect(t.mutation(api.palace.signal, { key, token: a.token, to: b.me, data: 'x'.repeat(16 * 1024 + 1) })).rejects.toThrow(/16 KB/)
     // Leaving drops what was waiting for you.
-    await t.mutation(api.palace.signal, { key, me: a.me, to: b.me, data: '{}' })
-    await t.mutation(api.palace.leave, { key, me: b.me })
-    expect(await t.query(api.palace.signals, { key, me: b.me })).toEqual([])
+    await t.mutation(api.palace.signal, { key, token: a.token, to: b.me, data: '{}' })
+    await t.mutation(api.palace.leave, { key, token: b.token })
+    expect(await t.run(async (ctx) => (await ctx.db.query('palaceSignals').collect()).length)).toBe(0)
+    await expect(t.query(api.palace.signals, { key, token: b.token })).rejects.toThrow(/Join again/)
   })
 
   test('relayed voice goes to everyone else, in order, never back to you', async () => {
@@ -159,20 +167,20 @@ describe('the live visit', () => {
     const a = await t.mutation(api.palace.join, { key, role: 'patient' })
     const b = await t.mutation(api.palace.join, { key, role: 'family', name: 'B' })
     const bytes = (...n: number[]) => new Uint8Array(n).buffer
-    expect(await t.mutation(api.palace.sendAudio, { key, me: a.me, data: bytes(1, 2, 3) })).toEqual({ seq: 1 })
-    await t.mutation(api.palace.sendAudio, { key, me: a.me, data: bytes(4, 5) })
-    await t.mutation(api.palace.sendAudio, { key, me: b.me, data: bytes(9) })
+    expect(await t.mutation(api.palace.sendAudio, { key, token: a.token, data: bytes(1, 2, 3) })).toEqual({ seq: 1 })
+    await t.mutation(api.palace.sendAudio, { key, token: a.token, data: bytes(4, 5) })
+    await t.mutation(api.palace.sendAudio, { key, token: b.token, data: bytes(9) })
 
-    const heard = await t.query(api.palace.audio, { key, me: b.me })
+    const heard = await t.query(api.palace.audio, { key, token: b.token })
     expect(heard.latest).toBe(3)
     expect(heard.chunks.map((c) => [c.seq, c.from, [...new Uint8Array(c.data)]])).toEqual([
       [1, a.me, [1, 2, 3]],
       [2, a.me, [4, 5]],
     ])
-    expect((await t.query(api.palace.audio, { key, me: a.me })).chunks.map((c) => c.seq)).toEqual([3])
+    expect((await t.query(api.palace.audio, { key, token: a.token })).chunks.map((c) => c.seq)).toEqual([3])
 
-    await expect(t.mutation(api.palace.sendAudio, { key, me: a.me, data: bytes() })).rejects.toThrow(/Empty/)
-    await expect(t.mutation(api.palace.sendAudio, { key, me: a.me, data: new Uint8Array(64 * 1024 + 1).buffer })).rejects.toThrow(/64 KB/)
+    await expect(t.mutation(api.palace.sendAudio, { key, token: a.token, data: bytes() })).rejects.toThrow(/Empty/)
+    await expect(t.mutation(api.palace.sendAudio, { key, token: a.token, data: new Uint8Array(64 * 1024 + 1).buffer })).rejects.toThrow(/64 KB/)
   })
 
   test('only the last few chunks are handed out, and old voice is swept', async () => {
@@ -181,14 +189,19 @@ describe('the live visit', () => {
     const key = await opened(t)
     const a = await t.mutation(api.palace.join, { key, role: 'patient' })
     const b = await t.mutation(api.palace.join, { key, role: 'family', name: 'B' })
-    for (let i = 0; i < 12; i++) await t.mutation(api.palace.sendAudio, { key, me: a.me, data: new Uint8Array([i]).buffer })
-    expect((await t.query(api.palace.audio, { key, me: b.me })).chunks.map((c) => c.seq)).toEqual([5, 6, 7, 8, 9, 10, 11, 12])
+    for (let i = 0; i < 12; i++) await t.mutation(api.palace.sendAudio, { key, token: a.token, data: new Uint8Array([i]).buffer })
+    expect((await t.query(api.palace.audio, { key, token: b.token })).chunks.map((c) => c.seq)).toEqual([5, 6, 7, 8, 9, 10, 11, 12])
 
-    vi.advanceTimersByTime(11_000)
-    await t.mutation(api.palace.heartbeat, { key, me: a.me })
-    await t.mutation(api.palace.heartbeat, { key, me: b.me })
+    for (const wait of [6_000, 5_000]) {
+      vi.advanceTimersByTime(wait)
+      await t.mutation(api.palace.heartbeat, { key, token: a.token })
+      await t.mutation(api.palace.heartbeat, { key, token: b.token })
+    }
     await t.mutation(internal.palace.sweep, {})
-    expect(await t.query(api.palace.audio, { key, me: b.me })).toEqual({ latest: 0, chunks: [] })
+    // The newest chunk stays, so after a quiet minute the count carries on instead of starting over
+    // (listeners skip anything at or below the last number they played).
+    expect((await t.query(api.palace.audio, { key, token: b.token })).chunks.map((c) => c.seq)).toEqual([12])
+    expect(await t.mutation(api.palace.sendAudio, { key, token: a.token, data: new Uint8Array([1]).buffer })).toEqual({ seq: 13 })
   })
 
   test('ICE_SERVERS reaches the screens', async () => {
@@ -197,5 +210,28 @@ describe('the live visit', () => {
     const key = await opened(t)
     const { iceServers } = await t.mutation(api.palace.join, { key, role: 'patient' })
     expect(iceServers).toEqual([{ urls: ['turn:t.example:3478'], username: 'u', credential: 'c' }])
+  })
+
+  test('only members can listen, read call setup or follow her; public ids open nothing', async () => {
+    const t = setup()
+    const key = await opened(t)
+    const patient = await t.mutation(api.palace.join, { key, role: 'patient' })
+    const sam = await t.mutation(api.palace.join, { key, role: 'family', name: 'Sam' })
+    const listed = await t.query(api.palace.members, { key, token: sam.token })
+    // Others are listed by public id only.
+    expect(listed.members.map((m) => Object.keys(m).sort())).toEqual([
+      ['id', 'name', 'role'],
+      ['id', 'name', 'role'],
+    ])
+    expect(listed.members[0].id).toBe(patient.me)
+    // Someone with the key who never joined (or uses her public id as a token) gets nothing.
+    for (const token of ['x'.repeat(32), patient.me]) {
+      await expect(t.query(api.palace.audio, { key, token })).rejects.toThrow(/Join again/)
+      await expect(t.query(api.palace.view, { key, token })).rejects.toThrow(/Join again/)
+      await expect(t.query(api.palace.signals, { key, token })).rejects.toThrow(/Join again/)
+      await expect(t.mutation(api.palace.setView, { key, token, view: VIEW })).rejects.toThrow(/Join again/)
+      await t.mutation(api.palace.leave, { key, token })
+    }
+    expect((await t.query(api.palace.members, { key, token: sam.token })).members).toHaveLength(2)
   })
 })

@@ -88,8 +88,8 @@ export function MuseumPage({ join }: { id?: string; join?: string }) {
   const led = family && snapshot.view !== null
   const follow = useRef<Pose | null>(null)
   const othersHere = inVisit && snapshot.members.some((m) => m.id !== snapshot.me)
-  // With others here, the music steps back so voices come through.
-  const musicLevel = useRef(1)
+  // Pictures measured so far: family can only dive into one once its size is known.
+  const [measured, setMeasured] = useState(0)
 
   useEffect(() => {
     visits()
@@ -164,6 +164,7 @@ export function MuseumPage({ join }: { id?: string; join?: string }) {
 
   const onMeasure = useCallback((slot: number, w: number, h: number) => {
     sizes.current.set(slot, { w, h })
+    setMeasured(sizes.current.size)
   }, [])
 
   /**
@@ -230,7 +231,7 @@ export function MuseumPage({ join }: { id?: string; join?: string }) {
       }
     }
     // The music comes back slowly once the museum is in view again.
-    setTimeout(() => sound.musicTo(musicLevel.current, 4), LEAVE_MS + 300)
+    setTimeout(() => sound.musicTo(sound.level, 4), LEAVE_MS + 300)
   }, [sound])
 
   const onArrive = useCallback(() => {
@@ -278,17 +279,17 @@ export function MuseumPage({ join }: { id?: string; join?: string }) {
     const mine = insideRef.current
     if (theirs && theirs.stage !== 'leaving' && !mine) stepIn(theirs.index, true)
     else if ((!theirs || theirs.stage === 'leaving') && mine?.stage === 'here') stepOut()
-    // Only when her step or ours changes, not on every view.
+    // Only when her step or ours changes (or a picture's size arrives), not on every view.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [led, theirs?.index, theirs?.stage, inside?.stage, stepIn, stepOut])
+  }, [led, theirs?.index, theirs?.stage, inside?.stage, measured, stepIn, stepOut])
   useEffect(() => {
     if (!led || !view || view.music === musicOnRef.current) return
     sound.setMusic(view.music)
     setMusicOn(view.music)
   }, [led, view, sound])
+  // With others here, the music steps back so voices come through (inside a memory it's already off).
   useEffect(() => {
-    musicLevel.current = othersHere ? 0.4 : 1
-    if (!insideRef.current) sound.musicTo(musicLevel.current, 1.5)
+    sound.setBase(othersHere ? 0.4 : 1, Boolean(insideRef.current))
   }, [othersHere, sound])
   // Walking and looking around freely: the piece in view becomes the current one (its label shows,
   // and Next / Previous carry on from it); looking away from every piece hides the label.

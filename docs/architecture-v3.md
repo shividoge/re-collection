@@ -233,17 +233,17 @@ Family join the patient's palace from anywhere: she leads, their screens follow 
 |---|---|---|---|
 | `palace.visitKey` | query | `{}` | `{ key: string \| null }` (the editor; null until one is made) |
 | `palace.makeVisitKey` | action | `{ replace? }` | `{ key }`: the current key, or a new one when there's none or `replace` (crypto randomness, so an action); replacing ends the visit |
-| `palace.join` | mutation | `{ key, role: 'patient' \| 'family', name? }` | `{ me, iceServers }`: `me` is this screen's member id |
-| `palace.heartbeat` | mutation | `{ key, me }` | `{ ok }`; every 3 s. A member not heard from for 10 s is gone; an unknown `me` → `not_found` (join again) |
-| `palace.leave` | mutation | `{ key, me }` | `null` (closing the tab; idempotent) |
-| `palace.members` | query | `{ key, me }` | `{ here: boolean, members: Member[] }` (`here` false: this screen was dropped, join again) |
-| `palace.view` | query | `{ key }` | `View & { rev, updatedAt }` or `null` (no patient in the visit) |
-| `palace.setView` | mutation | `{ key, me, view: View }` | `{ rev }`; the patient only (`forbidden` otherwise); sent at most 5 times a second, only when it changed |
-| `palace.signal` | mutation | `{ key, me, to, data }` | `null`; WebRTC offer, answer or ICE candidate (`data` a JSON string up to 16 KB) for one member |
-| `palace.signals` | query | `{ key, me }` | `[{ id, from, data }]` addressed to `me` (oldest first, at most 100) |
-| `palace.ackSignals` | mutation | `{ key, me, ids }` | `null`; deletes those (each is handled once; the screen also skips ids it has seen) |
-| `palace.sendAudio` | mutation | `{ key, me, data: bytes }` | `{ seq }`; relayed voice, 16 kHz mono μ-law, about 250 ms (1–64 KB) |
-| `palace.audio` | query | `{ key, me }` | `{ latest, chunks: [{ seq, from, data }] }`: the last 8 chunks from others (newest last); `latest` is the newest `seq` from anyone |
+| `palace.join` | mutation | `{ key, role: 'patient' \| 'family', name? }` | `{ me, token, iceServers }`: `me` is this screen's public id (others see it, and address call setup to it); `token` is its secret for every call below |
+| `palace.heartbeat` | mutation | `{ key, token }` | `{ ok }`; every 3 s. A member not heard from for 10 s is gone, and each heartbeat deletes such members (queries only re-run when rows they read change, so the others see them go). An unknown `token` → `not_found` (join again) |
+| `palace.leave` | mutation | `{ key, token }` | `null` (closing the tab; idempotent) |
+| `palace.members` | query | `{ key, token }` | `{ here: boolean, members: Member[] }` (`here` false: this screen was dropped, join again) |
+| `palace.view` | query | `{ key, token }` | `View & { rev, updatedAt }` or `null` (no patient in the visit) |
+| `palace.setView` | mutation | `{ key, token, view: View }` | `{ rev }`; the patient only (`forbidden` otherwise); sent at most 5 times a second, only when it changed |
+| `palace.signal` | mutation | `{ key, token, to, data }` | `null`; WebRTC offer, answer or ICE candidate (`data` a JSON string up to 16 KB) for one member |
+| `palace.signals` | query | `{ key, token }` | `[{ id, from, data }]` addressed to this screen (oldest first, at most 100) |
+| `palace.ackSignals` | mutation | `{ key, token, ids }` | `null`; deletes those (each is handled once; the screen also skips ids it has seen) |
+| `palace.sendAudio` | mutation | `{ key, token, data: bytes }` | `{ seq }`; relayed voice, 16 kHz mono μ-law, about 250 ms (about 4 KB; at most 64 KB, not empty) |
+| `palace.audio` | query | `{ key, token }` | `{ latest, chunks: [{ seq, from, data }] }`: the last 8 chunks from others (newest last); `latest` is the newest `seq` from anyone |
 
 ```ts
 type Member = { id: string; role: 'patient' | 'family'; name: string }
@@ -254,9 +254,10 @@ type View = {
 }
 ```
 
+- **Members only:** everything but `join` needs a current member's `token`; someone with the key who hasn't joined can't listen, read call setup or follow her, and a public id opens nothing. A member who's dropped gets `not_found` and joins again.
 - **Names:** family join with a name (1–40 characters, whitespace collapsed); a patient without one gets `people.displayName` (or "Grandma").
 - **The view** belongs to the patient: it's null whenever no patient is in the visit, and her leaving clears it.
-- **Voice:** each pair of screens tries a direct WebRTC call (Convex only passes the setup messages). Where that doesn't connect within 6 s (venue Wi-Fi, mobile data), voice goes through `sendAudio` instead, only while someone speaks. `iceServers` come from the deployment's `ICE_SERVERS` (a JSON array as `RTCPeerConnection` takes it; a TURN server goes here), defaulting to a public STUN server. A screen's first `audio` answer only sets where it starts (`latest`): no replaying old voice. Chunks are kept 10 s, never written anywhere else.
+- **Voice:** each pair of screens tries a direct WebRTC call (Convex only passes the setup messages). Where that doesn't connect within 6 s (venue Wi-Fi, mobile data), voice goes through `sendAudio` instead, only while someone speaks. `iceServers` come from the deployment's `ICE_SERVERS` (a JSON array as `RTCPeerConnection` takes it; a TURN server goes here), defaulting to a public STUN server. A screen's first `audio` answer only sets where it starts (`latest`): no replaying old voice. Chunks are kept 10 s, never written anywhere else, except that the newest is never deleted, so `seq` never starts over after a quiet spell.
 - **Cleanup:** `join` and a cron every minute drop gone members, their unread signals, the view when no patient is left, and voice older than 10 s.
 
 ### 6.7 Public (front page, no writes)

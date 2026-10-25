@@ -30,16 +30,17 @@ export const palaceLive = {
   /** The current key, or a new one (`replace` ends the visit and stops the old link working). */
   makeVisitKey: async (replace = false): Promise<string> => (await convex().action(api.palace.makeVisitKey, { replace })).key,
 
-  join: (key: string, role: LiveRole, name?: string): Promise<{ me: string; iceServers: IceServer[] }> => convex().mutation(api.palace.join, { key, role, name }),
-  heartbeat: (key: string, me: string) => convex().mutation(api.palace.heartbeat, { key, me }),
-  leave: (key: string, me: string) => convex().mutation(api.palace.leave, { key, me }),
-  setView: (key: string, me: string, view: LiveView) => convex().mutation(api.palace.setView, { key, me, view }),
-  signal: (key: string, me: string, to: string, data: string) => convex().mutation(api.palace.signal, { key, me, to, data }),
-  ackSignals: (key: string, me: string, ids: string[]) => convex().mutation(api.palace.ackSignals, { key, me, ids }),
-  sendAudio: (key: string, me: string, data: ArrayBuffer) => convex().mutation(api.palace.sendAudio, { key, me, data }),
+  /** `me` is this screen's public id (others see it); `token` is its secret for its own calls. */
+  join: (key: string, role: LiveRole, name?: string): Promise<{ me: string; token: string; iceServers: IceServer[] }> => convex().mutation(api.palace.join, { key, role, name }),
+  heartbeat: (key: string, token: string) => convex().mutation(api.palace.heartbeat, { key, token }),
+  leave: (key: string, token: string) => convex().mutation(api.palace.leave, { key, token }),
+  setView: (key: string, token: string, view: LiveView) => convex().mutation(api.palace.setView, { key, token, view }),
+  signal: (key: string, token: string, to: string, data: string) => convex().mutation(api.palace.signal, { key, token, to, data }),
+  ackSignals: (key: string, token: string, ids: string[]) => convex().mutation(api.palace.ackSignals, { key, token, ids }),
+  sendAudio: (key: string, token: string, data: ArrayBuffer) => convex().mutation(api.palace.sendAudio, { key, token, data }),
 
-  watchMembers: (key: string, me: string, on: (v: { here: boolean; members: LiveMember[] }) => void, err: (e: unknown) => void) => watch(api.palace.members, { key, me }, on, err),
-  watchView: (key: string, on: (v: LiveViewState | null) => void, err: (e: unknown) => void) => watch(api.palace.view, { key }, on, err),
-  watchSignals: (key: string, me: string, on: (v: LiveSignal[]) => void, err: (e: unknown) => void) => watch(api.palace.signals, { key, me }, on, err),
-  watchAudio: (key: string, me: string, on: (v: LiveAudio) => void, err: (e: unknown) => void) => watch(api.palace.audio, { key, me }, on, err),
+  watchMembers: (key: string, token: string, on: (v: { here: boolean; members: LiveMember[] }) => void, err: (e: unknown) => void) => watch(api.palace.members, { key, token }, on, err),
+  watchView: (key: string, token: string, on: (v: LiveViewState | null) => void, err: (e: unknown) => void) => watch(api.palace.view, { key, token }, on, err),
+  watchSignals: (key: string, token: string, on: (v: LiveSignal[]) => void, err: (e: unknown) => void) => watch(api.palace.signals, { key, token }, on, err),
+  watchAudio: (key: string, token: string, on: (v: LiveAudio) => void, err: (e: unknown) => void) => watch(api.palace.audio, { key, token }, on, err),
 }

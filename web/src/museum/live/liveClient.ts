@@ -60,6 +60,8 @@ export class LiveVisit {
   private nextView: LiveView | null = null
   private viewTimer: ReturnType<typeof setTimeout> | null = null
   private stopConnection: (() => void) | null = null
+  /** This screen's secret for its own calls (the snapshot's `me` is its public id). */
+  private token: string | null = null
 
   constructor(key: string, role: LiveRole, name?: string, transport: LiveTransport = convexTransport) {
     this.key = key
@@ -107,8 +109,8 @@ export class LiveVisit {
   }
 
   private leaveNow = () => {
-    const me = this.state.me
-    if (me && !this.stopped) void this.transport.leave(this.key, me).catch(() => {})
+    const token = this.token
+    if (token && !this.stopped) void this.transport.leave(this.key, token).catch(() => {})
   }
 
   /** Stops the subscriptions and the heartbeat of the current join. */
@@ -122,6 +124,7 @@ export class LiveVisit {
   private end(error: unknown) {
     if (errorCode(error) === 'bad_key') this.onBadKey()
     this.teardown()
+    this.token = null
     this.set({ status: 'ended', error: errorMessage(error), me: null, members: [], view: null })
   }
 
@@ -137,8 +140,9 @@ export class LiveVisit {
     if (this.stopped) return
     const epoch = ++this.epoch
     this.teardown()
+    this.token = null
     if (this.state.me) this.set({ status: 'reconnecting', me: null })
-    let joined: { me: string; iceServers: IceServer[] }
+    let joined: { me: string; token: string; iceServers: IceServer[] }
     try {
       joined = await this.transport.join(this.key, this.role, this.name)
     } catch (error) {
@@ -151,10 +155,11 @@ export class LiveVisit {
       return
     }
     if (this.stopped || epoch !== this.epoch) {
-      void this.transport.leave(this.key, joined.me).catch(() => {})
+      void this.transport.leave(this.key, joined.token).catch(() => {})
       return
     }
-    const { me } = joined
+    const { me, token } = joined
+    this.token = token
     this.iceServers = joined.iceServers
     this.audioAfter = null
     this.sentView = null
@@ -162,11 +167,11 @@ export class LiveVisit {
     this.set({ status: 'live', error: null, me })
 
     const fail = (e: unknown) => this.failed(epoch, e)
-    this.heartbeatTimer = setInterval(() => void this.transport.heartbeat(this.key, me).catch(fail), HEARTBEAT_MS)
+    this.heartbeatTimer = setInterval(() => void this.transport.heartbeat(this.key, token).catch(fail), HEARTBEAT_MS)
     this.unwatch.push(
       this.transport.watchMembers(
         this.key,
-        me,
+        token,
         ({ here, members }) => {
           if (epoch !== this.epoch) return
           // Dropped (asleep too long, say): join again.
@@ -175,14 +180,14 @@ export class LiveVisit {
         },
         fail,
       ),
-      this.transport.watchSignals(this.key, me, (list) => epoch === this.epoch && this.gotSignals(me, list), fail),
-      this.transport.watchAudio(this.key, me, (audio) => epoch === this.epoch && this.gotAudio(audio), fail),
+      this.transport.watchSignals(this.key, token, (list) => epoch === this.epoch && this.gotSignals(token, list), fail),
+      this.transport.watchAudio(this.key, token, (audio) => epoch === this.epoch && this.gotAudio(audio), fail),
     )
     // Family follow her view; her own screen doesn't need it back.
-    if (this.role === 'family') this.unwatch.push(this.transport.watchView(this.key, (view) => epoch === this.epoch && this.set({ view }), fail))
+    if (this.role === 'family') this.unwatch.push(this.transport.watchView(this.key, token, (view) => epoch === this.epoch && this.set({ view }), fail))
   }
 
-  private gotSignals(me: string, list: LiveSignal[]) {
+  private gotSignals(token: string, list: LiveSignal[]) {
     const fresh = list.filter((s) => !this.seenSignals.has(s.id))
     if (fresh.length === 0) return
     for (const s of fresh) {
@@ -195,7 +200,7 @@ export class LiveVisit {
       }
       this.onSignal(s.from, data)
     }
-    void this.transport.ackSignals(this.key, me, fresh.map((s) => s.id)).catch(() => {})
+    void this.transport.ackSignals(this.key, token, fresh.map((s) => s.id)).catch(() => {})
   }
 
   private gotAudio({ latest, chunks }: LiveAudio) {
@@ -204,6 +209,8 @@ export class LiveVisit {
       this.audioAfter = latest
       return
     }
+    // The server's count started over (it shouldn't): follow it rather than skip all new voice.
+    if (latest < this.audioAfter) this.audioAfter = 0
     for (const c of chunks) {
       if (c.seq <= this.audioAfter) continue
       this.audioAfter = c.seq
@@ -219,11 +226,11 @@ export class LiveVisit {
     this.viewTimer = setTimeout(() => {
       this.viewTimer = null
       const v = this.nextView
-      const me = this.state.me
-      if (!v || !me || sameView(this.sentView, v)) return
+      const token = this.token
+      if (!v || !token || sameView(this.sentView, v)) return
       this.sentView = v
       const epoch = this.epoch
-      void this.transport.setView(this.key, me, v).catch((e: unknown) => {
+      void this.transport.setView(this.key, token, v).catch((e: unknown) => {
         this.sentView = null
         this.failed(epoch, e)
       })
@@ -231,14 +238,12 @@ export class LiveVisit {
   }
 
   signal(to: string, data: unknown) {
-    const me = this.state.me
-    if (me) void this.transport.signal(this.key, me, to, JSON.stringify(data)).catch(() => {})
+    const token = this.token
+    if (token) void this.transport.signal(this.key, token, to, JSON.stringify(data)).catch(() => {})
   }
 
   sendAudio(bytes: Uint8Array) {
-    const me = this.state.me
-    if (!me) return
-    const copy = bytes.slice().buffer
-    void this.transport.sendAudio(this.key, me, copy).catch(() => {})
+    const token = this.token
+    if (token) void this.transport.sendAudio(this.key, token, bytes.slice().buffer).catch(() => {})
   }
 }

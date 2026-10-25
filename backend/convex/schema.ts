@@ -143,7 +143,15 @@ export default defineSchema({
   palace: defineTable({ key: v.string(), createdAt: v.number() }),
 
   /** Screens in the live visit; gone 10 s after their last heartbeat. */
-  palaceMembers: defineTable({ role: palaceRole, name: v.string(), lastSeen: v.number() }).index('by_lastSeen', ['lastSeen']),
+  palaceMembers: defineTable({
+    role: palaceRole,
+    name: v.string(),
+    /** The screen's secret for its own calls; the row id is the public id others see. */
+    token: v.string(),
+    lastSeen: v.number(),
+  })
+    .index('by_lastSeen', ['lastSeen'])
+    .index('by_token', ['token']),
 
   /** One row while a patient is in the visit: where she is (sent by her screen). */
   palaceView: defineTable({ ...palaceViewFields, member: v.id('palaceMembers'), rev: v.number(), updatedAt: v.string() }),

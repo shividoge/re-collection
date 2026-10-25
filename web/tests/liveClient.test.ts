@@ -37,7 +37,8 @@ function fakeServer() {
     join: async (_key, role, name) => {
       joins.push({ role, name })
       if (joinError) throw joinError
-      return { me: `m${next++}`, iceServers: [{ urls: 'stun:x' }] }
+      const n = next++
+      return { me: `m${n}`, token: `t${n}`, iceServers: [{ urls: 'stun:x' }] }
     },
     heartbeat: async (...args) => {
       calls.push({ fn: 'heartbeat', args })
@@ -94,7 +95,8 @@ describe('the live visit on one screen', () => {
     s.views()[0].on({ ...VIEW, rev: 3, updatedAt: '' })
     expect(visit.snapshot().view?.rev).toBe(3)
     visit.stop()
-    expect(s.calls.some((c) => c.fn === 'leave')).toBe(true)
+    // Its own calls use the secret token, never the public id.
+    expect(s.calls.find((c) => c.fn === 'leave')?.args).toEqual([KEY, 't1'])
     expect(s.members()).toHaveLength(0)
   })
 
@@ -148,6 +150,9 @@ describe('the live visit on one screen', () => {
     s.audio()[0].on({ latest: 6, chunks: [chunk(4), chunk(5), chunk(6)] })
     s.audio()[0].on({ latest: 6, chunks: [chunk(5), chunk(6)] })
     expect(heard).toEqual([5, 6])
+    // Should the server's count ever start over, new voice still plays.
+    s.audio()[0].on({ latest: 1, chunks: [chunk(1)] })
+    expect(heard).toEqual([5, 6, 1])
   })
 
   it('joins again when the server dropped it', async () => {

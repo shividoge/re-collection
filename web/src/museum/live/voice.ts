@@ -44,6 +44,10 @@ export class Voice {
   private nextAt = new Map<string, number>()
   private heard = new Map<string, number>()
   private processor: ScriptProcessorNode | null = null
+  /** This screen's id when the calls were set up; a rejoin (new id) starts every call over. */
+  private callsFor: string | null = null
+  /** Everyone else in the visit, called or not. */
+  private others = new Set<string>()
 
   constructor(visit: LiveVisit) {
     this.visit = visit
@@ -91,7 +95,13 @@ export class Voice {
   sync(members: LiveMember[]) {
     const me = this.visit.me
     if (!me) return
+    // Joined again with a new id: the others see a new person, so every old call is dead.
+    if (me !== this.callsFor) {
+      for (const id of [...this.peers.keys()]) this.drop(id)
+      this.callsFor = me
+    }
     const here = new Set(members.map((m) => m.id))
+    this.others = new Set([...here].filter((id) => id !== me))
     for (const id of [...this.peers.keys()]) if (!here.has(id)) this.drop(id)
     for (const m of members) {
       if (m.id === me || this.peers.has(m.id)) continue
@@ -211,7 +221,8 @@ export class Voice {
         at += b.length
       }
       this.buffered = 0
-      const anyRelayed = [...this.peers.keys()].some((id) => this.relayed(id))
+      // Anyone without a working call (including one not set up yet) needs the relay.
+      const anyRelayed = [...this.others].some((id) => this.relayed(id))
       if (anyRelayed && now - this.loudAt < HANGOVER_MS) this.visit.sendAudio(encode(chunk))
     }
     source.connect(processor)
