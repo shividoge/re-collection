@@ -15,7 +15,7 @@ import { IDLE_HZ, idleFrameDue } from './pace'
 import { choosePlaying, Playlist, type Piece } from './playback'
 import { Rooms } from './Rooms'
 import { useMuseumTextures } from './textures'
-import { EYE, Walker, type WalkerHandle } from './Walker'
+import { EYE, Walker, type Pose, type WalkerHandle } from './Walker'
 import type { Dive } from './warp'
 
 /** Lighter settings on phones and tablets: smaller reflections, half-resolution shading. */
@@ -38,6 +38,7 @@ export function MuseumScene({
   paused = false,
   dive,
   onRenderer,
+  follow,
 }: {
   exhibition: Exhibition
   plan: MuseumPlan
@@ -58,12 +59,14 @@ export function MuseumScene({
   dive: RefObject<Dive | null>
   /** The museum's renderer, for painting a picture to step into (painter.ts paintToCanvas). */
   onRenderer?: (gl: THREE.WebGLRenderer) => void
+  /** Family in a live visit: the view follows this pose (hers), and taps don't walk. */
+  follow?: RefObject<Pose | null>
 }) {
   const walk = (walker as { current: WalkerHandle | null }) ?? null
 
   // Tap the floor to walk there (stopping short of a wall).
   const onFloor = (e: ThreeEvent<MouseEvent>) => {
-    if (e.delta > 8 || !walk?.current) return
+    if (e.delta > 8 || !walk?.current || follow?.current) return
     const from = walk.current.position()
     let to: [number, number] = [e.point.x, e.point.z]
     for (let i = 0; i < 40 && !walkable(plan, to[0], to[1]); i++) to = [to[0] + (from[0] - to[0]) * 0.1, to[1] + (from[1] - to[1]) * 0.1]
@@ -102,7 +105,7 @@ export function MuseumScene({
         plan.slots[i] ? <Artwork key={art.id} art={art} slot={plan.slots[i]} look={LOOK} focused={i === focus} onSelect={onSelect} onMeasure={onMeasure} playlist={playlist} /> : null,
       )}
 
-      <Walker plan={plan} onArrive={onArrive} onLook={onLook} onReady={onWalkerReady} hung={exhibition.items.length} ref={walker} frozen={frozen} />
+      <Walker plan={plan} onArrive={onArrive} onLook={onLook} onReady={onWalkerReady} hung={exhibition.items.length} ref={walker} frozen={frozen} follow={follow} />
       <PlayPolicy playlist={playlist} pieces={pieces} focus={focus} still={paused} />
       <Pacer kick={`${frozen}:${paused}:${focus}`} />
       <Effects dive={dive} />

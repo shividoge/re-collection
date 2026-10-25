@@ -1,5 +1,5 @@
 import { useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useImperativeHandle, useRef, type Ref } from 'react'
+import { useEffect, useImperativeHandle, useRef, type Ref, type RefObject } from 'react'
 import * as THREE from 'three'
 import { route, slide, walkable, type MuseumPlan } from './layout'
 
@@ -18,12 +18,21 @@ const DECEL = 0.6
 const TURN = 1.8
 /** Within this distance of the stop, the view turns from the way ahead to the picture (m). */
 const TURN_IN = 2.4
+/** Following someone: how quickly the view catches up with them (a rate per second). */
+const FOLLOW = 5
+/** Further behind than this (joining late), the view jumps there instead of gliding (m). */
+const FOLLOW_JUMP = 6
+
+/** Where a visitor stands (x, z) and looks (yaw, pitch). */
+export type Pose = { x: number; z: number; yaw: number; pitch: number }
 
 export interface WalkerHandle {
   /** Walks to (x, z), through doorways as needed; then looks at `look` if given. */
   walkTo: (to: [number, number], look?: [number, number, number]) => void
   /** Where the visitor stands now (x, z). */
   position: () => [number, number]
+  /** Where the visitor stands and looks now. */
+  pose: () => Pose
 }
 
 const euler = new THREE.Euler()
@@ -43,6 +52,8 @@ const smoothstep = (t: number) => {
  *   doorways and end facing the picture.
  * Whenever the visitor isn't on a guided walk, `onLook` reports which of the first `hung` slots
  * they're looking at (−1: none), so its label can show without pressing anything.
+ * With `follow` set (family in a live visit), the view glides after that pose instead, and the
+ * visitor's own keys and drags do nothing.
  */
 export function Walker({
   plan,
@@ -52,8 +63,11 @@ export function Walker({
   hung = 0,
   ref,
   frozen = false,
+  follow,
 }: {
   frozen?: boolean
+  /** Hers, in a live visit: the view follows it while set. */
+  follow?: RefObject<Pose | null>
   plan: MuseumPlan
   onArrive?: () => void
   onLook?: (slot: number) => void
@@ -112,6 +126,7 @@ export function Walker({
       } else lookGoal.current = null
     },
     position: () => [pos.current[0], pos.current[1]],
+    pose: () => ({ x: pos.current[0], z: pos.current[1], yaw: yaw.current, pitch: pitch.current }),
   }))
   // The museum draws on demand: a new route needs a first frame to start walking.
   useEffect(() => invalidate(), [plan, invalidate])
@@ -124,7 +139,7 @@ export function Walker({
       last = { x: e.clientX, y: e.clientY }
     }
     const move = (e: PointerEvent) => {
-      if (!last) return
+      if (!last || follow?.current) return
       const dx = e.clientX - last.x
       const dy = e.clientY - last.y
       last = { x: e.clientX, y: e.clientY }
@@ -149,7 +164,19 @@ export function Walker({
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
     }
-  }, [gl, invalidate])
+  }, [gl, invalidate, follow])
+
+  // The museum draws on demand: a new pose to follow needs frames to glide there.
+  useEffect(() => {
+    if (!follow) return
+    const t = setInterval(() => {
+      const f = follow.current
+      if (f && !caughtUp(f)) invalidate()
+    }, 100)
+    return () => clearInterval(t)
+    // caughtUp reads refs only.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [follow, invalidate])
 
   useEffect(() => {
     const typing = (e: KeyboardEvent) => {
@@ -157,7 +184,7 @@ export function Walker({
       return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')
     }
     const down = (e: KeyboardEvent) => {
-      if (typing(e) || frozenRef.current) return
+      if (typing(e) || frozenRef.current || follow?.current) return
       keys.current.add(e.code)
       if (e.code.startsWith('Arrow')) e.preventDefault()
       invalidate()
@@ -172,12 +199,42 @@ export function Walker({
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', blur)
     }
-  }, [invalidate])
+  }, [invalidate, follow])
+
+  /** Close enough to the pose being followed to stop drawing. */
+  function caughtUp(f: Pose) {
+    return Math.hypot(f.x - pos.current[0], f.z - pos.current[1]) < 0.003 && Math.abs(turnBy(yaw.current, f.yaw)) < 0.002 && Math.abs(f.pitch - pitch.current) < 0.002
+  }
 
   useFrame((_, dt) => {
     // Stepped into a picture: the dive has the camera.
     if (frozenRef.current) return
     const step = Math.min(dt, 0.05)
+    const target = follow?.current
+    if (target) {
+      // Following: glide after her (jump if far behind), and say which picture is in view.
+      const far = Math.hypot(target.x - pos.current[0], target.z - pos.current[1]) > FOLLOW_JUMP
+      const ease = far ? 1 : 1 - Math.exp(-FOLLOW * step)
+      pos.current = [pos.current[0] + (target.x - pos.current[0]) * ease, pos.current[1] + (target.z - pos.current[1]) * ease]
+      yaw.current += turnBy(yaw.current, target.yaw) * ease
+      pitch.current += (target.pitch - pitch.current) * ease
+      path.current = []
+      lookGoal.current = null
+      keys.current.clear()
+      lookTimer.current += step
+      if (lookTimer.current > 0.2 && look.current) {
+        lookTimer.current = 0
+        const seen = facing(plan, hung, pos.current, yaw.current, pitch.current)
+        if (seen !== lookedAt.current) {
+          lookedAt.current = seen
+          look.current(seen)
+        }
+      }
+      camera.position.set(pos.current[0], EYE, pos.current[1])
+      camera.quaternion.setFromEuler(euler.set(pitch.current, yaw.current, 0, 'YXZ'))
+      if (!caughtUp(target)) invalidate()
+      return
+    }
     const k = keys.current
     const fwd = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0)
     const strafe = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0)

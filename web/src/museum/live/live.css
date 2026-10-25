@@ -1,0 +1,132 @@
+/* The live visit: "Who's visiting?" and who's here. Warm glass, like the rest of the palace. */
+
+.live-who {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(20, 13, 20, 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.live-who-card {
+  width: min(460px, 100%);
+  padding: 32px 28px 26px;
+  border-radius: 26px;
+  background: rgba(26, 16, 22, 0.78);
+  border: 1px solid rgba(246, 238, 228, 0.16);
+  text-align: center;
+  display: grid;
+  gap: 16px;
+  color: #f6eee4;
+}
+.live-who-card h1 {
+  margin: 0 0 6px;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  font-weight: 500;
+  font-size: 30px;
+}
+.live-enter {
+  min-height: 72px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ffb35c, #ff7a8a);
+  color: #2a1418;
+  font: inherit;
+  font-size: 22px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.live-family-toggle {
+  border: 0;
+  background: none;
+  color: #c9b8ab;
+  font: inherit;
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.live-family {
+  display: grid;
+  gap: 10px;
+  text-align: left;
+}
+.live-family label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: #c9b8ab;
+}
+.live-family input {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(246, 238, 228, 0.2);
+  background: rgba(0, 0, 0, 0.25);
+  color: #f6eee4;
+  font: inherit;
+  font-size: 16px;
+}
+.live-family button {
+  min-height: 46px;
+  border-radius: 999px;
+  border: 1px solid #ffb35c;
+  background: transparent;
+  color: #ffc58a;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.live-family button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.live-presence {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 22;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  pointer-events: none;
+  max-width: calc(100% - 260px);
+}
+.live-chip {
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(26, 16, 22, 0.66);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(246, 238, 228, 0.16);
+  color: #f6eee4;
+  font-size: 15px;
+  text-align: center;
+  transition: box-shadow 250ms ease;
+}
+.live-chip.talking {
+  box-shadow: 0 0 0 2px rgba(255, 179, 92, 0.65);
+}
+.live-chip.quiet {
+  font-size: 13px;
+  color: #c9b8ab;
+}
+.live-name {
+  font-weight: 600;
+  transition: color 200ms ease;
+}
+.live-name.speaking {
+  color: #ffc58a;
+}
+@media (max-width: 760px) {
+  .live-presence {
+    top: 62px;
+    max-width: calc(100% - 28px);
+  }
+}
