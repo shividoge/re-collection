@@ -1,6 +1,7 @@
 // bun src/worker.ts [--concurrency N] [--check]
 // The bake worker: pulls bake jobs from Convex until stopped (SIGINT/SIGTERM: stop claiming,
-// let the running job finish for up to 90 s, then fail it as retryable; a second signal ends it now).
+// let the running job finish for up to 90 s, then fail it as retryable; a second signal ends it now,
+// and the process exits within 15 s even if something can't be interrupted).
 import { hostname } from 'node:os'
 import { parseArgs } from 'node:util'
 import { convexWorkerApi, health } from './api'
@@ -41,6 +42,11 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const)
     } else {
       console.log(`${sig} again: ending the current job now`)
       kill.abort()
+      // If something can't be interrupted, don't hang: the backend re-queues the job when its lease expires.
+      setTimeout(() => {
+        console.log('the job did not end in 15 s; exiting')
+        process.exit(1)
+      }, 15_000).unref()
     }
   })
 

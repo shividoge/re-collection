@@ -48,7 +48,7 @@ Behavior:
 - Downloads only what the bake reads (not the video), 4 files at a time, each retried 4 times and size-checked. The first transfer that fails for good aborts the others, and the job reports only after all of them have stopped; temp files are deleted after every job.
 - Uploads each derived file with the target `worker.outputUrls` returns (single PUT with its headers, or parts in parallel, ETags back to `worker.finishOutput`), then `worker.complete({ result: { kind: 'bake', derived } })`. The targets are keys of this attempt's own; the backend publishes them only at `complete`. Files that are stored gzipped are declared with `contentEncoding: 'gzip'`; for multipart uploads the backend must set `Content-Encoding` when it creates the upload.
 - Failures: an invalid capture → `worker.fail` with `retryable: false` and the reasons in plain words; anything else (network, R2, a crash) → `retryable: true`.
-- SIGINT/SIGTERM: stop claiming, let the running job finish for up to 90 s, then fail it as retryable. A second signal ends it now.
+- SIGINT/SIGTERM: stop claiming, let the running job finish for up to 90 s, then fail it as retryable. A second signal ends it now (and the process exits within 15 s even if something hangs).
 - `workerId` = hostname-pid.
 
 ## Fedora
