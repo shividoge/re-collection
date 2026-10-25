@@ -162,8 +162,9 @@ until [ "$(size model.safetensors)" -ge $SIZE ]; do
 done
 ```
 
-It needs about 8.6 GiB of GPU memory plus 0.065 GiB per frame: a 16 GB card takes about 67
-frames at once, the GX10 (128 GB) up to the 240-frame cap. For the Apache-2.0 model, or a smaller
+Its weights take about 6.8 GB of GPU memory; a pass adds about 1.85 GiB plus 0.074 GiB per 16:9
+frame (35% more for 4:3), measured with `workers/gpu/calibrate.py`: a 16 GB card takes 82 frames
+at once, the GX10 (128 GB) up to the 240-frame cap. For the Apache-2.0 model, or a smaller
 GPU or a Mac, use `DA3-BASE` (541,518,028 bytes; no metric scale, so `--median-depth` sets the
 size; same loop with `M=DA3-BASE SIZE=541518028`) and pass `--model models/DA3-BASE`.
 
