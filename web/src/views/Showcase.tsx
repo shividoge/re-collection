@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 
-import { dataMode, loadCaptureAssets, publicData, type CaptureAssets, type Fact, type Moment, type Progress, type PublicCapture, type Session } from '../data';
+import { dataMode, loadCaptureAssets, publicData, type CaptureAssets, type Fact, type Moment, type Progress, type PublicCapture, type PublicSession } from '../data';
 import type { Layers } from '../showcase/Scenes';
 
 // The 3D scenes (three.js) load only once the page has something to show in them, so the front
@@ -8,7 +8,6 @@ import type { Layers } from '../showcase/Scenes';
 const HeroCloud = lazy(() => import('../showcase/Scenes').then((m) => ({ default: m.HeroCloud })));
 const MiniViewer = lazy(() => import('../showcase/Scenes').then((m) => ({ default: m.MiniViewer })));
 const STATIC = dataMode === 'static';
-type PublicSession = Session;
 import '../showcase/showcase.css';
 
 const MemoryLane = lazy(() => import('../showcase/MemoryLane'));
@@ -36,9 +35,11 @@ export function Showcase() {
     (async () => {
       const list = await publicData.captures();
       const loaded = await Promise.all(
-        list.map(async (capture): Promise<Entry> => {
-          const [assets, moment, progress] = await Promise.all([
-            loadCaptureAssets(capture.id, { public: true }),
+        list.map(async (capture): Promise<Entry | null> => {
+          // A moment that can't be read (e.g. a video still being converted) is left out, not guessed at.
+          const assets = await loadCaptureAssets(capture.id, { public: true }).catch(() => null);
+          if (!assets) return null;
+          const [moment, progress] = await Promise.all([
             publicData.moment(capture.id).catch(() => null),
             publicData.progress(capture.id).catch(() => null),
           ]);
@@ -49,8 +50,9 @@ export function Showcase() {
         }),
       );
       if (cancelled) return;
-      setEntries(loaded);
-      setSceneId(loaded[0]?.capture.id ?? null);
+      const ready = loaded.filter((e): e is Entry => e !== null);
+      setEntries(ready);
+      setSceneId(ready[0]?.capture.id ?? null);
     })().catch((e: Error) => !cancelled && setError(e.message));
     return () => {
       cancelled = true;

@@ -15,6 +15,7 @@ import type {
   focus,
   peers,
   progressReport,
+  publicSession,
   roomState,
   score,
   sentence,
@@ -47,6 +48,8 @@ export type EndReason = Infer<typeof endReason>
 export type SessionEnd = Infer<typeof endSummary>
 export type Focus = Infer<typeof focus>
 export type Progress = Infer<typeof progressReport>
+/** A finished session as visitors see it: no person, alerts or focus. */
+export type PublicSession = Infer<typeof publicSession>
 
 /** "Visit together" (architecture-v3.md §6.6). */
 export type RoomRole = 'patient' | 'helper'

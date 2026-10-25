@@ -16,11 +16,26 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
   const health = useHealth()
   const now = useNow()
 
+  const workers = onlineWorkers(health.status === 'ready' ? health.data : null, now)
+  const live = status.status === 'ready' ? status.data : null
+  // An old video has no 3D (and only a seed manifest) until it's converted: show that instead.
+  if (live && live.source === 'video' && live.convert !== 'done') {
+    return (
+      <div className="center-message">
+        <div>
+          <p>This video is being turned into a 3D moment. It opens here when it's ready.</p>
+          <PipelineStatus capture={{ status: live, durationSec: 0 }} workers={workers} />
+          <p>
+            <a href="#/captures">← Captures</a>
+          </p>
+        </div>
+      </div>
+    )
+  }
   if (error) return <div className="center-message error">{error}</div>
   if (!capture || !assets) return <div className="center-message">Loading the capture…</div>
 
   const { manifest } = capture
-  const live = status.status === 'ready' ? status.data : null
   const pending = live && (['facts', 'bake', 'convert', 'splat'] as const).some((k) => live[k] !== 'done' && live[k] !== 'skipped')
   return (
     <div className="page">
@@ -46,7 +61,7 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
       </header>
       {live && pending && (
         <div className="banner">
-          <PipelineStatus capture={{ status: live, durationSec: manifest?.video.durationSec ?? 0 }} workers={onlineWorkers(health.status === 'ready' ? health.data : null, now)} />
+          <PipelineStatus capture={{ status: live, durationSec: manifest?.video.durationSec ?? 0 }} workers={workers} />
         </div>
       )}
       {capture.errors.length > 0 && (

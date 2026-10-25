@@ -51,12 +51,8 @@ export const sessions = {
     return result.moment
   },
   start: (captureId: string): Promise<{ sessionId: string; welcome: Reply }> => convex().mutation(api.sessions.start, { captureId }),
-  /**
-   * `chapterIndex: null` narrates the whole moment (one without chapters). The backend's arg is
-   * still a plain number; until it takes null (asked for), null is sent as -1.
-   */
-  narrate: (sessionId: string, chapterIndex: number | null): Promise<{ reply: Reply }> =>
-    convex().action(api.sessions.narrate, { sessionId, chapterIndex: chapterIndex ?? -1 }),
+  /** `chapterIndex: null` narrates the whole moment (one without chapters). */
+  narrate: (sessionId: string, chapterIndex: number | null): Promise<{ reply: Reply }> => convex().action(api.sessions.narrate, { sessionId, chapterIndex }),
   turn: (sessionId: string, text: string, focus?: Focus): Promise<{ reply: Reply; branch: string | null; distress: boolean }> =>
     convex().action(api.sessions.turn, focus ? { sessionId, text, focus } : { sessionId, text }),
   end: (sessionId: string, reason: EndReason): Promise<SessionEnd> => convex().action(api.sessions.end, { sessionId, reason }),
@@ -97,7 +93,7 @@ export const uploadsApi: UploadsApi = {
   start: (args) => convex().action(api.uploads.start, args),
   resume: (uploadId) => convex().action(api.uploads.resume, { uploadId }),
   finish: (uploadId, parts) => convex().action(api.uploads.finish, parts ? { uploadId, parts } : { uploadId }),
-  complete: (captureId) => convex().mutation(api.captures.complete, { captureId }),
+  complete: (captureId) => convex().action(api.captures.complete, { captureId }),
   registered: async (captureId) => {
     const detail = (await convex().query(api.captures.get, { captureId })) as CaptureDetail | null
     return detail?.files ?? []

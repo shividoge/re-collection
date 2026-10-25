@@ -6,7 +6,8 @@ const CODES: Record<string, string> = {
   no_facts: 'Approve at least one fact before starting a visit.',
   not_found: 'This visit isn’t here any more.',
   invalid: 'Some files in this capture don’t match its manifest.',
-  forbidden: 'This isn’t shared publicly.',
+  unauthorized: 'This needs a sign-in it doesn’t have.',
+  cancelled: 'That was cancelled.',
   conflict: 'That can’t be done right now.',
 }
 

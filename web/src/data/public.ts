@@ -3,7 +3,7 @@
 import { api, convex } from './convex'
 import { resolveFrom, staticPaths } from './captureAssets'
 import { dataMode, staticUrl } from './mode'
-import type { Arrangement, Moment, Progress, PublicCapture, Session } from './types'
+import type { Arrangement, Moment, Progress, PublicCapture, PublicSession } from './types'
 
 /** A static JSON file, or null when the export doesn't have it. Always asks whether it changed. */
 export async function readStaticJson<T>(path: string): Promise<{ url: string; body: T } | null> {
@@ -36,9 +36,9 @@ export const publicData = {
     if (live) return convex().query(api.public.progress, { captureId: id })
     return (await readStaticJson<Progress>(staticPaths.progress(id)))?.body ?? null
   },
-  async session(sessionId: string): Promise<Session | null> {
+  async session(sessionId: string): Promise<PublicSession | null> {
     if (live) return convex().query(api.public.session, { sessionId })
-    return (await readStaticJson<Session>(staticPaths.session(sessionId)))?.body ?? null
+    return (await readStaticJson<PublicSession>(staticPaths.session(sessionId)))?.body ?? null
   },
   /** The caretaker's museum, public pictures only; null when none was saved. */
   async arrangement(): Promise<Arrangement | null> {
