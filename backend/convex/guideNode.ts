@@ -20,6 +20,7 @@ import {
   answerPrompt,
   groundGuide,
   mossDocs,
+  mossKey,
   narrationPrompt,
   saidDoc,
   sourceIdOf,
@@ -71,7 +72,7 @@ async function search(client: MossClient, key: string, question: string): Promis
     await client.loadIndex(MOSS_INDEX, { autoRefresh: true, pollingIntervalInSeconds: 5 })
     loaded = true
   }
-  const result = await client.query(MOSS_INDEX, question, { topK: ASK_TOP_K, filter: { field: 'memory', condition: { $eq: key } } })
+  const result = await client.query(MOSS_INDEX, question, { topK: ASK_TOP_K, filter: { field: 'memory', condition: { $eq: mossKey(key) } } })
   return { hits: result.docs.map((d) => ({ id: sourceIdOf(d), text: d.text })), ms: result.timeTakenInMs ?? 0 }
 }
 

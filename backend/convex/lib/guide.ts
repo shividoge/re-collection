@@ -59,14 +59,21 @@ export function sourcesOf(ctx: Pick<MemoryContext, 'title' | 'caption' | 'notes'
   return sources
 }
 
+/**
+ * A memory's key as Moss accepts it: letters, digits, "-" and "_" only (it rejects "/" and "#"
+ * as unsupported characters). "<capture>/<piece>" becomes "<capture>_<piece>".
+ */
+export const mossKey = (key: string) => key.replace(/[^A-Za-z0-9_-]/g, '_')
+
 /** Moss documents for a memory: one per source, tagged with the memory. */
 export function mossDocs(key: string, sources: readonly Source[]) {
-  return sources.map((s) => ({ id: `${key}#${s.id}`, text: s.text, metadata: { memory: key, source: s.id } }))
+  const k = mossKey(key)
+  return sources.map((s) => ({ id: `${k}__${s.id}`, text: s.text, metadata: { memory: k, source: s.id } }))
 }
 
 /** Back from a Moss result to the source it came from. */
 export function sourceIdOf(doc: { id: string; metadata?: Record<string, string> }): string {
-  return doc.metadata?.source ?? doc.id.slice(doc.id.indexOf('#') + 1)
+  return doc.metadata?.source ?? doc.id.slice(doc.id.lastIndexOf('__') + 2)
 }
 
 /** A short fingerprint of what the narration was written from, to know when to write it again. */
@@ -218,7 +225,8 @@ export function keytermsOf(texts: readonly string[], extra: readonly string[] = 
 export const SAID_PREFIX = 'said-'
 export function saidDoc(key: string, said: string, at: number) {
   const id = `${SAID_PREFIX}${at}`
-  return { id: `${key}#${id}`, text: `They said: "${tidy(said).slice(0, 400)}"`, metadata: { memory: key, source: id } }
+  const k = mossKey(key)
+  return { id: `${k}__${id}`, text: `They said: "${tidy(said).slice(0, 400)}"`, metadata: { memory: k, source: id } }
 }
 /** Worth remembering: more than a word or two. */
 export const worthRemembering = (said: string) => tidy(said).split(' ').length >= 4
