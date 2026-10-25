@@ -11,9 +11,9 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const cpu = { token: TOKEN, workerId: 'fedora-bake', kinds: ['bake' as const], gpu: false }
-const fedoraGpu = { token: TOKEN, workerId: 'fedora-gpu', kinds: ['convert' as const, 'splat' as const], gpu: true, maxFrames: 67 }
-const gx10 = { token: TOKEN, workerId: 'gx10', kinds: ['convert' as const, 'splat' as const, 'bake' as const], gpu: true, maxFrames: 240 }
+const cpu = { token: TOKEN, workerId: 'fedora-bake', kinds: ['bake' as const], gpu: false, protocol: 2 }
+const fedoraGpu = { token: TOKEN, workerId: 'fedora-gpu', kinds: ['convert' as const, 'splat' as const], gpu: true, maxFrames: 67, protocol: 2 }
+const gx10 = { token: TOKEN, workerId: 'gx10', kinds: ['convert' as const, 'splat' as const, 'bake' as const], gpu: true, maxFrames: 240, protocol: 2 }
 
 async function completedCapture(): Promise<T> {
   const t = setup()
@@ -158,6 +158,13 @@ describe('worker protocol', () => {
     await expect(t.action(api.worker.outputUrls, { ...as(stale), files: [] })).rejects.toThrow(/doesn't hold the lease/)
     expect((await t.query(api.captures.get, { captureId: CAPTURE_ID }))?.derived).toBeNull()
     expect(await t.mutation(api.worker.heartbeat, as(fresh))).toEqual({ ok: true, cancelled: false })
+  })
+
+  test('an outdated worker (no protocol 2) is refused at claim and takes nothing', async () => {
+    const t = await completedCapture()
+    const { protocol: _, ...old } = cpu
+    await expect(t.mutation(api.worker.claim, old)).rejects.toThrow(/job protocol 1, but the backend needs 2/)
+    expect((await statusOf(t))?.bake).toBe('queued')
   })
 
   test('every call after claim needs the attempt', async () => {

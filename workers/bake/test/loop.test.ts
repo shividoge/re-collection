@@ -104,6 +104,7 @@ describe('a job', () => {
     expect(fns.filter((f) => f === 'claim').length).toBeGreaterThan(1) // it went back to polling
     // Every call about the job carries the attempt claim returned.
     expect(b.calls.filter((c) => c.fn !== 'claim').every((c) => c.args.attempt === 1)).toBe(true)
+    expect(b.calls.find((c) => c.fn === 'claim')!.args.protocol).toBe(2)
     // The derived files arrived: gzip ones decompress, depth.bin is raw v2.
     const complete = b.calls.find((c) => c.fn === 'complete')!.args as { jobId: string; result: { kind: string; derived: { stats: unknown } } }
     expect(complete.jobId).toBe('job1')

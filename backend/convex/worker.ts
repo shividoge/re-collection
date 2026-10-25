@@ -15,16 +15,24 @@ import { shown } from './lib/errors'
 import { area, derived, finishedPart, jobKind, progress, uploadTarget, type Area, type UploadTarget } from './validators'
 
 const token = v.string()
+/**
+ * The protocol a worker speaks; claim refuses others, so an outdated worker can't take jobs it
+ * would then lose (2: every call after claim carries `attempt`; outputs are staged per attempt).
+ */
+export const WORKER_PROTOCOL = 2
 /** The `attempt` claim returned; required on every call about the job. */
 const attempt = v.number()
 
 export const claim = mutation({
-  args: { token, workerId: v.string(), kinds: v.array(jobKind), gpu: v.boolean(), maxFrames: v.optional(v.number()) },
+  args: { token, workerId: v.string(), kinds: v.array(jobKind), gpu: v.boolean(), maxFrames: v.optional(v.number()), protocol: v.optional(v.number()) },
   returns: v.union(v.object({ jobId: v.id('jobs'), kind: jobKind, captureId: v.string(), attempt: v.number() }), v.null()),
   handler: async (ctx, args) => {
     requireToken(args.token)
+    if (args.protocol !== WORKER_PROTOCOL) {
+      throw invalid(`This worker speaks job protocol ${args.protocol ?? 1}, but the backend needs ${WORKER_PROTOCOL} (docs/architecture-v3.md §7). Update the worker.`)
+    }
     if (!args.workerId.trim() || args.workerId === 'convex') throw invalid('workerId must be a name for this worker (not "convex").')
-    await seeWorker(ctx, args)
+    await seeWorker(ctx, { workerId: args.workerId, kinds: args.kinds, gpu: args.gpu, maxFrames: args.maxFrames })
     const queued = await ctx.db.query('jobs').withIndex('by_status', (q) => q.eq('status', 'queued')).order('asc').collect()
     for (const job of queued) {
       if (!canRun(job, args)) continue

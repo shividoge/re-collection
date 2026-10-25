@@ -83,7 +83,7 @@ try {
   check(await client.action(api.uploads.finish, { uploadId: short.uploadId }).then(() => false, (e: Error) => /didn't arrive/.test(e.message)), "finish refuses an upload that didn't arrive")
 
   await timed('captures.complete', () => client.action(api.captures.complete, { captureId: id }))
-  const job = await client.mutation(api.worker.claim, { token, workerId: WORKER, kinds: ['bake'], gpu: false })
+  const job = await client.mutation(api.worker.claim, { token, workerId: WORKER, kinds: ['bake'], gpu: false, protocol: 2 })
   if (!job || job.captureId !== id) {
     check(false, `claimed this capture's bake job (got ${job ? `${job.kind} for ${job.captureId}` : 'nothing'}; a live bake worker may have taken it)`)
     if (job) await client.mutation(api.worker.fail, { token, jobId: job.jobId, attempt: job.attempt, error: 'Claimed by the R2 smoke test by mistake; re-queued.', retryable: true })

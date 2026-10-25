@@ -15,6 +15,7 @@ test('a stalled download is abandoned and retried instead of hanging the job', a
   await download('https://example.invalid/x', path, 3, { fetch, timeoutMs: 50, backoffMs: 1 })
   expect(calls).toBe(2)
   expect(new Uint8Array(await Bun.file(path).arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]))
+  await Bun.file(path).delete()
 })
 
 test('the per-try timeout grows with the file size', () => {

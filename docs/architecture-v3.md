@@ -249,7 +249,7 @@ Worker functions take `token` (env `WORKER_TOKEN` in Convex; workers read it fro
 
 | Function | Kind | Args | Returns |
 |---|---|---|---|
-| `worker.claim` | mutation | `{ token, workerId, kinds: string[], gpu: boolean, maxFrames?: number }` | `{ jobId, kind, captureId, attempt } \| null`; oldest queued job this worker can run (`needs.gpu` ⇒ worker has gpu; `needs.frames ≤ maxFrames`), leased for 120 s |
+| `worker.claim` | mutation | `{ token, workerId, kinds: string[], gpu: boolean, maxFrames?: number, protocol: 2 }` | `{ jobId, kind, captureId, attempt } \| null`; oldest queued job this worker can run (`needs.gpu` ⇒ worker has gpu; `needs.frames ≤ maxFrames`), leased for 120 s. A claim without `protocol: 2` is refused (`code: 'invalid'`), so an outdated worker takes no jobs |
 | `worker.heartbeat` | mutation | `{ token, jobId, attempt, progress? }` | `{ ok, cancelled }`; extends the lease 120 s; `cancelled` = stop now (this attempt lost the lease: re-queued, superseded or the capture deleted) |
 | `worker.inputs` | action | `{ token, jobId, attempt }` | `{ manifestJson, files: [{ name, area, url, bytes }] }`: presigned GETs for the capture's raw files (and the source video for convert) |
 | `worker.outputUrls` | action | `{ token, jobId, attempt, files: [{ name, bytes, contentType, contentEncoding?, area: 'raw' \| 'derived' }] }` | `[{ name, target }]`, targets in the same shape as `uploads.start`, under this attempt's own keys |

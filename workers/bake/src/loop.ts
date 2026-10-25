@@ -65,7 +65,7 @@ export async function runLoop(o: LoopOptions): Promise<void> {
       let claim: Claim | null = null
       try {
         // A second signal stops waiting; a lease it may still have taken expires on the backend.
-        claim = await bounded(o.api.claim({ workerId: o.workerId, kinds: ['bake'], gpu: false }), 'worker.claim', o.callTimeoutMs ?? 60_000, o.kill)
+        claim = await bounded(o.api.claim({ workerId: o.workerId, kinds: ['bake'], gpu: false, protocol: 2 }), 'worker.claim', o.callTimeoutMs ?? 60_000, o.kill)
       } catch (e) {
         log(`claim failed: ${(e as Error).message}`)
       }
