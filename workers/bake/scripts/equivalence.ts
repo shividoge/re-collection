@@ -1,25 +1,47 @@
 // Shows the bake makes the same room as the browser did: runs the web's own
 // web/src/scene/surfaceWorker.ts (unchanged, fed exactly as useRoomSurface.ts fed it from the raw
-// v1 files) next to bakeCapture, and compares surface and timeline.
+// v1 files) next to bakeCapture, and compares surface and timeline. v3 deleted that file from the
+// web, so it's taken from git at the last commit that had it (BROWSER_COMMIT), with its imports
+// pointed at today's pure modules (align, surface, timeline), which the bake uses too.
 //
 //   bun scripts/equivalence.ts <captureDir>...
 //
 // The browser decoded keyframes with createImageBitmap; here both sides get the same sharp
 // decode (keyframes.ts), so this compares the geometry pipeline, not two JPEG resizers. The
 // keyframe pixels only color the timeline voxels; which voxels exist doesn't depend on them.
-import { join } from 'node:path'
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { decodePack, packArray } from '../../../shared/pack'
 import { parseManifest } from '../../../shared/manifest'
 import { parseFramesJsonl, parseRoomBin, type FrameRecord } from '../../../web/src/scene/formats'
 import type { RoomMesh } from '../../../web/src/scene/surface'
-import type { DepthRun, SurfaceJob, SurfaceMessage } from '../../../web/src/scene/surfaceWorker'
+import type { Grid } from '../../../web/src/scene/surface'
 import type { Timeline } from '../../../web/src/scene/timeline'
 import { bakeCapture } from '../src/bake'
 import { smallKeyframe } from '../src/keyframes'
 import { listDir } from '../src/listing'
 import { pickKeyframes } from '../src/room'
 import { keyframeFiles } from '../src/validate'
+
+// surfaceWorker.ts's job and message shapes, as at BROWSER_COMMIT.
+interface DepthRun {
+  views: { T: number[]; K: number[]; t: number; offset: number }[]
+  depth: ArrayBuffer
+  confidence: ArrayBuffer
+}
+interface SurfaceJob {
+  scan: DepthRun
+  moment: (DepthRun & { keyframes: { t: number; T: number[]; K: number[]; small: ImageBitmap }[] }) | null
+  depthW: number
+  depthH: number
+  videoW: number
+  videoH: number
+  points: Float32Array
+  colors: Uint8Array
+}
+type SurfaceMessage = { kind: 'surface'; surface: RoomMesh } | { kind: 'timeline'; timeline: Timeline; grid: Grid; skip: Uint8Array }
 
 // ---- the browser side, with the two browser-only APIs it touches shimmed -----------------
 
@@ -37,7 +59,13 @@ const g = globalThis as unknown as { OffscreenCanvas: unknown; postMessage: (m: 
 g.OffscreenCanvas = FakeCanvas
 let received: SurfaceMessage[] = []
 g.postMessage = (m) => received.push(m)
-await import('../../../web/src/scene/surfaceWorker')
+const BROWSER_COMMIT = 'a46255c'
+const scene = resolve(import.meta.dir, '../../../web/src/scene')
+const git = Bun.spawnSync(['git', 'show', `${BROWSER_COMMIT}:web/src/scene/surfaceWorker.ts`], { cwd: import.meta.dir })
+if (!git.success) throw new Error(`Can't read surfaceWorker.ts from git commit ${BROWSER_COMMIT}: ${git.stderr.toString()}`)
+const workerFile = join(await mkdtemp(join(tmpdir(), 'bd-browser-')), 'surfaceWorker.ts')
+await writeFile(workerFile, git.stdout.toString().replaceAll("from './", `from '${scene}/`))
+await import(workerFile)
 const runWorker = g.onmessage!
 
 async function browserBuild(dir: string): Promise<{ surface: RoomMesh | null; timeline: (Timeline & { skip: Uint8Array }) | null; ms: number }> {

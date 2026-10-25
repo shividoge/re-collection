@@ -18,7 +18,7 @@ The geometry is **the web's own code** (`web/src/scene/surface.ts`, `timeline.ts
 `gaps.ts`, `formats.ts`), imported unchanged, so the bake and the old browser path can't drift apart.
 Those files import `three` (marching-cubes tables); `src/webModules.ts` (preloaded by `bunfig.toml`)
 resolves it from this package. `scripts/equivalence.ts` runs the browser's
-`web/src/scene/surfaceWorker.ts` itself next to the bake and compares the results.
+`web/src/scene/surfaceWorker.ts` itself (from git commit a46255c, since v3 deletes it from the web) next to the bake and compares the results.
 
 ## Run it
 
