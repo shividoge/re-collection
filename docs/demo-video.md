@@ -1,11 +1,18 @@
-# Demo video plan (3:00)
+# Demo video plan: "Relive With A Smile" (3:00)
 
-Task M10. IBS27 edits from 04:00 to 07:30; everyone films their own part. The backbone is `docs/THEME.md` §7. The visit's specifics (the dish, the gift, who's there, the consent note) are in `docs/filming-prep.md`. This file never invents them.
+Task M10. IBS27 edits from 04:00 to 07:30; everyone films their own part. The visit's specifics (the dish, the gift, who's there, the consent note) are in `docs/filming-prep.md`; this file never invents them. **Every example detail in the voiceover below (a kitchen, a cake, a name) is a placeholder: swap it for a real detail from the demo visit's approved facts.**
 
-**Two changes from THEME.md §7, both for honesty (CLAUDE.md §8):**
+**The shape is Déjà View's:** a story that makes the judges feel something, then a fast, playful technical breakdown that proves it's real, then back to the story for the payoff on the song. Shivin asked for this shape; it replaces the single-line THEME §7 table.
 
-1. THEME says "Days later". Our sessions happen hours after the visit, so the card says **"Later that night"** (or "The next morning") plus the real clock time from the session. Never "days later", never "day 3".
-2. The song runs **30 s in total** (THEME §6), not from 1:35 to the end: 26 s from the reveal, then the last 4 s on the end card.
+| Act | Time | Feeling | What a judge should think |
+|---|---|---|---|
+| 1. The story | 0:00–0:57 | Quiet, a little sad, then hope | "This is a real problem, for a real person" |
+| 2. How it works: six "tracks" | 0:57–2:25 | Fast, funny, confident | "Wait, they built all of that this weekend?" |
+| 3. Relive it | 2:25–3:00 | Warm; the song's payoff | "That's the smile in the name." |
+
+**Kept from the first draft, for honesty (CLAUDE.md §8):** the Revisit card says **"Later that night"** (or "The next morning") plus the real clock time, never "days later". The song runs **30 s in total** (THEME §6), all in Act 3.
+
+**The video's signature:** Act 2 is a **playlist**. Each step is a numbered orange card, **"Track 1/6"** to **"Track 6/6"** (a nod to the song, and to Déjà View's song), and the cut between tracks is a **rewind**: 6–8 frames of the previous clip played backwards with a short tape-rewind sound. Use the rewind only between tracks.
 
 ---
 
@@ -13,64 +20,74 @@ Task M10. IBS27 edits from 04:00 to 07:30; everyone films their own part. The ba
 
 Times add up to exactly 3:00. **Dependency** tells you when the shot can be filmed.
 
-| # | Time | Len | Beat / narration | On screen | Device | How it's captured | Who films | Dependency |
-|---|---|---|---|---|---|---|---|---|
-| S1 | 0:00–0:08 | 8 s | Opener card (no VO) | Black. Cream serif text: *"The morning after the whole family came for her birthday, she asked when someone would visit."* | — | Made in the editor (Fraunces or Instrument Serif, `#f6eee4` on black) | IBS27 | can film now |
-| S2 | 0:08–0:18 | 10 s | The stand-in grandparent alone by a window. A family member on the phone, quietly: "She doesn't remember we came." | The grandparent, natural light, wide then close | — | Second camera (spare phone, landscape, tripod or braced) | IBS27 | needs the 20:00 capture (same shoot) |
-| S3 | 0:18–0:36 | 18 s | VO line 3, then the family's own voices | (a) The Relive app's room scan: dots lighting up as the phone moves (8 s). (b) The visit being recorded: family talking, the dish, the gift, a laugh (10 s) | iPhone | (a) iOS screen recording during the real scan. (b) Second camera over Shivin's shoulder showing the phone and the room | Shivin (screen), IBS27 (second camera) | needs the 20:00 capture |
-| S4 | 0:36–0:54 | 18 s | VO line 4 | Facts page: "What should she relive?" (or "Facts" before the rename), each fact beside its keyframe or quote. Click a quote → video seeks. Tap **Approve**; mark one **Don't bring this up** | Laptop | Laptop screen recording of the real first review (M8) | Shivin | needs the 20:00 capture |
-| S5 | 0:54–1:06 | 12 s | VO line 5 | The grounding log: a sentence Claude tried to say in a real session, the reason it was dropped. See "Grounding shot" below | Laptop | Laptop screen recording | Firdavs | needs real Revisit sessions (01:00–04:00) |
-| S6 | 1:06–1:30 | 24 s | Card "Later that night · <real time>". The grandparent with the iPad. **Begin the visit**: the room fills in, the family replays in 3D, Claude narrates a real approved fact. **Song in at ~1:08, as the points fill in** | iPad landscape: the visit view (`#/capture/<id>`, caption line at the bottom). Second camera: her face and the iPad | iPad landscape | iPadOS screen recording (mic off; captures the narration audio) + second camera on her | Whoever runs the session (iPad), IBS27 (second camera) | needs real Revisit sessions |
-| S7 | 1:30–1:44 | 14 s | She says a detail back on her own (**only if it really happens**; otherwise she listens and Claude's next line plays). Song ducks under her voice, out by 1:34 | Her face; the iPad caption | iPad + second camera | Same take as S6 | Same as S6 | needs real Revisit sessions |
-| S8 | 1:44–1:56 | 12 s | VO line 8: "this was an old video" | Split: the flat source clip on the left, the same moment in 3D on the right, with **"Estimated from a video, not measured"** visible | Laptop | Laptop screen recording: play the source clip, then the viewer (`web/video-estimated` or later) | Firdavs | can film now (team-data-1 clips); better with M5's real family video |
-| S9 | 1:56–2:10 | 14 s | VO line 9: the museum walk | Memory Museum (`#/museum`): "Your memories", picture frames, tap one → walk to it; a video-made frame shows "Estimated from a video" | iPad landscape | iPadOS screen recording | Firdavs | needs Firdavs's museum fix (M1) |
-| S10 | 2:10–2:22 | 12 s | VO line 10: a helper joins from a phone | Phone and iPad side by side on a table. Helper types the code, taps a frame on the phone, the iPad walks there. Phone taps **Step into this moment**, the iPad opens it. The iPad shows "<name> is with you" | Phone + iPad together | Second camera from above/front showing both screens and hands; both screen recordings as cutaways | IBS27 | needs Visit together (M3) + museum fix |
-| S11 | 2:22–2:34 | 12 s | VO line 11: Memory Window with head tracking | Memory Window full screen. A person moves their head left/right; the view shifts like a window | iPad landscape | Second camera over the shoulder showing the person's head **and** the iPad screen (screen recording alone can't show head tracking). iPadOS screen recording as cutaway | Firdavs (on the iPad), IBS27 or a tripod (second camera) | can film now (needs the HTTPS tunnel) |
-| S12 | 2:34–2:46 | 12 s | VO line 12: research line | Dashboard: recall chart with the real session times on the x-axis, unprompted vs after a cue; "Older memories it brought up" / "Memories it brought back" (only if a real one happened) | Laptop | Laptop screen recording, slow scroll | Firdavs | needs real Revisit sessions (3+, M9) |
-| S13 | 2:46–3:00 | 14 s | VO line 13 (pitch close), then the end card. Song's last 4 s from 2:56 | Smile-arc logo, **Relive With A Smile**, tagline, credits (below) | — | Made in the editor | IBS27 | can film now |
+### Act 1: The story (0:00–0:57). No UI except the scan at the end. Natural sound; a soft piano bed from 0:20.
 
-**End card text (S13):** *She may not remember the day. She'll remember how it felt.* · Built with Claude (Anthropic) · Team: Shivin, Firdavs, IBS27 · Prior reference: Rumi (HackMIT 2026), Déjà View · Depth Anything 3 · Apple sample code "Displaying a point cloud using scene depth" · *Music: "Die With A Smile", Lady Gaga & Bruno Mars* · Small line: *Filmed with a family member standing in for a grandparent. All captures and sessions are real, shown at their real times. Scenes made from old videos are estimates.*
+| # | Time | Len | Picture | Words / sound | Device / capture | Who | Dependency |
+|---|---|---|---|---|---|---|---|
+| A1 | 0:00–0:08 | 8 s | Black. Cream serif text, line by line: *"The morning after the whole family came for her birthday, she asked when someone would visit."* | Silence | Editor card (Fraunces or Instrument Serif, `#f6eee4` on black) | IBS27 | can make now |
+| A2 | 0:08–0:20 | 12 s | The stand-in grandparent alone by a window, tea, a clock | Room tone. A family member on the phone, quietly, their own words: "She doesn't remember we came." | Second camera, tripod | IBS27 | 20:00 shoot |
+| A3 | 0:20–0:32 | 12 s | An old family video playing on a phone in someone's hand: a birthday, a kitchen, kids | Piano bed in. Text: *"We have the videos."* | Second camera on the phone screen | IBS27 | needs the old clip (M5's family video, or Shivin's clip) |
+| A4 | 0:32–0:42 | 10 s | The phone lowers. She watches it, polite, not quite there | Text: *"But watching isn't the same as being there."* | Second camera | IBS27 | 20:00 shoot |
+| A5 | 0:42–0:55 | 13 s | Tonight's visit: the family arrives; Shivin raises the iPhone and the room fills with orange dots | Family's voices. Text: *"So we built a way back in."* Cut to black on a beat | (a) iOS screen recording of the scan, (b) second camera over Shivin's shoulder | Shivin (screen), IBS27 (camera) | 20:00 shoot |
+| A6 | 0:55–0:57 | 2 s | Title card: smile arc of dots, **Relive With A Smile** | — | Editor | IBS27 | can make now |
 
-### Grounding shot (S5)
+### Act 2: How it works (0:57–2:25). Upbeat royalty-free instrumental (YouTube Audio Library), not the song. One playful narrator.
 
-Show a sentence a **real** session dropped, in this order of preference:
+| # | Time | Len | Track card | Picture | Device / capture | Who | Dependency |
+|---|---|---|---|---|---|---|---|
+| T1 | 0:57–1:10 | 13 s | **Track 1/6 · Catch the moment** | Split screen: the real room left, the live point cloud right; labels pop in: `LiDAR depth 10 Hz` · `phone pose every frame` · `transcript on the phone` | iOS screen recording from A5 + second camera | Shivin | 20:00 shoot |
+| T2 | 1:10–1:25 | 15 s | **Track 2/6 · Turn back time** | The flat old clip from A3 "peels" into 3D: the same clip in the viewer, slow orbit, then camera-path mode; **"Estimated from a video, not measured"** visible | Laptop screen recording | Firdavs | can film now (team-data-1 clips); better with M5's family video |
+| T3 | 1:25–1:40 | 15 s | **Track 3/6 · Claude takes notes** | Facts page: each fact beside its keyframe or quote; click a quote → the video seeks; tap **Approve**; mark one **Don't bring this up** | Laptop screen recording of the real first review (M8) | Shivin | 20:00 shoot + extraction |
+| T4 | 1:40–1:52 | 12 s | **Track 4/6 · The bouncer** | A sentence a real session dropped, with its reason. The only added graphic in the video: a small **NOT ON THE LIST** stamp over that real line | Laptop screen recording (see "Grounding shot") | Firdavs | real Revisit sessions |
+| T5 | 1:52–2:10 | 18 s | **Track 5/6 · Step inside** | Over the shoulder: someone on the iPad swipes, tilts, then sits still and **moves their head**; the view shifts like a window. Cutaway: people replaying in 3D in a phone scan | Second camera behind the shoulder (shows head **and** screen) + iPad screen recording | Firdavs (on iPad), IBS27 (camera) | can film now (HTTPS tunnel) |
+| T6 | 2:10–2:25 | 15 s | **Track 6/6 · The museum of your life** | (a) 5 s: the Memory Museum on the iPad, frames on the walls, tap → walk. (b) 6 s: phone and iPad side by side: the helper taps a frame on the phone, the iPad walks there; **"<name> is with you"**. (c) 4 s: dashboard chart at real session times | iPad screen recording; second camera from above on both screens; laptop screen recording | Firdavs (a, c), IBS27 (b) | (a) M1, (b) M3, (c) 3+ sessions |
 
-1. **A held-back list in the UI.** The front page step "Every sentence is checked by code before they hear it" currently shows only a count ("N sentence(s) held back by the check so far"). Its own copy promises the sentence "struck through, with the reason". If Firdavs has 20 minutes after M1/M2, list `session.dropped` there (struck-through sentence + reason). This is the best shot.
-2. **The session file.** Open `/api/sessions/<sid>` in Firefox (JSON viewer, zoom 150%), collapse `turns`, expand `dropped`: the sentence and its reason. Real, plain, readable.
-3. **Fallback if no real session dropped anything:** run `node --test guide/test/grounding.test.mjs` in a clean terminal (no env, no key visible). Caption it **"Test run: a deliberately ungrounded sentence"**. Never present a test sentence as if it came from a session. If the facts page shows "The grounding check removed N facts" for the demo capture, add it as a 3 s cutaway (that one is real).
+### Act 3: Relive it (2:25–3:00). The song.
+
+| # | Time | Len | Picture | Sound | Device / capture | Who | Dependency |
+|---|---|---|---|---|---|---|---|
+| R1 | 2:25–2:30 | 5 s | Card: **"Later that night · <real time>"**. The grandparent from A2, same window, iPad in hand; a grandchild beside her with a phone (the helper) | Instrumental cuts out. One breath of silence | Second camera | IBS27 | real Revisit session |
+| R2 | 2:30–2:45 | 15 s | **Begin the visit**: the room fills in around her in dots, the family walks back in, Claude says a real approved line | **Chorus of "Die With A Smile" comes in at 2:30, exactly as the points fill in**, about −6 dB under Claude's voice | iPadOS screen recording (mic off) + second camera on her face | whoever runs the session; IBS27 (camera) | real Revisit session |
+| R3 | 2:45–2:52 | 7 s | **Whatever she really does.** A smile, a detail said back, a laugh: hold on it. If nothing, her listening and the grandchild's hand on her shoulder | Song ducks −12 dB under her voice | Same take as R2 | same | same |
+| R4 | 2:52–2:56 | 4 s | Black. *"We can't stop her forgetting."* … *"But we can let her relive it."* | Song | Editor | IBS27 | can make now |
+| R5 | 2:56–3:00 | 4 s | Logo card + credits (below) | Song resolves on the last beat (30 s total) | Editor | IBS27 | can make now |
+
+**End card text (R5):** *She may not remember the day. She'll remember how it felt.* · Built with Claude (Anthropic) · Team: Shivin, Firdavs, IBS27 · Prior reference: Rumi (HackMIT 2026), Déjà View · Depth Anything 3 · Apple sample code "Displaying a point cloud using scene depth" · *Music: "Die With A Smile", Lady Gaga & Bruno Mars* · Small line: *Filmed with a family member standing in for a grandparent. All captures and sessions are real, shown at their real times. Scenes made from old videos are estimates.*
 
 ---
 
 ## 2. Narration script
 
-About 150 wpm (2.5 words/s). Each line fits inside its shot with room for natural sound. One calm voice for all lines. Record lines 3, 4, 5, 8–13 any time before 04:00 (they don't depend on footage), three takes each.
+Act 1 and Act 3 have **no narrator**: only on-screen text, the family's own voices, Claude's real narration and the song. Act 2 has one narrator, warm but with a grin (the funniest person on the team), about 150 words a minute (2.5 words/s). Every line fits its track with room for the rewind. Record before 04:00 (it doesn't depend on footage), three takes each, phone 15 cm from the mouth in a small quiet room.
 
-| Line | Starts | Words / sec | VO |
+| Line | Starts | Words / sec | VO (placeholders in *italics*: swap for real approved details) |
 |---|---|---|---|
-| 3 | 0:18 | 22 / 9 s | "The next visit, the family films it with Relive. The iPhone scans the room, then records the visit: video, sound and depth." |
-| 4 | 0:37 | 23 / 9 s | "Claude picks out small, true details, each linked to the frame or the words it came from. The family decides what she hears." |
-| 5 | 0:55 | 22 / 9 s | "Every sentence Claude says is checked by code. If it isn't backed by an approved detail, it's removed before she hears it." |
-| — | 1:06–1:44 | — | **No VO.** Claude's own narration (from the iPad audio), her voice, the song |
-| 8 | 1:45 | 17 / 7 s | "Old videos work too. A depth model rebuilds them in 3D, and Relive labels them as estimates." |
-| 9 | 1:57 | 15 / 6 s | "Every moment hangs in a calm Memory Museum. Tap a picture to walk to it." |
-| 10 | 2:11 | 13 / 5 s | "Family can join from their own phone and walk the museum with her." |
-| 11 | 2:23 | 15 / 6 s | "Step inside, and the iPad follows your head, like looking through a window. No headset." |
-| 12 | 2:35 | 24 / 10 s | "The family sees what she held on to, session by session, at the real times: the measure from the SenseCam study, Woodberry 2015." |
-| 13 | 2:47 | 15 / 6 s | "We can't stop her forgetting. But we can let her relive it, with a smile." |
+| T1 | 0:58 | 29 / 12 s | "Track one: catch the moment. The phone's LiDAR measures the room, the camera films the people, and every frame knows exactly where the phone was. *Grandma's kitchen*, in 850,000 dots." |
+| T2 | 1:11 | 33 / 14 s | "Track two: turn back time. No LiDAR in 2015? Give us any old video. A depth model rebuilds it in 3D. It's an estimate, so the screen says so. Honesty is a feature." |
+| T3 | 1:26 | 33 / 14 s | "Track three: Claude takes notes. Small, true details, each pinned to the exact frame or words that prove it. Then the family decides what she hears, and what she never will." |
+| T4 | 1:41 | 26 / 11 s | "Track four: the bouncer. Every sentence Claude wants to say has to cite an approved detail, and code checks the list. Not on it? Not getting in." |
+| T5 | 1:53 | 38 / 16 s | "Track five: step inside. No headset. The iPad's camera follows her head, so the screen becomes a window. Lean left, see more of the left. And the family moves and laughs, right where they stood." |
+| T6 | 2:11 | 34 / 14 s | "Track six: her own museum. Every moment hangs on the wall, and family can join from their phone to walk her through it. Afterwards, they see what she held on to." |
 
-If S8 uses Shivin's clips rather than a real family video, keep line 8 as written ("Old videos", not "her family's old videos").
+"850,000" is the real size of the bear scan (871,688 points); change it to the demo capture's real count from its viewer. If T2 uses Shivin's clips rather than a real family video, keep "any old video" (not "her family's videos"). If head tracking isn't shown working, T5 becomes "…No headset. Swipe or tilt the iPad and look around the room. And the family moves and laughs, right where they stood."
 
-**Song cue** (THEME §6–7):
+**Music cues:**
 
 | From | To | What |
 |---|---|---|
-| 1:08 | 1:30 | Chorus of "Die With A Smile" comes in as the room fills in on the iPad, full under S6 (natural sound and Claude's narration on top, song about −6 dB under the voice) |
-| 1:30 | 1:34 | Ducks a further −12 dB under her voice, fades out by 1:34 (26 s used) |
-| 2:56 | 3:00 | Last 4 s of the song resolve under the end card (total 30 s) |
+| 0:20 | 0:55 | Soft royalty-free piano bed under Act 1, about −24 dB |
+| 0:57 | 2:25 | Upbeat royalty-free instrumental under Act 2, about −18 dB under the narrator; rewind sound between tracks |
+| 2:25 | 2:30 | Silence |
+| 2:30 | 3:00 | **"Die With A Smile"**: the chorus lands as the points fill in on the iPad (30 s total), ducked under Claude and her voice, resolving under the end card |
 
-Everything else: natural sound and room tone. Optional: a quiet royalty-free piano bed (YouTube Audio Library) under S8–S12 at about −24 dB.
+### Grounding shot (T4, "The bouncer")
 
----
+Show a sentence a **real** session dropped (the NOT ON THE LIST stamp goes over this real line, never over a made-up one), in this order of preference:
+
+1. **A held-back list in the UI.** The front page step "Every sentence is checked by code before they hear it" currently shows only a count ("N sentence(s) held back by the check so far"). Its own copy promises the sentence "struck through, with the reason". If Firdavs has 20 minutes after M1/M2, list `session.dropped` there (struck-through sentence + reason). This is the best shot.
+2. **The session file.** Open `/api/sessions/<sid>` in Firefox (JSON viewer, zoom 150%), collapse `turns`, expand `dropped`: the sentence and its reason. Real, plain, readable.
+3. **Fallback if no real session dropped anything:** run `node --test guide/test/grounding.test.mjs` in a clean terminal (no env, no key visible). Caption it **"Test run: a deliberately ungrounded sentence"**. Never present a test sentence as if it came from a session. If the facts page shows "The grounding check removed N facts" for the demo capture, add it as a 3 s cutaway (that one is real).
+
 
 ## 3. Capture checklist per person
 
@@ -81,7 +98,7 @@ Everything else: natural sound and room tone. Optional: a quiet royalty-free pia
 - [ ] Only real captures in the gallery; no test sessions on the dashboard (CLAUDE.md "Test data hygiene": delete test files in `guide/data/sessions/`, reset test review clicks).
 - [ ] No terminal, `.env`, API key or Console page on screen. The tunnel URL showing is fine.
 - [ ] Everyone in frame has given consent (`docs/filming-prep.md`).
-- [ ] Name files by shot: `S06-ipad-screen.mov`, `S06-cam.mov`, `S11-cam.mov`.
+- [ ] Name files by shot: `R2-ipad-screen.mov`, `R2-cam.mov`, `T5-cam.mov`.
 
 **Second-camera settings (any spare phone):** landscape, 1080p or 4K at **30 fps** (not 60, not Cinematic), Settings → Camera → Formats → **Most Compatible** (H.264, easier on Linux), lock exposure/focus (long-press), tripod or braced on something, 3 s of still before and after each action.
 
@@ -90,24 +107,24 @@ Everything else: natural sound and room tone. Optional: a quiet royalty-free pia
 **Laptop screen recordings:** 1920×1080, browser in full screen (F11), zoom so text is readable at 1080p (110–125%), a clean browser profile (no bookmarks bar, no other tabs, no extensions badges), cursor moves slow. Mac: Cmd+Shift+5. Linux: OBS, or GNOME's built-in recorder (Print Screen → record).
 
 ### Shivin
-- [ ] **20:00 shoot, S3a:** iOS screen recording of the room scan, phone held the way the capture works best (don't change the capture for the video). If screen recording makes the phone stutter or heat up during the visit recording, stop it after the scan: the capture matters more; IBS27's over-the-shoulder shot covers S3b.
-- [ ] **M8, S4:** screen-record the real first fact review. Before you start, leave a few facts pending so the recording shows real taps on **Approve**, one edit if natural, and one **Don't bring this up**. Hover a keyframe; click a quote so the video seeks.
+- [ ] **20:00 shoot, A5a / T1:** iOS screen recording of the room scan, phone held the way the capture works best (don't change the capture for the video). If screen recording makes the phone stutter or heat up during the visit recording, stop it after the scan: the capture matters more; IBS27's over-the-shoulder shot covers A5b.
+- [ ] **M8, T3:** screen-record the real first fact review. Before you start, leave a few facts pending so the recording shows real taps on **Approve**, one edit if natural, and one **Don't bring this up**. Hover a keyframe; click a quote so the video seeks.
 - [ ] Note the real times of the capture and each session for the cards.
-- [ ] Run the tunnel for S6, S9–S11 (Claude Code can't open it).
+- [ ] Run the tunnel for R2, T6a–T5 (Claude Code can't open it).
 
 ### Firdavs (04:00–07:30 screen recordings, earlier where possible)
-- [ ] **S8 (now):** source clip, then the same clip in 3D with the badge visible. Two takes: slow orbit, and camera-path mode.
-- [ ] **S11 (now, on the tunnel):** Memory Window on the iPad, landscape, **Look with your head** (allow the camera). Sit 50–70 cm away, move your head slowly left/right/up. Second camera behind your shoulder sees your head and the screen. Also record tilt and drag-to-look takes as backups.
-- [ ] **S9 (after M1):** museum: "Your memories", tap a frame → walk, a video-made frame showing its badge, **Step into this moment** → Memory Window → **Back to the museum**.
-- [ ] **S5 (after real sessions):** grounding shot per §1 "Grounding shot".
-- [ ] **S12 (after 3+ sessions):** dashboard: hold on the chart 3 s, then the session list and older memories. Make sure the x-axis shows real times.
+- [ ] **T2 (now):** source clip, then the same clip in 3D with the badge visible. Two takes: slow orbit, and camera-path mode.
+- [ ] **T5 (now, on the tunnel):** Memory Window on the iPad, landscape, **Look with your head** (allow the camera). Sit 50–70 cm away, move your head slowly left/right/up. Second camera behind your shoulder sees your head and the screen. Also record tilt and drag-to-look takes as backups.
+- [ ] **T6a (after M1):** museum: "Your memories", tap a frame → walk, a video-made frame showing its badge, **Step into this moment** → Memory Window → **Back to the museum**.
+- [ ] **T4 (after real sessions):** grounding shot per §1 "Grounding shot".
+- [ ] **T6c (after 3+ sessions):** dashboard: hold on the chart 3 s, then the session list and older memories. Make sure the x-axis shows real times.
 
 ### IBS27
-- [ ] **20:00 shoot:** S2 (the grandparent by the window; the family member's line on the phone), S3b over-the-shoulder of the visit being recorded. Also 10–20 s of B-roll: hands, the room, the dish, the gift, for cutaways.
-- [ ] **S6/S7:** second camera on the grandparent during their real Revisit session(s): face and iPad in frame, landscape, 30 fps. Whoever runs the session starts the iPad screen recording before tapping **Begin the visit**. Don't prompt their lines.
-- [ ] **S10 (after M3):** iPad and phone flat or propped side by side, camera from the front-above; type the code on the phone, tap a frame, iPad follows, **Step into this moment**, back. Also save both screen recordings (the 20-second capture in LAST-STEP's "Done when").
-- [ ] **VO:** record lines 3–13 before 04:00 in a quiet small room (closet with clothes is good), phone voice memo 15 cm from the mouth, off-axis, three takes each.
-- [ ] S1 and S13 cards in the editor.
+- [ ] **20:00 shoot:** A2 (the grandparent by the window; the family member's line on the phone), A5b over-the-shoulder of the visit being recorded. Also 10–20 s of B-roll: hands, the room, the dish, the gift, for cutaways.
+- [ ] **R2/R3:** second camera on the grandparent during their real Revisit session(s): face and iPad in frame, landscape, 30 fps. Whoever runs the session starts the iPad screen recording before tapping **Begin the visit**. Don't prompt their lines.
+- [ ] **T6b (after M3):** iPad and phone flat or propped side by side, camera from the front-above; type the code on the phone, tap a frame, iPad follows, **Step into this moment**, back. Also save both screen recordings (the 20-second capture in LAST-STEP's "Done when").
+- [ ] **VO:** record lines T1–T6 before 04:00 in a quiet small room (closet with clothes is good), phone voice memo 15 cm from the mouth, off-axis, three takes each.
+- [ ] A1 and R5 cards in the editor.
 
 ---
 
@@ -132,15 +149,15 @@ done
 | By | Step |
 |---|---|
 | 04:30 | Ingest, convert, files named by shot. Project 1920×1080, 30 fps |
-| 05:15 | Rough cut in shot order S1–S13. Missing shots get a black placeholder card with the shot name, so timing stays 3:00 |
-| 05:45 | VO laid in at the start times above; Claude's narration and her voice from the S6/S7 takes |
-| 06:00 | Song (1:08–1:34 and 2:56–3:00), ducking, room tone under cuts |
+| 05:15 | Rough cut in shot order A1–R5. Missing shots get a black placeholder card with the shot name, so timing stays 3:00 |
+| 05:45 | VO laid in at the start times above; Claude's narration and her voice from the R2/R3 takes |
+| 06:00 | Music: piano bed (Act 1), instrumental + rewind sounds (Act 2), the song 2:30–3:00 (Act 3); ducking, room tone under cuts |
 | 06:15 | Captions, cards, light color match (warm the second-camera shots slightly; leave the 3D scans in their real colors) |
 | 06:20 | **Export v1, upload unlisted to YouTube** to see whether the song gets claimed or muted. If it does, swap in the licensed cover or instrumental |
 | 07:15 | Fixes, final export, upload final (unlisted), keep a copy on Google Drive |
 | 07:30 | Link to Shivin for the Devpost (M11) |
 
-**Captions:** subtitles for every VO line and every spoken line (Kdenlive's subtitle track), burned in, plus an `.srt` uploaded to YouTube. Lower-third labels in the warm serif, cream on a soft plum bar (`#140d14`): the real capture time on S3 ("Filmed Sat Oct 24, <time>"), the real session time on S6, "Estimated from a video, not measured" stays visible in S8/S9 through the UI itself.
+**Captions:** subtitles for every VO line and every spoken line (Kdenlive's subtitle track), burned in, plus an `.srt` uploaded to YouTube. Lower-third labels in the warm serif, cream on a soft plum bar (`#140d14`): the real capture time on A5 ("Filmed Sat Oct 24, <time>"), the real session time on R2, "Estimated from a video, not measured" stays visible in T2/T6a through the UI itself.
 
 **Export:** MP4, H.264 High, 1920×1080, 30 fps, CRF 18 (about 12–16 Mbps), AAC 48 kHz 192 kbps, **exactly 3:00 or under**. Loudness to −14 LUFS, true peak −1 dB:
 ```bash
@@ -152,19 +169,21 @@ YouTube: unlisted, title "Relive With A Smile · Cal Hacks 13.0", description wi
 
 | Shot | Risk | Fallback |
 |---|---|---|
-| S3a | Screen recording missing or phone stutters | Over-the-shoulder second-camera shot of the scan; or a fresh real scan of the same room right after the visit |
-| S4 | Facts extraction fails on the demo capture | Never fake it. Use one of Shivin's four real scans with approved facts (team-data-1) and say "a visit" instead of "the visit" |
-| S5 | No real session dropped a sentence | Test run, captioned as a test (see "Grounding shot") |
-| S6 | Push-to-talk fails | Caregiver uses **Type instead** (cut list #4); show it as is |
-| S7 | She doesn't say a detail back | She listens; Claude's next line plays (THEME §7). Never re-stage it |
-| S8 | No real family video (M5) | Use the team-data-1 clips; VO says "old videos" |
-| S9 | Museum hall still draws nothing | Cut S9; open the Memory Window straight from the viewer (`#/window/<id>`) |
-| S10 | Visit together not working | Cut S10 |
-| S11 | Head tracking doesn't work on the iPad | Tilt; then drag-to-look. Change VO 11 to "Step inside, and look around by tilting or swiping. No headset." Never claim head tracking we didn't show |
-| S12 | Fewer than 3 sessions | Show the ones that exist, at their real times |
+| A5a / T1 | Screen recording missing or phone stutters | Over-the-shoulder second-camera shot of the scan; or a fresh real scan of the same room right after the visit |
+| T3 | Facts extraction fails on the demo capture | Never fake it. Use one of Shivin's four real scans with approved facts (team-data-1) and say "a visit" instead of "the visit" |
+| T4 | No real session dropped a sentence | Test run, captioned as a test (see "Grounding shot") |
+| R2 | Push-to-talk fails | Caregiver uses **Type instead** (cut list #4); show it as is |
+| R3 | She doesn't say a detail back | She listens; Claude's next line plays (THEME §7). Never re-stage it |
+| T2 | No real family video (M5) | Use the team-data-1 clips; VO says "any old video" |
+| T6a | Museum hall still draws nothing | Cut T6a; open the Memory Window straight from the viewer (`#/window/<id>`) |
+| T6b | Visit together not working | Cut T6b |
+| T5 | Head tracking doesn't work on the iPad | Tilt; then drag-to-look. Change VO T5 to "Step inside, and look around by tilting or swiping. No headset." Never claim head tracking we didn't show |
+| T6c | Fewer than 3 sessions | Show the ones that exist, at their real times |
+| A3 | No real old family video | Use one of Shivin's converted clips playing on the phone; the on-screen text stays "We have the videos." |
+| R1 | Visit together not ready | The grandchild sits beside her without a phone; cut "(the helper)" |
 | Song | Claimed or muted on upload | Licensed piano/acoustic cover or the instrumental, same cue points |
 
-**If S9 and S10 are both cut (26 s free):** S6 +8 s (longer reveal), S11 +8 s, S12 +6 s, S8 +4 s. Re-check the song cue: it still starts at the room fill-in.
+**If T6a and T6b are both cut (11 s free):** T6c +4 s, T5 +4 s, R2 +3 s. Re-check the song cue: it still starts at the room fill-in. **If Act 2 runs long:** trim T4 to 9 s and T1 to 10 s before touching Act 1 or Act 3; the story and the payoff are what judges remember.
 
 ---
 
