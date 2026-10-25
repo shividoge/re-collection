@@ -221,6 +221,10 @@ export const arrangementItem = v.object({
   piece: v.string(),
   title: v.string(),
   caption: v.string(),
+  /** For the AI guide only (never shown, never public): what the caretaker tells it about this memory. */
+  notes: v.optional(v.string()),
+  /** For the AI guide only: what it must never bring up. */
+  avoid: v.optional(v.string()),
 })
 export const arrangement = v.object({
   title: v.string(),

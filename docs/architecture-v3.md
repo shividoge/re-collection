@@ -161,7 +161,7 @@ Function names are the contract (`backend/convex/<module>.ts`). Validators live 
 
 ### 6.1 Tables (`backend/convex/schema.ts`)
 
-`captures`, `files`, `uploads`, `moments`, `sessions`, `people`, `jobs`, `workers`, `museumRooms`, `museumPresence`, `museumArrangement`. Exact fields in `schema.ts`.
+`captures`, `files`, `uploads`, `moments`, `sessions`, `people`, `jobs`, `workers`, `museumRooms`, `museumPresence`, `museumArrangement`, `guideNarration`. Exact fields in `schema.ts`.
 
 ### 6.2 Captures and files (phone, web, workers)
 
@@ -221,7 +221,23 @@ Env: `ANTHROPIC_API_KEY`, `MODEL_OFFLINE` (default `claude-opus-5-5`), `MODEL_LI
 | `museum.room` | query | `{ code }` | `{ code, state: RoomState, peers: Peers }` or `null` (reactive; replaces SSE + polling) |
 | `museum.setState` | mutation | `{ code, at, atId?, window, by, name? }` | `{ state }` (validation as in `guide-api.md`) |
 | `museum.heartbeat` | mutation | `{ code, client, as, name? }` | `{ ok }`; a screen calls it every 5 s; peers counts heartbeats newer than 12 s |
-| `museum.getArrangement` / `museum.setArrangement` / `museum.clearArrangement` | query / mutation / mutation | as in `guide-api.md` | arrangement |
+| `museum.getArrangement` / `museum.setArrangement` / `museum.clearArrangement` | query / mutation / mutation | as in `guide-api.md`, plus optional `notes` (up to 2000 characters, line breaks kept) and `avoid` (up to 400) on each item, for the AI guide | arrangement; saving or clearing schedules `guideNode.prepare` for every memory whose notes, title, caption or approved facts changed |
+
+#### 6.6.1 The AI guide (voice in the Memory Palace)
+
+The caretaker's `notes` ("Tell the guide about this memory") and `avoid` ("Never bring up") on each arrangement item, plus the visit's approved, raisable facts, are the only things the guide may say. A memory is keyed `"<capture>/<piece>"`.
+
+| Function | Kind | Args | Returns |
+|---|---|---|---|
+| `guide.narration` | query | `{}` | `[{ key, status: 'preparing' \| 'ready' \| 'failed', intro, story, error }]` (reactive): `intro` is said at the frame, `story` once stepped inside |
+| `guideNode.ask` | action (Node) | `{ key, question }` | `{ say, distress, retrieval: 'moss' \| 'all', mossMs, dropped }`: Moss finds this memory's notes for the question (top 5, filtered by memory), Claude answers from only those, `lib/guide.ts` drops ungrounded sentences. Distress words get plain reassurance, no Claude call |
+| `guideNode.voiceToken` | action (Node) | `{}` | `{ token, expiresAt, voice, version }`: a 10-minute Cartesia access token (TTS + STT grants) so the browser streams to Cartesia without the key |
+| `guideNode.prepare` / `guideNode.forget` | internal actions | `{ key }` / `{ docIds }` | index (upsert) or delete the memory's Moss documents; write and ground the intro and story into `guideNarration` |
+
+- **Grounding (`lib/guide.ts`):** every sentence cites the sources it was given (`label`, `n1…` from the notes, fact ids); a sentence citing nothing passes the companion's free-sentence rules, once; any sentence touching a word that appears only in `avoid` is dropped, cited or not.
+- **Moss:** one index, `braindance-palace`; documents `"<key>#<source>"` with metadata `{ memory, source }`. Without Moss keys the guide still works, giving Claude all of the memory's notes (`retrieval: 'all'`).
+- **Cartesia (browser):** Sonic over `wss://api.cartesia.ai/tts/websocket` and Ink-2 over `wss://api.cartesia.ai/stt/websocket`, each with `?access_token=&cartesia_version=`.
+- **Environment:** `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`, `CARTESIA_API_KEY`, optional `CARTESIA_VOICE_ID`; Claude uses `ANTHROPIC_API_KEY` and `MODEL_LIVE`. `backend/convex.json` marks `@moss-js/moss` as an external Node package (it has a native search engine).
 
 ### 6.7 Public (front page, no writes)
 
