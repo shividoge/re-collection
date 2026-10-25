@@ -26,6 +26,7 @@ import align
 import decode
 import estimate
 import package
+import upright
 from decode import ConvertError
 from geometry import leveling
 
@@ -46,6 +47,7 @@ class Options:
     median_depth: float = 2.0      # only for models without metric depth
     holdout: int = 0               # evaluation: leave every Nth model frame out of the room
     holdout_frames: list[int] | None = None  # evaluation: leave exactly these video frames out
+    detect_upright: bool = True    # turn sideways or upside-down frames upright from what's in them (upright.py)
 
 
 @dataclass
@@ -110,6 +112,14 @@ class Converter:
         # ---- read: one decode pass; video.mp4 in the background ----
         progress("read", None, "Reading the video")
         info = decode.probe(src)
+        turn_warning = None
+        if opts.detect_upright:
+            turns, scores = upright.detect(info, self.masks)
+            if turns:
+                info = info.turned(turns)
+                turn_warning = (f"The frames were turned {('a quarter turn left', 'upside down', 'a quarter turn right')[turns - 1]} "
+                                "to stand upright: objects in them look upright that way (the file didn't say).")
+                log(f"  {turn_warning} Detector scores per quarter turn: {scores}")
         transcode = decode.Transcode(info, out / "video.mp4")
         try:
             n = sample_count(info.frame_count, info.duration, opts.sample_fps)
@@ -211,6 +221,8 @@ class Converter:
         model_name = self.depth_model.name
         warnings = [f"Reconstructed from an ordinary video by Depth Anything 3 ({model_name}). "
                     "The room, depth, scale and camera path are estimated, not measured."]
+        if turn_warning:
+            warnings.append(turn_warning)
         if level_warning:
             warnings.append(level_warning)
         if len(est.windows) > 1:

@@ -36,9 +36,7 @@ def main() -> None:
 
     ref_manifest = json.loads((args.lidar / "manifest.json").read_text())
     ref_lines = {l["i"]: l for l in package.read_frames(args.lidar / "frames.jsonl") if l.get("phase") == "moment" and l["i"] is not None}
-    rd = ref_manifest["depth"]
-    ref_depth = np.memmap(args.lidar / rd["file"], "<u2", "r", shape=(rd["count"], rd["height"], rd["width"]))
-    ref_conf = np.memmap(args.lidar / rd["confidenceFile"], np.uint8, "r", shape=(rd["count"], rd["height"], rd["width"]))
+    ref_depth, ref_conf = package.read_depth_conf(args.lidar, ref_manifest)
     results = {}
     for item in args.capture:
         label, folder = item.split("=", 1)

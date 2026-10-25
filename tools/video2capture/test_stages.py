@@ -161,6 +161,34 @@ class Decode(unittest.TestCase):
         self.assertEqual(decode.created_at({"creation_time": "2026-10-24T22:32:29.000000Z"}), "2026-10-24T22:32:29Z")
 
 
+class Upright(unittest.TestCase):
+    def test_choose_turns_needs_a_clear_winner(self):
+        import upright
+
+        # Detector scores per counter-clockwise quarter turn, measured on real videos.
+        self.assertEqual(upright.choose_turns([3.5, 3.1, 4.0, 10.7]), 3)   # phone held upright, sideways frames
+        self.assertEqual(upright.choose_turns([25.9, 16.3, 53.7, 20.2]), 2)  # stored upside down
+        self.assertEqual(upright.choose_turns([221.8, 8.9, 8.1, 37.1]), 0)   # already upright
+        self.assertEqual(upright.choose_turns([3.0, 1.0, 4.0, 1.0]), 0)      # not clearly better: trust the file
+        self.assertEqual(upright.choose_turns([0.0, 2.0, 0.0, 0.0]), 0)      # too little evidence
+
+    def test_turned_orientation_matches_rot90(self):
+        import itertools
+
+        a = np.arange(12).reshape(3, 4)
+        for t, r, c in itertools.product([False, True], repeat=3):
+            o = decode.Orientation(t, r, c)
+            for k in range(4):
+                np.testing.assert_array_equal(o.turned(k).apply(a), np.rot90(o.apply(a), k))
+
+    def test_turned_video_swaps_its_size(self):
+        info = decode.VideoInfo(path=Path("v.mp4"), times=np.arange(3) / 30, width=1920, height=1440,
+                                orientation=decode.Orientation(), has_audio=False, created=None, codec="h264",
+                                coded_size=(1920, 1440))
+        self.assertEqual((info.turned(3).width, info.turned(3).height), (1440, 1920))
+        self.assertEqual((info.turned(2).width, info.turned(2).height), (1920, 1440))
+
+
 class Package(unittest.TestCase):
     def test_depth_grid_never_invents_values(self):
         d = np.full((378, 504), 2.0, np.float32)

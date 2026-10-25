@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 from typing import Callable
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -182,6 +183,14 @@ class MaskModel:
                     if hit.any():
                         out[s + k] = (det["masks"][hit, 0] >= 0.5).any(0).cpu()
         return dilate(out, max(3, w // 100))
+
+    def confidence(self, frame: np.ndarray, score: float = 0.5) -> float:
+        """Summed confidence of everything (any COCO class) the detector finds at `score` or above in
+        one uint8 (H, W, 3) frame: higher when the frame is upright (upright.py)."""
+        img = torch.from_numpy(np.ascontiguousarray(frame)).to(self.device).permute(2, 0, 1).float() / 255
+        with torch.no_grad():
+            det = self.model([img])[0]
+        return float(det["scores"][det["scores"] >= score].sum())
 
 
 def moving_masks(frames: torch.Tensor, device: torch.device, score: float = 0.5, batch: int = 4) -> torch.Tensor:

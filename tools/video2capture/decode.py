@@ -21,7 +21,7 @@ import os
 import re
 import struct
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 from pathlib import Path
 from typing import Callable
@@ -75,6 +75,19 @@ class Orientation:
             a = a[:, ::-1]
         return np.ascontiguousarray(a) if self != Orientation() else a
 
+    def turned(self, quarter_turns: int) -> "Orientation":
+        """This orientation followed by `quarter_turns` turns counter-clockwise (np.rot90's k)."""
+        probe = np.arange(6).reshape(2, 3)
+        want = np.rot90(self.apply(probe), quarter_turns % 4)
+        for t in (False, True):
+            for r in (False, True):
+                for c in (False, True):
+                    o = Orientation(t, r, c)
+                    got = o.apply(probe)
+                    if got.shape == want.shape and (got == want).all():
+                        return o
+        raise AssertionError("every quarter turn of a quarter turn or mirror is one")
+
     def ffmpeg_filters(self) -> list[str]:
         """The same transform as ffmpeg filters (ffmpeg's transpose=cclock_flip is a plain transpose)."""
         return ((["transpose=cclock_flip"] if self.transpose else []) + (["vflip"] if self.flip_rows else [])
@@ -104,6 +117,13 @@ class VideoInfo:
     codec: str
     audio_rate: int | None = None
     start_offset_us: int = 0  # first video frame minus the file's start (what ffmpeg must cut), µs, rounded down
+    coded_size: tuple[int, int] = (0, 0)  # the stream's stored width and height, before turning upright
+
+    def turned(self, quarter_turns: int) -> "VideoInfo":
+        """The same video with its frames turned `quarter_turns` more times counter-clockwise."""
+        orientation = self.orientation.turned(quarter_turns)
+        w, h = output_size(*self.coded_size, orientation.transpose)
+        return replace(self, orientation=orientation, width=w, height=h)
 
     @property
     def frame_count(self) -> int:
@@ -171,7 +191,7 @@ def probe(path: Path) -> VideoInfo:
         return VideoInfo(path=path, times=times, width=w, height=h, orientation=orientation,
                          has_audio=bool(container.streams.audio), created=created_at(tags), codec=s.codec_context.name,
                          audio_rate=container.streams.audio[0].sample_rate if container.streams.audio else None,
-                         start_offset_us=offset_us)
+                         start_offset_us=offset_us, coded_size=(s.codec_context.width, s.codec_context.height))
 
 
 @dataclass

@@ -203,6 +203,19 @@ Speed on the team clips (3–10 s), end to end with the splat: 50–150 s on the
 43–132 s on the GX10 (was about 6 minutes, nearly all of it 7000 single-frame training steps).
 The splat file is SPZ, about 8 MB (the PLY was 42–77 MB).
 
+## Upright
+
+The video's orientation tag (display matrix) turns frames upright. Some files have none or a
+wrong one: the Braindance phone app stores video the way the sensor sees it, so a phone held
+upright gives sideways frames, and the depth model, the people masks, the room's leveling and the
+keyframes would all be turned 90°. `upright.py` scores 12 frames in all four quarter turns with
+the Mask R-CNN detector already loaded for the people masks (it finds more, more confidently, in
+upright frames) and adds a turn only when it clearly wins (`choose_turns`: at least 1.5 times the
+runner-up). The manifest's warnings say when it did. Checked against ARKit's gravity on three phone
+captures (all a quarter turn right, as the phone's own poses say) and the team clips (unchanged).
+A single-image gravity model (GeoCalib) was tried first and can't tell quarter turns apart: a
+room's lines look level in all four. `--no-upright` trusts the tag.
+
 ## Checking quality
 
 `--holdout 8` leaves every 8th model frame out of the room and the splat. `evaluate.py` then

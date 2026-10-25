@@ -88,12 +88,18 @@ def write_depth(out: Path, mm: np.ndarray, conf: np.ndarray, encoding: str) -> d
 
 def read_depth(capture: Path, manifest: dict) -> np.ndarray:
     """Depth in millimeters (N, h, w) UInt16 from a v1 or v2 package (0 = no data)."""
+    return read_depth_conf(capture, manifest)[0]
+
+
+def read_depth_conf(capture: Path, manifest: dict) -> tuple[np.ndarray, np.ndarray]:
+    """(depth mm UInt16, confidence UInt8 0..2), each (N, h, w), from a v1 or v2 package."""
     d = manifest["depth"]
     raw = (capture / d["file"]).read_bytes()
     if d.get("encoding") == "v2":
-        mm, _ = depthv2.unpack(depthv2.decode_all(raw, json.loads((capture / d["index"]).read_text())))
-        return mm
-    return np.frombuffer(raw, "<u2").reshape(d["count"], d["height"], d["width"])
+        return depthv2.unpack(depthv2.decode_all(raw, json.loads((capture / d["index"]).read_text())))
+    shape = (d["count"], d["height"], d["width"])
+    conf = np.frombuffer((capture / d["confidenceFile"]).read_bytes(), np.uint8).reshape(shape)
+    return np.frombuffer(raw, "<u2").reshape(shape), conf
 
 
 def frame_lines(frame_times: np.ndarray, sample_frames: list[int], poses: list[np.ndarray],
