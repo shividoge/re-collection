@@ -60,7 +60,18 @@ async function ok(res: Response, what: string): Promise<Response> {
 export async function download(url: string, path: string, bytes: number, o: RetryOptions = {}): Promise<void> {
   await withRetry(`Downloading ${path.split('/').at(-1)}`, o, bytes, async (f) => {
     const res = await ok(await f(url), 'GET')
-    const written = await Bun.write(path, res)
+    if (!res.body) throw new Error('the response has no body')
+    // Stream chunk by chunk: Bun 1.4's Bun.write(path, response) stalls forever on large R2 bodies.
+    const sink = Bun.file(path).writer()
+    let written = 0
+    try {
+      for await (const chunk of res.body) {
+        sink.write(chunk)
+        written += chunk.byteLength
+      }
+    } finally {
+      await sink.end()
+    }
     if (written !== bytes) throw new Error(`got ${written} bytes, expected ${bytes}`)
   })
 }
