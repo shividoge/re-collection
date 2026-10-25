@@ -1,7 +1,8 @@
 import { constants, existsSync } from 'node:fs';
-import { cp, mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
+import { publicArrangement } from './arrangement.mjs';
 import { createPublicViews } from './public-views.mjs';
 import { createSessions } from './session.mjs';
 import { Store } from './store.mjs';
@@ -67,6 +68,12 @@ export async function exportStatic({ dataDir, outDir }) {
     summary.captures.push({ id, title: manifest?.title ?? '', bytes });
     summary.totalBytes += bytes;
   }
+
+  // The caretaker's museum (data/museum/arrangement.json), public pictures only.
+  const museumFile = join(dataDir, 'museum.json');
+  const arranged = existsSync(museumFile) ? JSON.parse(await readFile(museumFile, 'utf8')) : null;
+  const shown = publicArrangement(arranged, await views.publicIds());
+  if (shown) await write('museum/arrangement.json', { arrangement: shown });
 
   for (const sid of await views.sessionIds()) {
     if (await write(`sessions/${sid}.json`, await views.session(sid))) summary.sessions += 1;

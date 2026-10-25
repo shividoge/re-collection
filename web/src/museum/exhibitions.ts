@@ -7,7 +7,7 @@
 //   are still there after a reload.
 // Nothing is invented: an exhibition only shows what was put into it.
 
-import { captureFileUrl, guide, publicGuide, STATIC } from '../api'
+import { captureFileUrl, guide, publicGuide, STATIC, type Arrangement, type ArrangementItem, type Manifest } from '../api'
 
 export type ArtworkKind = 'photo' | 'video'
 
@@ -65,14 +65,17 @@ async function curated(): Promise<Exhibition[]> {
 const formatDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''
 
-/**
- * "Our visits": every finished capture on the guide, oldest first. Each visit hangs as its video
- * (the moment itself), followed by up to two of its keyframes as photographs.
- */
-/** Pictures that fill two rooms of the gallery (layout.ts: 8 in the first, 6 in the last). */
-const TWO_ROOMS = 14
+/** A finished visit on the guide, with what's needed to hang pieces of it. */
+export interface Visit {
+  id: string
+  title: string
+  date: string
+  thumb: boolean
+  manifest: Manifest
+}
 
-async function visits(): Promise<Exhibition | null> {
+/** Every finished visit, oldest first (on the public site: the published ones). */
+export async function loadVisits(): Promise<Visit[]> {
   let list
   try {
     // The public (static) site has only the visits the family published, all finished uploads.
@@ -80,51 +83,127 @@ async function visits(): Promise<Exhibition | null> {
       ? (await publicGuide.captures()).map((c) => ({ ...c, status: { upload: 'done' } }))
       : await guide.captures()
   } catch {
-    return null
+    return []
   }
   const done = list.filter((c) => c.status.upload === 'done').sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
-  if (done.length === 0) return null
-  const items: Artwork[] = []
-  // Stills to fill the second room with: a few more moments from each visit.
-  const stills: Artwork[][] = []
+  const out: Visit[] = []
   for (const c of done) {
     try {
       const { manifest } = await guide.capture(c.id)
-      const title = c.title || manifest.title || 'A visit'
-      const date = formatDate(c.createdAt)
-      // One frame per visit, so every picture on the wall is a different memory: the visit's
-      // video (its thumbnail until it plays), or a single still when there's no video.
-      const poster = c.thumb ? captureFileUrl(c.id, 'thumb.jpg') : undefined
-      const kf = manifest.keyframes
-      if (manifest.video?.file) {
-        items.push({ id: `${c.id}-video`, kind: 'video', src: captureFileUrl(c.id, manifest.video.file), poster, title, date, captureId: c.id, t: 0 })
-      } else if (kf && kf.count > 0) {
-        const s = Math.floor(kf.count * 0.5)
-        items.push({ id: `${c.id}-k${s}`, kind: 'photo', src: captureFileUrl(c.id, `${kf.dir}/k${String(s).padStart(4, '0')}.jpg`), title, date, captureId: c.id, t: s * kf.everySec })
-      } else if (poster) {
-        items.push({ id: `${c.id}-thumb`, kind: 'photo', src: poster, title, date, captureId: c.id, t: 0 })
-      }
-      stills.push(
-        kf && kf.count > 0
-          ? [0.25, 0.75, 0.4, 0.9].map((f) => {
-              const k = Math.min(kf.count - 1, Math.floor(kf.count * f))
-              return { id: `${c.id}-s${k}`, kind: 'photo' as const, src: captureFileUrl(c.id, `${kf.dir}/k${String(k).padStart(4, '0')}.jpg`), title, date, captureId: c.id, t: k * kf.everySec }
-            })
-          : poster
-            ? [{ id: `${c.id}-s0`, kind: 'photo' as const, src: poster, title, date, captureId: c.id, t: 0 }]
-            : [],
-      )
+      out.push({ id: c.id, title: c.title || manifest.title || 'A visit', date: formatDate(c.createdAt), thumb: Boolean(c.thumb), manifest })
     } catch {
       // A capture whose manifest can't be read is left out, not guessed at.
     }
   }
-  // Always two rooms: after one picture per visit, more stills from the visits fill the second
-  // room (repeats are fine until the old videos' renders hang there too).
-  for (let round = 0; items.length < TWO_ROOMS && stills.some((v) => v.length > round); round++) {
-    for (const v of stills) if (v[round] && items.length < TWO_ROOMS) items.push(v[round])
+  return out
+}
+
+/** The pieces of a visit that can hang: its video, its thumbnail, and a still every few seconds. */
+export function piecesOf(v: Visit): string[] {
+  const out: string[] = []
+  if (v.manifest.video?.file) out.push('video')
+  if (v.thumb) out.push('thumb')
+  const kf = v.manifest.keyframes
+  if (kf && kf.count > 0) {
+    const step = Math.max(1, Math.round(kf.count / 10))
+    for (let k = 0; k < kf.count; k += step) out.push(`k${String(k).padStart(4, '0')}`)
   }
-  for (let i = 0; items.length < TWO_ROOMS && items.length > 0; i++) items.push({ ...items[i], id: `${items[i].id}-again${i}` })
-  return { id: 'visits', title: 'Our visits', subtitle: 'Every visit the family filmed, oldest first', items, source: 'visits' }
+  return out
+}
+
+/** One piece of a visit as a picture on the wall; null if the visit doesn't have that piece. */
+export function pieceArtwork(v: Visit, piece: string, title = '', caption = '', n = 0): Artwork | null {
+  const poster = v.thumb ? captureFileUrl(v.id, 'thumb.jpg') : undefined
+  const base = { id: `${v.id}-${piece}-${n}`, title: title || v.title, date: v.date, caption: caption || undefined, captureId: v.id }
+  if (piece === 'video') return v.manifest.video?.file ? { ...base, kind: 'video', src: captureFileUrl(v.id, v.manifest.video.file), poster, t: 0 } : null
+  if (piece === 'thumb') return poster ? { ...base, kind: 'photo', src: poster, t: 0 } : null
+  const kf = v.manifest.keyframes
+  const k = /^k(\d{4})$/.exec(piece)
+  if (!k || !kf || Number(k[1]) >= kf.count) return null
+  return { ...base, kind: 'photo', src: captureFileUrl(v.id, `${kf.dir}/${piece}.jpg`), t: Number(k[1]) * kf.everySec }
+}
+
+/**
+ * The public site has no server to save to, so a caretaker trying the editor there saves into
+ * this browser only (and the museum in this browser shows it).
+ */
+const LOCAL_ARRANGEMENT = 'braindance.museum.arrangement'
+
+/** The museum the caretaker saved, or null for the automatic one. */
+export async function loadArrangement(): Promise<Arrangement | null> {
+  if (STATIC) {
+    try {
+      const local = localStorage.getItem(LOCAL_ARRANGEMENT)
+      if (local) return JSON.parse(local) as Arrangement
+    } catch {
+      /* no storage: fall through to the published one */
+    }
+    return publicGuide.arrangement()
+  }
+  return guide.arrangement().catch(() => null)
+}
+
+export async function saveArrangement(a: Omit<Arrangement, 'updatedAt'>): Promise<Arrangement> {
+  if (STATIC) {
+    const saved = { ...a, updatedAt: new Date().toISOString() }
+    localStorage.setItem(LOCAL_ARRANGEMENT, JSON.stringify(saved))
+    return saved
+  }
+  return guide.saveArrangement(a)
+}
+
+export async function resetArrangement(): Promise<void> {
+  if (STATIC) {
+    try {
+      localStorage.removeItem(LOCAL_ARRANGEMENT)
+    } catch {
+      /* nothing saved */
+    }
+    return
+  }
+  await guide.resetArrangement()
+}
+
+/** The museum built from an arrangement: its pictures, in its order, with its words. */
+export function arrangedExhibition(a: Arrangement, visits: Visit[]): Exhibition {
+  const byId = new Map(visits.map((v) => [v.id, v]))
+  const items = a.items.flatMap((item, n) => {
+    const v = byId.get(item.capture)
+    const art = v ? pieceArtwork(v, item.piece, item.title, item.caption, n) : null
+    return art ? [art] : []
+  })
+  return { id: 'visits', title: a.title || 'Our visits', subtitle: a.subtitle || undefined, items, source: 'visits' }
+}
+
+/** Pictures that fill two rooms of the gallery (layout.ts: 8 in the first, 6 in the last). */
+const TWO_ROOMS = 14
+
+/**
+ * The automatic museum, before a caretaker arranges one: every visit hangs once (its video),
+ * then more stills from the visits fill a second room (repeats are fine for now). The editor
+ * starts from this too.
+ */
+export function automaticArrangement(visits: Visit[]): Arrangement {
+  const items: ArrangementItem[] = []
+  const hang = (v: Visit, piece: string) => items.push({ capture: v.id, piece, title: '', caption: '' })
+  for (const v of visits) {
+    const pieces = piecesOf(v)
+    const first = pieces.includes('video') ? 'video' : pieces.includes('thumb') ? 'thumb' : null
+    if (first) hang(v, first)
+  }
+  const stills = visits.map((v) => piecesOf(v).filter((p) => p.startsWith('k')))
+  for (let round = 0; items.length < TWO_ROOMS && stills.some((s) => s.length > round); round++) {
+    for (const [i, s] of stills.entries()) if (s[round] && items.length < TWO_ROOMS) hang(visits[i], s[round])
+  }
+  for (let i = 0; items.length < TWO_ROOMS && items.length > 0; i++) items.push({ ...items[i] })
+  return { title: 'Our visits', subtitle: 'Every visit the family filmed, oldest first', items }
+}
+
+/** "Our visits": the caretaker's arrangement if there is one, otherwise the automatic museum. */
+async function visits(): Promise<Exhibition | null> {
+  const [all, arrangement] = await Promise.all([loadVisits(), loadArrangement()])
+  if (all.length === 0) return null
+  return arrangedExhibition(arrangement && arrangement.items.length > 0 ? arrangement : automaticArrangement(all), all)
 }
 
 // Files dropped onto the museum, kept in IndexedDB.

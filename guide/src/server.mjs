@@ -9,6 +9,7 @@ import { guideRoot, loadConfig } from './config.mjs';
 import { CORS_HEADERS, readJsonBody, sendError, sendFile, sendJson } from './http.mjs';
 import { ClaudeError, createClaude } from './claude.mjs';
 import { extractFacts } from './facts.mjs';
+import { createArrangement } from './arrangement.mjs';
 import { createMuseumRooms } from './museum.mjs';
 import { createPublic } from './public.mjs';
 import { createSessions, SessionError } from './session.mjs';
@@ -41,7 +42,8 @@ export function createApp(config, { claude = createClaude(config), log = console
   /** The built web app (web/dist), served at / so judges need one URL. */
   const webDir = config.webDir ?? join(guideRoot, '..', 'web', 'dist');
 
-  const publicRoutes = createPublic({ store, sessions });
+  const arrangement = createArrangement({ store, dataDir: config.dataDir });
+  const publicRoutes = createPublic({ store, sessions, arrangement });
   const museum = createMuseumRooms({ store, ...museumOptions });
 
   const routes = [
@@ -63,6 +65,7 @@ export function createApp(config, { claude = createClaude(config), log = console
     ['GET', /^\/api\/person$/, json(() => sessions.person())],
     ['PUT', /^\/api\/person$/, json((body) => sessions.setPerson(body))],
     ...museum.routes,
+    ...arrangement.routes,
     ['GET', /^\/files\/([^/]+)\/(.+)$/, getFile],
     ['HEAD', /^\/files\/([^/]+)\/(.+)$/, getFile],
   ];
