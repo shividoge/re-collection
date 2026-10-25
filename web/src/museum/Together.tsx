@@ -17,7 +17,7 @@ export function WithYou({ room }: { room: MuseumRoom }) {
 
 /**
  * The iPad's "Visit together" button: opens a room and shows its code and link big enough to
- * read across a table. Quiet by design: if the guide can't be reached, the button just stays.
+ * read across a table. Quiet by design: if the server can't be reached, the button just stays.
  */
 export function PatientTogether({ room, at }: { room: MuseumRoom; at: number }) {
   const [showing, setShowing] = useState(false)

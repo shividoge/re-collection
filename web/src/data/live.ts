@@ -4,7 +4,7 @@ import { useQueries } from 'convex/react'
 import { useEffect, useState } from 'react'
 import { api, convex, convexUrl } from './convex'
 import { useLive, type Loadable } from './useLive'
-import type { CaptureDetail, CaptureStatus, CaptureSummary, EndReason, Fact, FactChange, Focus, Health, Moment, Person, Progress, Reply, SessionEnd } from './types'
+import type { CaptureDetail, CaptureStatus, CaptureSummary, EndReason, Fact, FactChange, Focus, Health, Moment, Person, Progress, Reply, SessionEnd, UploadTarget } from './types'
 
 // Return types are spelled out so they're checked against the validators' shapes.
 export const useHealth = (): Loadable<Health> => useLive(api.system.health, {})
@@ -68,3 +68,28 @@ export const sessions = {
 /** A worker counts as online when it checked in within this long. */
 export const WORKER_ONLINE_MS = 60_000
 export const onlineWorkers = (health: Health | null, now: number) => (health?.workers ?? []).filter((w) => now - w.lastSeen < WORKER_ONLINE_MS)
+
+/** What upload.ts needs from Convex (architecture-v3.md §6.2). */
+export type UploadsApi = {
+  begin(manifestJson: string): Promise<{ captureId: string }>
+  start(args: { captureId: string; name: string; bytes: number; contentType: string }): Promise<UploadTarget>
+  resume(uploadId: string): Promise<{ target: UploadTarget; done: { partNumber: number; etag: string }[] }>
+  finish(uploadId: string, parts?: { partNumber: number; etag: string }[]): Promise<{ ok: true; bytes: number }>
+  complete(captureId: string): Promise<{ ok: true }>
+  /** Files the server already has for this capture. */
+  registered(captureId: string): Promise<{ name: string; bytes: number }[]>
+  createVideo(args: { title: string; attendees: string[]; fileName: string; bytes: number; durationSec?: number }): Promise<{ captureId: string }>
+}
+
+export const uploadsApi: UploadsApi = {
+  begin: (manifestJson) => convex().mutation(api.captures.begin, { manifestJson }),
+  start: (args) => convex().action(api.uploads.start, args),
+  resume: (uploadId) => convex().action(api.uploads.resume, { uploadId }),
+  finish: (uploadId, parts) => convex().action(api.uploads.finish, parts ? { uploadId, parts } : { uploadId }),
+  complete: (captureId) => convex().mutation(api.captures.complete, { captureId }),
+  registered: async (captureId) => {
+    const detail = (await convex().query(api.captures.get, { captureId })) as CaptureDetail | null
+    return detail?.files ?? []
+  },
+  createVideo: (args) => convex().mutation(api.videos.create, args),
+}

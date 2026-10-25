@@ -17,5 +17,5 @@ export const fetchBytes: FetchBytes = pageCache.fetchBytes
 export const fetchText = (url: string): Promise<string> => pageCache.fetchText(url)
 
 // Live mode only (family tools, Revisit sessions, Visit together).
-export { useHealth, useCaptures, useMoment, useProgress, useProgressMany, usePerson, useCaptureStatus, useNow, family, sessions, onlineWorkers, WORKER_ONLINE_MS } from './live'
+export { useHealth, useCaptures, useMoment, useProgress, useProgressMany, usePerson, useCaptureStatus, useNow, family, sessions, uploadsApi, onlineWorkers, WORKER_ONLINE_MS, type UploadsApi } from './live'
 export { loadVisitSources, arrangements, rooms, type VisitSource } from './museum'

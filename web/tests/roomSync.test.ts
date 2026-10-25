@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { RoomState } from '../src/api'
+import type { RoomState } from '../src/data/types'
 import { failed, follow, intend, received, retry, roomHash, roomHere, sendFailed, sent, shown, startSync, takeNext, type RoomSync } from '../src/museum/roomSync'
 
 const A = '11111111-1111-4111-8111-111111111111'
