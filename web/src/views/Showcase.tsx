@@ -77,13 +77,13 @@ export function Showcase() {
       <nav className="site-nav">
         <a href="#/" className="sn-brand"><span className="mark">◉</span> Braindance</a>
         <div className="links">
-          <a href="#lane">Her museum</a>
+          <a href="#lane">Memory Palace</a>
           <a href="#how">How it works</a>
           <a href="#hood">Under the hood</a>
           {entries && entries.length > 0 && <a href="#moments">Moments</a>}
           <a href="#safety">Safety</a>
           <a href="#research">Research</a>
-          <a className="sn-museum" href="#/museum/edit"><span className="sn-long">Set up her museum</span><span className="sn-short">Museum</span> →</a>
+          <a className="sn-museum" href="#/palace/edit"><span className="sn-long">Set up a Memory Palace</span><span className="sn-short">Palace</span> →</a>
         </div>
       </nav>
 

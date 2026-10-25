@@ -31,9 +31,9 @@ const ROUTES: [RegExp, (id: string, t?: string) => React.ReactNode][] = [
   // The walkable museum: #/museum, or #/museum/<exhibition id>; #/museum?join=CODE is a helper's
   // phone joining the iPad's walk ("Visit together"); #/museum?visit=<key> carries the live visit's
   // key (read by the page itself).
-  [/^#\/museum(?:\/([\w-]+))?(?:\?join=([A-Za-z]*)|\?visit=[A-Za-z0-9_-]+)?$/, (id, join) => <MuseumPage key="museum" id={id} join={join} />],
+  [/^#\/(?:palace|museum)(?:\/([\w-]+))?(?:\?join=([A-Za-z]*)|\?visit=[A-Za-z0-9_-]+)?$/, (id, join) => <MuseumPage key="museum" id={id} join={join} />],
   // The caretaker's editor for that museum (after the line above, so it wins over an exhibition id).
-  [/^#\/museum\/edit$/, () => <MuseumEditor />],
+  [/^#\/(?:palace|museum)\/edit$/, () => <MuseumEditor />],
 ]
 
 function view(hash: string): React.ReactNode {
@@ -48,9 +48,9 @@ function view(hash: string): React.ReactNode {
   const visitor = /^#\/p\/([0-9a-f-]{36})$/i.exec(hash)
   if (visitor) return <PublicView key={visitor[1]} id={visitor[1]} />
   const front = !hash.startsWith('#/') || hash === '#/'
-  // A static site has no family tools: everything but the museum and its Memory Windows lands
-  // on the front page. (Visit together needs the live backend.)
-  const staticPage = /^#\/(museum(\/[\w-]+)?|window\/[0-9a-f-]{36}(\?from=museum)?)$/i.test(hash)
+  // A static site has no family tools: everything but the palace (#/palace, or #/museum from before)
+  // and its Memory Windows lands on the front page. (Visit together needs the live backend.)
+  const staticPage = /^#\/((?:museum|palace)(\/[\w-]+)?|window\/[0-9a-f-]{36}(\?from=museum)?)$/i.test(hash)
   if (front || (dataMode === 'static' && !staticPage)) return <Showcase />
 
   let page: React.ReactNode = <Gallery />
