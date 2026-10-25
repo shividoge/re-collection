@@ -74,7 +74,7 @@ export function Showcase() {
   return (
     <div className="site">
       <nav className="site-nav">
-        <a href="#/" className="sn-brand"><span className="mark">◉</span> Re:Collection</a>
+        <a href="#/" className="sn-brand"><SmileArc small /> Re:Collection</a>
         <div className="links">
           <a className="sn-museum" href="#/palace/edit"><span className="sn-long">Set up a Memory Palace</span><span className="sn-short">Palace</span> →</a>
         </div>
@@ -84,8 +84,9 @@ export function Showcase() {
         {lead && <Suspense fallback={null}><WithCaptureAssets id={lead.capture.id}>{(assets) => <HeroCloud assets={assets} />}</WithCaptureAssets></Suspense>}
         <div className="hero-fade" />
         <div className="hero-copy">
-          <p className="eyebrow">For families living with Alzheimer's</p>
-          <h1>A visit they can step back into.</h1>
+          <SmileArc />
+          <p className="eyebrow">Re:Collection · for families living with Alzheimer's</p>
+          <h1>A visit they can <em>step back into.</em></h1>
           <p className="lede">A family visit, or an old home video, rebuilt as a 3D room they can walk back into.</p>
           <div className="hero-actions">
             <a className="cta" href="#/palace">Enter the Memory Palace</a>
@@ -164,6 +165,35 @@ export function Showcase() {
   );
 }
 
+/* ---------------------------------------------------------------- mark */
+
+/**
+ * The Re:Collection mark: a smile made of LiDAR points, which also reads as a horizon at sunset.
+ * The large one draws itself dot by dot (CSS, skipped under reduced motion).
+ */
+function SmileArc({ small = false }: { small?: boolean }) {
+  const n = small ? 13 : 31;
+  const w = small ? 26 : 220;
+  const h = small ? 10 : 56;
+  const dots = Array.from({ length: n }, (_, i) => {
+    const a = Math.PI * (0.12 + (0.76 * i) / (n - 1));
+    return { x: w / 2 - Math.cos(a) * (w / 2 - 3), y: 3 + Math.sin(a) * (h - 6), i };
+  });
+  return (
+    <svg className={small ? 'smile smile-small' : 'smile'} viewBox={`0 0 ${w} ${h}`} width={w} height={h} aria-hidden>
+      <defs>
+        <linearGradient id={small ? 'smile-g-s' : 'smile-g'} x1="0" x2="1">
+          <stop offset="0" stopColor="#ffb35c" />
+          <stop offset="1" stopColor="#ff7a8a" />
+        </linearGradient>
+      </defs>
+      {dots.map((d) => (
+        <circle key={d.i} cx={d.x} cy={d.y} r={small ? 1.3 : 2.6} fill={`url(#${small ? 'smile-g-s' : 'smile-g'})`} style={{ animationDelay: `${0.25 + d.i * 0.045}s` }} />
+      ))}
+    </svg>
+  );
+}
+
 /* ---------------------------------------------------------------- rooms */
 
 /** Rebuilt from an ordinary video (estimated) rather than scanned with LiDAR. */
@@ -191,6 +221,7 @@ function RoomGroup({ title, how, entries }: { title: string; how: string; entrie
           <a key={e.capture.id} className="moment-card" href={`#/p/${e.capture.id}`}>
             {e.capture.thumbUrl ? <img src={e.capture.thumbUrl} alt="" loading="lazy" /> : <div className="no-thumb" />}
             <div>
+              <span className="made">{isVideo(e) ? 'Rebuilt from video' : 'LiDAR scan'}</span>
               <strong>{roomTitle(e, n)}</strong>
               <span className="muted small">
                 {e.capture.durationSec ? `${Math.round(e.capture.durationSec)} s` : ''}
