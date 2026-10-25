@@ -23,13 +23,6 @@ enum CapturePhase: Equatable {
     }
 }
 
-enum UploadState: Equatable {
-    case idle
-    case uploading(Uploader.Progress)
-    case done
-    case failed(String)
-}
-
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var phase: CapturePhase = .idle
@@ -38,15 +31,8 @@ final class AppModel: ObservableObject {
     @Published var pointCount = 0
     @Published var roomCaptured = false
     @Published var showsCameraFeed = true
-    @Published private(set) var upload: UploadState = .idle
-
-    /// Guide server address and key, typed in Settings.
-    @Published var guideURL: String = UserDefaults.standard.string(forKey: "guideURL") ?? "" {
-        didSet { UserDefaults.standard.set(guideURL, forKey: "guideURL") }
-    }
-    @Published var guideKey: String = UserDefaults.standard.string(forKey: "guideKey") ?? "" {
-        didSet { UserDefaults.standard.set(guideKey, forKey: "guideKey") }
-    }
+    /// Set when the review screen's title or names couldn't be saved.
+    @Published private(set) var saveError: String?
 
     /// Also keep medium-confidence depth within 3 m in the room scan (Settings).
     @Published var keepMediumConfidence: Bool = UserDefaults.standard.bool(forKey: "keepMediumConfidence") {
@@ -185,37 +171,24 @@ final class AppModel: ObservableObject {
         capture.manifest.attendees = attendees
         do {
             try CaptureStore.writeManifest(capture.manifest, in: capture.folder)
+            saveError = nil
             phase = .review(capture)
         } catch {
-            upload = .failed("The details couldn't be saved: \(error.localizedDescription)")
+            saveError = "The details couldn't be saved: \(error.localizedDescription)"
         }
     }
 
+    /// Sends the capture on the review screen through Convex and R2. It
+    /// carries on in the background, and after a relaunch.
     func uploadCapture() {
         guard case .review(let capture) = phase else { return }
-        if case .uploading = upload { return }
-        guard UploadPlan.url(base: guideURL, path: "/health") != nil else {
-            upload = .failed("Set the guide server address in Settings first.")
-            return
-        }
-        upload = .uploading(.init(sentBytes: 0, totalBytes: 0, currentFile: "manifest.json"))
-        let uploader = Uploader(baseURL: guideURL, key: guideKey)
-        Task {
-            do {
-                try await uploader.upload(capture) { progress in
-                    if case .uploading = self.upload { self.upload = .uploading(progress) }
-                }
-                upload = .done
-            } catch {
-                upload = .failed(error.localizedDescription)
-            }
-        }
+        UploadCenter.shared.upload(folder: capture.folder, manifestId: capture.id, title: capture.manifest.title)
     }
 
-    /// Leaves the review screen. The capture stays on the phone (Files app).
+    /// Leaves the review screen. The capture stays on the phone (Files app),
+    /// and an upload in progress keeps going.
     func finishReview() {
-        if case .uploading = upload { return }
-        upload = .idle
+        saveError = nil
         phase = .idle
     }
 
@@ -266,7 +239,7 @@ final class AppModel: ObservableObject {
             return
         }
         activeToken = nil
-        upload = .idle
+        saveError = nil
         phase = .review(SavedCapture(id: manifest.id, folder: folder, manifest: manifest, transcript: transcript))
     }
 

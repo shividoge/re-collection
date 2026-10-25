@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Guide server address (where captures upload) and room-scan options.
+/// Where captures upload (the Convex deployment) and room-scan options.
 struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var uploads: UploadCenter
     @Environment(\.dismiss) private var dismiss
     @State private var check: CheckState = .idle
 
@@ -14,22 +15,22 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("https://….trycloudflare.com", text: $model.guideURL)
+                    TextField(ConvexClient.defaultURL, text: $uploads.convexURL)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    SecureField("Key (if the guide has one)", text: $model.guideKey)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                    if uploads.convexURL != ConvexClient.defaultURL {
+                        Button("Use the team's deployment") { uploads.convexURL = ConvexClient.defaultURL }
+                    }
                 } header: {
-                    Text("Guide server")
+                    Text("Upload to")
                 } footer: {
-                    Text("The URL cloudflared prints on the laptop running the guide. It changes every time the tunnel restarts.")
+                    Text("The Braindance Convex deployment. Files go from the phone straight to storage and keep uploading when the phone is locked.")
                 }
 
                 Section {
                     Button("Test connection") { Task { await testConnection() } }
-                        .disabled(check == .checking || model.guideURL.isEmpty)
+                        .disabled(check == .checking || uploads.convexURL.trimmingCharacters(in: .whitespaces).isEmpty)
                     switch check {
                     case .idle: EmptyView()
                     case .checking: ProgressView()
@@ -51,29 +52,12 @@ struct SettingsView: View {
         }
     }
 
-    /// GET /health, then GET /api/captures to prove the key works too.
+    /// Calls the `system:health` query.
     private func testConnection() async {
         check = .checking
-        guard let health = UploadPlan.url(base: model.guideURL, path: "/health"),
-              let captures = UploadPlan.url(base: model.guideURL, path: "/api/captures")
-        else {
-            check = .failed("That isn't a usable URL.")
-            return
-        }
         do {
-            let (_, healthResponse) = try await URLSession.shared.data(from: health)
-            guard (healthResponse as? HTTPURLResponse)?.statusCode == 200 else {
-                check = .failed("The server answered, but it isn't the guide.")
-                return
-            }
-            var request = URLRequest(url: captures)
-            if !model.guideKey.isEmpty { request.setValue(model.guideKey, forHTTPHeaderField: "X-Braindance-Key") }
-            let (_, response) = try await URLSession.shared.data(for: request)
-            switch (response as? HTTPURLResponse)?.statusCode {
-            case 200: check = .ok("Connected to the guide.")
-            case 401: check = .failed("Connected, but the key is wrong.")
-            case let code: check = .failed("Connected, but the guide answered HTTP \(code ?? 0).")
-            }
+            try await ConvexClient(baseURL: uploads.convexURL).health()
+            check = .ok("Connected to Braindance.")
         } catch {
             check = .failed(error.localizedDescription)
         }

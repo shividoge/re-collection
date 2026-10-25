@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var uploads: UploadCenter
     @State private var showsSettings = false
 
     var body: some View {
@@ -66,7 +67,7 @@ struct HomeView: View {
                 VStack(spacing: 12) {
                     stepRow(1, "cube.transparent", "Scan the room", "Walk slowly. Dots appear wherever the phone sees a surface.")
                     stepRow(2, "video.fill", "Film the visit", "Up to 3 minutes. Speech is written down on this phone, not sent anywhere.")
-                    stepRow(3, "paperplane.fill", "Review and send", "Name the moment, check it, and send it to your family's guide.")
+                    stepRow(3, "paperplane.fill", "Review and send", "Name the moment, check it, and send it to your family's Braindance.")
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -90,20 +91,54 @@ struct HomeView: View {
                     }
                     .buttonStyle(BigButtonStyle())
 
-                    Button { showsSettings = true } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: model.guideURL.isEmpty ? "icloud.slash" : "checkmark.icloud.fill")
-                                .foregroundStyle(model.guideURL.isEmpty ? Color.secondary : Brand.good)
-                            Text(model.guideURL.isEmpty ? "Upload isn't set up. You can still AirDrop the capture." : "Uploads to your family's guide")
-                        }
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    }
+                    uploadStatus
+
                 }
             }
             .padding(20)
         }
         .sheet(isPresented: $showsSettings) { SettingsView() }
+    }
+
+    /// The upload in progress (it carries on after leaving the review screen
+    /// and after a relaunch), or where uploads go.
+    @ViewBuilder
+    private var uploadStatus: some View {
+        let name = uploads.title.isEmpty ? "the visit" : "“\(uploads.title)”"
+        switch uploads.state {
+        case .uploading(let progress):
+            VStack(alignment: .leading, spacing: 6) {
+                ProgressView(value: progress.fraction)
+                Text("Uploading \(name)… \(Int(progress.fraction * 100))%")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        case .done:
+            Button { uploads.dismissDone() } label: {
+                Label("Sent \(name). Braindance checked every file.", systemImage: "checkmark.circle.fill")
+                    .font(.footnote).foregroundStyle(Brand.good)
+            }
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 8) {
+                Label("The upload of \(name) stopped: \(message)", systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote).foregroundStyle(.red)
+                HStack {
+                    Button("Try again") { uploads.retryFailed() }
+                    Spacer()
+                    Button("Stop trying") { uploads.discardFailed() }
+                }
+                .font(.footnote)
+                .buttonStyle(.borderless)
+            }
+        case .idle:
+            Button { showsSettings = true } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.icloud.fill").foregroundStyle(Brand.good)
+                    Text("Uploads to your family's Braindance. You can also AirDrop a capture.")
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private func stepRow(_ number: Int, _ icon: String, _ title: String, _ detail: String) -> some View {

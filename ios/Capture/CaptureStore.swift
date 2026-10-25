@@ -54,6 +54,11 @@ extension CaptureStore {
             warnings: moment.warnings + extraWarnings)
     }
 
+    static func readManifest(in folder: URL) -> CaptureManifest? {
+        guard let data = try? Data(contentsOf: folder.appending(path: "manifest.json")) else { return nil }
+        return try? JSONDecoder().decode(CaptureManifest.self, from: data)
+    }
+
     static func writeManifest(_ manifest: CaptureManifest, in folder: URL) throws {
         try manifest.encoded().write(to: folder.appending(path: "manifest.json"), options: .atomic)
     }

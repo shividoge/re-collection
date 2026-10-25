@@ -240,27 +240,3 @@ final class KeyframeAndTranscriptTests: XCTestCase {
         XCTAssertEqual((json["keyframes"] as? [String: Any])?["count"] as? Int, 2)
     }
 }
-
-final class UploadPlanTests: XCTestCase {
-    func testClaudesInputsGoFirstBigFilesLastAndRoomPlyStaysOnThePhone() {
-        let order = UploadPlan.order([
-            "depth.bin", "video.mp4", "keyframes/k0001.jpg", "manifest.json", "depth.index.json",
-            "frames.jsonl", "thumb.jpg", "room.bin", "keyframes/k0000.jpg", "transcript.json", "room.ply", ".DS_Store",
-            "keyframes/._k0000.jpg", "capture.zip",
-        ])
-        XCTAssertEqual(order, [
-            "manifest.json", "thumb.jpg", "transcript.json", "keyframes/k0000.jpg", "keyframes/k0001.jpg",
-            "room.bin", "frames.jsonl", "video.mp4", "depth.index.json", "depth.bin",
-        ])
-    }
-
-    func testGuideURLsAreBuiltFromWhateverWasTyped() {
-        XCTAssertEqual(UploadPlan.url(base: "https://abc.trycloudflare.com/", path: "/health")?.absoluteString,
-                       "https://abc.trycloudflare.com/health")
-        XCTAssertEqual(UploadPlan.url(base: " abc.trycloudflare.com ", path: "/health")?.absoluteString,
-                       "https://abc.trycloudflare.com/health")
-        XCTAssertEqual(UploadPlan.url(base: "http://192.168.1.20:8787", path: "/api/captures/x/files/keyframes/k0001.jpg")?.absoluteString,
-                       "http://192.168.1.20:8787/api/captures/x/files/keyframes/k0001.jpg")
-        XCTAssertNil(UploadPlan.url(base: "  ", path: "/health"))
-    }
-}
