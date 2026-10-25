@@ -4,7 +4,7 @@
 
 **Links**
 - Demo video (YouTube): https://youtu.be/FQ0vPIS4VM8
-- Live demo: https://shividoge.github.io/braindance-site/
+- Live demo: https://shividoge.github.io/re-collection-site/
 - Code: https://github.com/shividoge/re-collection (private until we submit; see step 1 below)
 - Gallery images: Shivin has them in `~/Downloads/re-collection-devpost-gallery/` (12 images, 3:2)
 
@@ -157,7 +157,7 @@ claude, anthropic, convex, cloudflare-r2, cartesia, moss, swift, swiftui, arkit,
 
 ## "Try it out" links
 
-- **Live demo:** https://shividoge.github.io/braindance-site/ (all 9 rooms: 6 iPhone LiDAR scans and 3 rebuilt from old videos, plus the Memory Palace)
+- **Live demo:** https://shividoge.github.io/re-collection-site/ (all 9 rooms: 6 iPhone LiDAR scans and 3 rebuilt from old videos, plus the Memory Palace)
 - **Demo video:** https://youtu.be/FQ0vPIS4VM8
 - **Code:** https://github.com/shividoge/re-collection (make it public right before submitting: step 1 at the top)
 
