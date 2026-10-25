@@ -25,8 +25,10 @@ def plan_windows(n: int, size: int, overlap: int) -> list[tuple[int, int]]:
     return [(int(s), int(s) + size) for s in starts]
 
 
-def umeyama(src: np.ndarray, dst: np.ndarray, w: np.ndarray | None = None) -> tuple[float, np.ndarray, np.ndarray]:
-    """Weighted least-squares Sim(3) with dst ≈ s·R·src + t (Umeyama 1991). src, dst (P, 3)."""
+def umeyama(src: np.ndarray, dst: np.ndarray, w: np.ndarray | None = None,
+            with_scale: bool = True) -> tuple[float, np.ndarray, np.ndarray]:
+    """Weighted least-squares Sim(3) with dst ≈ s·R·src + t (Umeyama 1991). src, dst (P, 3).
+    `with_scale=False` fixes s = 1 (a rigid fit)."""
     w = np.ones(len(src)) if w is None else np.asarray(w, np.float64)
     w = w / w.sum()
     mu_s, mu_d = w @ src, w @ dst
@@ -38,20 +40,20 @@ def umeyama(src: np.ndarray, dst: np.ndarray, w: np.ndarray | None = None) -> tu
         S[2, 2] = -1
     R = U @ S @ Vt
     var_s = float(w @ (xs**2).sum(1))
-    s = float(np.trace(np.diag(D) @ S) / var_s)
+    s = float(np.trace(np.diag(D) @ S) / var_s) if with_scale else 1.0
     t = mu_d - s * R @ mu_s
     return s, R, t
 
 
 def robust_sim3(src: np.ndarray, dst: np.ndarray, w: np.ndarray | None = None, iters: int = 8,
-                huber: float = 1.5) -> tuple[float, np.ndarray, np.ndarray, float]:
+                huber: float = 1.5, with_scale: bool = True) -> tuple[float, np.ndarray, np.ndarray, float]:
     """Umeyama with iteratively reweighted least squares (Huber weights on residuals scaled by
     their median), so pixels the two windows disagree on (moving people, edges) don't pull the
     fit. Returns (s, R, t, median residual after the fit, in dst units)."""
     w0 = np.ones(len(src)) if w is None else np.asarray(w, np.float64)
     wk = w0.copy()
     for _ in range(iters):
-        s, R, t = umeyama(src, dst, wk)
+        s, R, t = umeyama(src, dst, wk, with_scale)
         r = np.linalg.norm(dst - (s * src @ R.T + t), axis=1)
         scale = max(np.median(r) * 1.4826, 1e-9)
         k = huber * scale

@@ -71,6 +71,11 @@ class Sim3(unittest.TestCase):
         np.testing.assert_allclose(R, self.R, atol=1e-6)
         np.testing.assert_allclose(t, self.t, atol=1e-6)
 
+    def test_rigid_fit_keeps_scale_one(self):
+        s, R, t = align.umeyama(self.src, self.src @ self.R.T + self.t, with_scale=False)
+        self.assertEqual(s, 1.0)
+        np.testing.assert_allclose(R, self.R, atol=1e-6)
+
     def test_robust_fit_ignores_outliers(self):
         dst = self.dst.copy()
         dst[:100] += np.random.default_rng(1).normal(scale=2.0, size=(100, 3))  # a fifth disagree wildly
@@ -89,22 +94,28 @@ class Sim3(unittest.TestCase):
 
 
 class Merge(unittest.TestCase):
-    def test_windows_in_different_coordinates_are_chained(self):
-        """Window b sees the same wall in a world moved by a known Sim(3); merge undoes it."""
+    def chain(self, s: float, metric: bool) -> None:
+        """Window b sees the same wall in a world moved by a known similarity; merge undoes it."""
         poses = [pose([0.1 * i, 0, 0], yaw=0.02 * i) for i in range(12)]
         depth = np.stack([room_depth(T) for T in poses])
         conf = np.ones_like(depth)
-        s, R, t = 0.8, rot("y", 0.4), np.array([1.0, 0.2, -0.5])
+        R, t = rot("y", 0.4), np.array([1.0, 0.2, -0.5])
         inv = (1 / s, R.T, -R.T @ t / s)  # b's world = the inverse move of a's
-        a = estimate.Estimate(depth[:8], conf[:8], poses[:8], [K] * 8, None, True, [(0, 8)], [])
+        a = estimate.Estimate(depth[:8], conf[:8], poses[:8], [K] * 8, None, metric, [(0, 8)], [])
         b_poses = [align.apply_sim3_to_pose(*inv, T) for T in poses[4:]]
-        b = estimate.Estimate(depth[4:] / s, conf[4:], b_poses, [K] * 8, None, True, [(4, 12)], [])
+        b = estimate.Estimate(depth[4:] / s, conf[4:], b_poses, [K] * 8, None, metric, [(4, 12)], [])
         m = estimate.merge(a, b, 4, 8)
         self.assertEqual(len(m.depth), 12)
         self.assertLess(m.align_residuals[0], 1e-6)
         for T, T_true in zip(m.poses, poses):
             np.testing.assert_allclose(T, T_true, atol=1e-6)
         np.testing.assert_allclose(m.depth, depth, rtol=1e-5)
+
+    def test_windows_without_metric_scale_are_chained_with_scale(self):
+        self.chain(0.8, metric=False)
+
+    def test_metric_windows_are_chained_rigidly(self):
+        self.chain(1.0, metric=True)
 
 
 class Budget(unittest.TestCase):

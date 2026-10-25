@@ -4,10 +4,11 @@ video.mov run through the converter): the phone's ARKit poses and LiDAR depth ar
 
     .venv/bin/python compare_lidar.py --lidar <phone capture folder> --capture label=<converted folder> ...
 
-Per capture: camera path error after the best similarity fit (ATE RMSE, in meters and as a
-share of the path length), rotation error, the fitted scale (1 = metric scale was right), and
-depth error on the frames both have (median |d - lidar| / lidar, on LiDAR pixels of high
-confidence; the converted depth is moved by the fitted scale first).
+Alignment that works even when the camera barely moves: the world rotation is the average of
+the per-frame rotation differences, the scale is the median ratio of LiDAR depth to the
+converted depth (1 = the metric scale was right), the translation matches the path centroids.
+Then per capture: camera path error (ATE RMSE), median rotation error, the scale, and depth
+error on the frames both have (median |s·d - lidar| / lidar on high-confidence LiDAR pixels).
 """
 
 from __future__ import annotations
@@ -46,13 +47,11 @@ def main() -> None:
         lines = [l for l in package.read_frames(folder / "frames.jsonl") if l.get("d") is not None and l["i"] in ref_lines]
         ours = np.stack([package.pose_of(l)[0] for l in lines])
         ref = np.stack([package.pose_of(ref_lines[l["i"]])[0] for l in lines])
-        s, R, t = align.umeyama(ours[:, :3, 3], ref[:, :3, 3])
-        moved = np.stack([align.apply_sim3_to_pose(s, R, t, T) for T in ours])
-        err = np.linalg.norm(moved[:, :3, 3] - ref[:, :3, 3], axis=1)
-        path_len = float(np.linalg.norm(np.diff(ref[:, :3, 3], axis=0), axis=1).sum())
-        rot_err = [rotation_angle(a[:3, :3].T @ b[:3, :3]) for a, b in zip(moved, ref)]
+        M = sum(b[:3, :3] @ a[:3, :3].T for a, b in zip(ours, ref))
+        U, _, Vt = np.linalg.svd(M)
+        R = U @ np.diag([1, 1, np.sign(np.linalg.det(U @ Vt))]) @ Vt
         mm = package.read_depth(folder, manifest)
-        rel = []
+        ratios, pairs = [], []
         for l in lines:
             dref = ref_lines[l["i"]]["d"]
             if dref is None:
@@ -60,7 +59,15 @@ def main() -> None:
             r = ref_depth[dref].astype(np.float32)
             ok = (ref_conf[dref] == 2) & (r > 0) & (mm[l["d"]] > 0)
             if ok.sum() > 100:
-                rel.append(np.median(np.abs(mm[l["d"]][ok] * s - r[ok]) / r[ok]))
+                ratios.append(np.median(r[ok] / mm[l["d"]][ok]))
+                pairs.append((mm[l["d"]][ok].astype(np.float32), r[ok]))
+        s = float(np.median(ratios))
+        t = ref[:, :3, 3].mean(0) - s * R @ ours[:, :3, 3].mean(0)
+        moved = np.stack([align.apply_sim3_to_pose(s, R, t, T) for T in ours])
+        err = np.linalg.norm(moved[:, :3, 3] - ref[:, :3, 3], axis=1)
+        path_len = float(np.linalg.norm(np.diff(ref[:, :3, 3], axis=0), axis=1).sum())
+        rot_err = [rotation_angle(a[:3, :3].T @ b[:3, :3]) for a, b in zip(moved, ref)]
+        rel = [np.median(np.abs(d * s - r) / r) for d, r in pairs]
         results[label] = {
             "frames": len(lines), "ate_m": round(float(np.sqrt((err**2).mean())), 4),
             "ate_of_path": round(float(np.sqrt((err**2).mean())) / max(path_len, 1e-9), 4),

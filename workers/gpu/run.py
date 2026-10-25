@@ -30,6 +30,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-splat", action="store_true")
     ap.add_argument("--max-frames", type=int, default=None, help="frames per model pass (default: measured)")
     ap.add_argument("--window", type=int, default=None, help="force windows of this many frames (testing)")
+    ap.add_argument("--overlap", type=int, default=None, help="frames consecutive windows share (testing)")
     ap.add_argument("--sample-fps", type=float, default=None, help="model frames per second (default 10)")
     ap.add_argument("--voxel", type=float, default=None, help="room.bin spacing in meters (default 0.015)")
     ap.add_argument("--holdout", type=int, default=0, help="leave every Nth model frame out (evaluation)")
@@ -52,6 +53,8 @@ def main(argv: list[str] | None = None) -> int:
     options: dict[str, object] = {"holdout": args.holdout}
     if args.window:
         options["window"] = args.window
+    if args.overlap:
+        options["overlap"] = args.overlap
     if args.voxel:
         options["voxel"] = args.voxel
     if args.sample_fps:

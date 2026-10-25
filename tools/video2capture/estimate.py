@@ -144,7 +144,9 @@ def merge(a: Estimate, b: Estimate, b_start: int, a_end: int, max_residual: floa
     src_, dst_, w_ = np.concatenate(src), np.concatenate(dst), np.concatenate(w)
     if len(src_) < 100:
         raise ConvertError("Two stretches of the video share too little depth to line them up.")
-    s, R, t, resid = align.robust_sim3(src_, dst_, w_)
+    # Metric windows keep their own scale: fitting it at every join lets small errors compound
+    # (6 windows drifted 10% in scale against LiDAR); rotation and translation still chain.
+    s, R, t, resid = align.robust_sim3(src_, dst_, w_, with_scale=not (a.metric and b.metric))
     if not (math.isfinite(s) and s > 0) or (max_residual is not None and resid > max_residual):
         raise ConvertError(f"Couldn't line up two stretches of the video (misfit {resid:.3f} m).")
     poses_b = [align.apply_sim3_to_pose(s, R, t, T) for T in b.poses]
