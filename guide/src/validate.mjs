@@ -86,8 +86,23 @@ export async function validateCapture(store, id) {
       if (count !== room.points) errors.push(`${room.bin} says ${count} points, but manifest.room.points is ${room.points}.`);
     }
     if (room.ply) await requireFile(room.ply, undefined, 'the room cloud for desktop viewers');
+    if (room.splat) await checkSplat(room.splat);
   } else {
     warnings.push('This capture has no room scan, so there is no 3D room to show.');
+  }
+
+  /** Optional room splat (docs/capture-format.md "room splat"): an INRIA 3DGS PLY whose size matches its header. */
+  async function checkSplat(splat) {
+    if (!splat.file) {
+      errors.push('manifest.room.splat.file is missing.');
+    } else if (splat.format !== '3dgs-ply') {
+      errors.push(`manifest.room.splat.format is "${splat.format}", expected "3dgs-ply".`);
+    } else {
+      const size = await requireFile(splat.file, undefined, 'the room splat');
+      if (!size) return;
+      const header = parsePlyHeader(await readBytes(store.filePath(id, splat.file), 0, Math.min(size, PLY_HEADER_MAX)));
+      for (const problem of splatProblems(header, splat, size)) errors.push(`${splat.file} ${problem}`);
+    }
   }
 
   // Optional pieces from the next phone build.
@@ -132,4 +147,63 @@ async function readBytes(path, position, length) {
   } finally {
     await handle.close();
   }
+}
+
+const PLY_HEADER_MAX = 64 * 1024;
+const PLY_TYPE_BYTES = {
+  char: 1, uchar: 1, int8: 1, uint8: 1,
+  short: 2, ushort: 2, int16: 2, uint16: 2,
+  int: 4, uint: 4, float: 4, int32: 4, uint32: 4, float32: 4,
+  double: 8, float64: 8,
+};
+
+/**
+ * Reads a PLY header from the start of a file. Returns
+ * { format, elements: [{ name, count, properties: [{ name, type }] }], headerBytes } or { error }.
+ */
+export function parsePlyHeader(bytes) {
+  const end = bytes.indexOf('end_header\n');
+  if (bytes.subarray(0, 4).toString('latin1') !== 'ply\n') return { error: "isn't a PLY file (no \"ply\" header line)." };
+  if (end < 0) return { error: `has no end_header in its first ${bytes.length} bytes.` };
+  const header = { format: null, elements: [], headerBytes: end + 'end_header\n'.length };
+  for (const line of bytes.subarray(0, end).toString('latin1').split('\n')) {
+    const words = line.trim().split(/\s+/);
+    if (words[0] === 'format') header.format = words[1];
+    else if (words[0] === 'element') header.elements.push({ name: words[1], count: Number(words[2]), properties: [] });
+    else if (words[0] === 'property') {
+      const element = header.elements.at(-1);
+      if (!element) return { error: 'has a property before any element.' };
+      element.properties.push(words[1] === 'list' ? { name: words.at(-1), type: 'list' } : { name: words[2], type: words[1] });
+    }
+  }
+  return header;
+}
+
+/** Everything wrong with a 3DGS PLY header against its manifest entry and file size; [] when it's fine. */
+export function splatProblems(header, splat, fileBytes) {
+  if (header.error) return [header.error];
+  const problems = [];
+  if (header.format !== 'binary_little_endian') problems.push(`format is ${header.format}, expected binary_little_endian.`);
+  if (header.elements.length !== 1 || header.elements[0].name !== 'vertex') {
+    return [...problems, `has elements [${header.elements.map((e) => e.name).join(', ')}], expected only "vertex".`];
+  }
+  const { count, properties } = header.elements[0];
+  if (count !== splat.count) problems.push(`has ${count} Gaussians, but manifest.room.splat.count is ${splat.count}.`);
+
+  const names = new Set(properties.map((p) => p.name));
+  const degree = splat.shDegree ?? 0;
+  const rest = 3 * ((degree + 1) ** 2 - 1);
+  const required = ['x', 'y', 'z', 'f_dc_0', 'f_dc_1', 'f_dc_2', 'opacity', 'scale_0', 'scale_1', 'scale_2', 'rot_0', 'rot_1', 'rot_2', 'rot_3'];
+  for (let i = 0; i < rest; i++) required.push(`f_rest_${i}`);
+  const missing = required.filter((name) => !names.has(name));
+  if (missing.length) problems.push(`is missing properties ${missing.join(', ')}.`);
+  const extraRest = properties.filter((p) => p.name.startsWith('f_rest_')).length - rest;
+  if (extraRest > 0) problems.push(`has ${rest + extraRest} f_rest properties, but manifest.room.splat.shDegree ${degree} means ${rest}.`);
+
+  const unknown = properties.find((p) => !(p.type in PLY_TYPE_BYTES));
+  if (unknown) return [...problems, `property ${unknown.name} has type ${unknown.type}, which a splat can't use.`];
+  const stride = properties.reduce((sum, p) => sum + PLY_TYPE_BYTES[p.type], 0);
+  const expected = header.headerBytes + count * stride;
+  if (fileBytes !== expected) problems.push(`is ${fileBytes} bytes, but its header implies ${expected} (${count} × ${stride} bytes after a ${header.headerBytes}-byte header).`);
+  return problems;
 }

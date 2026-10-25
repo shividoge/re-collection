@@ -71,3 +71,20 @@ export async function writeCapture(dataDir, files, id = CAPTURE_ID) {
   }
   return dir;
 }
+
+/**
+ * A tiny INRIA 3DGS PLY (docs/capture-format.md "room splat"), all floats zero, for tests only.
+ * `withCapture` adds it to a tinyCapture's files and manifest.
+ */
+export function tinySplatPly({ count = 2, shDegree = 0, format = 'binary_little_endian', normals = true } = {}) {
+  const props = ['x', 'y', 'z', ...(normals ? ['nx', 'ny', 'nz'] : []), 'f_dc_0', 'f_dc_1', 'f_dc_2'];
+  for (let i = 0; i < 3 * ((shDegree + 1) ** 2 - 1); i++) props.push(`f_rest_${i}`);
+  props.push('opacity', 'scale_0', 'scale_1', 'scale_2', 'rot_0', 'rot_1', 'rot_2', 'rot_3');
+  const header = ['ply', `format ${format} 1.0`, `element vertex ${count}`, ...props.map((p) => `property float ${p}`), 'end_header', ''].join('\n');
+  return Buffer.concat([Buffer.from(header, 'latin1'), Buffer.alloc(count * props.length * 4)]);
+}
+
+export function addSplat(files, manifest, { count = 2, shDegree = 0, ...options } = {}) {
+  files['room.splat.ply'] = tinySplatPly({ count, shDegree, ...options });
+  manifest.room.splat = { file: 'room.splat.ply', format: '3dgs-ply', count, shDegree, source: 'trained-from-video' };
+}

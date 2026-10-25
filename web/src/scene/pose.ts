@@ -65,6 +65,36 @@ export function frameIndexAtTime(frames: FrameRecord[], time: number): number {
   return lo
 }
 
+/** Indices of the frames that have a depth frame (`d` not null), in time order. */
+export function depthFrameIndices(frames: FrameRecord[]): number[] {
+  const out: number[] = []
+  frames.forEach((f, k) => {
+    if (f.d !== null) out.push(k)
+  })
+  return out
+}
+
+/**
+ * The frame with depth whose `t` is nearest `time`, or -1 if none is within `maxGap` seconds.
+ * By time, not by a count of video frames: phone captures have depth at 10 Hz, captures made
+ * from a video at 2–5 Hz. Use that frame's own T and K with its depth. `withDepth` comes from
+ * depthFrameIndices; frames must be sorted by t.
+ */
+export function nearestDepthFrame(frames: FrameRecord[], withDepth: number[], time: number, maxGap: number): number {
+  if (withDepth.length === 0) return -1
+  let lo = 0
+  let hi = withDepth.length - 1
+  while (lo < hi) {
+    // First depth frame with t >= time (or the last one).
+    const mid = (lo + hi) >> 1
+    if (frames[withDepth[mid]].t < time) lo = mid + 1
+    else hi = mid
+  }
+  let best = withDepth[lo]
+  if (lo > 0 && Math.abs(frames[withDepth[lo - 1]].t - time) <= Math.abs(frames[best].t - time)) best = withDepth[lo - 1]
+  return Math.abs(frames[best].t - time) <= maxGap ? best : -1
+}
+
 /** T · Rz(angle): roll the camera about its own view axis (column-major in, column-major out). */
 export function rollColumnMajor(T: number[], angle: number): number[] {
   const c = Math.cos(angle)
