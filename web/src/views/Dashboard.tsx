@@ -40,7 +40,7 @@ export function DashboardOverview() {
             return (
               <li key={capture.id}>
                 <a className="scan-row" href={`#/dashboard/${capture.id}`}>
-                  {capture.thumbUrl ? <img src={capture.thumbUrl} alt="" loading="lazy" /> : <div className="thumb-missing" />}
+                  {capture.thumbUrl ? <img crossOrigin="anonymous" src={capture.thumbUrl} alt="" loading="lazy" /> : <div className="thumb-missing" />}
                   <div>
                     <h2>{capture.title || 'Untitled visit'}</h2>
                     <p className="meta">

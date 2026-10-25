@@ -54,6 +54,10 @@ interface RoomProps {
  */
 export function SceneRoom({ scene, view = 'auto', dim = 1, selection = null, budget, holeFill = true, onSplatStatus, onNote }: RoomProps) {
   const invalidate = useThree((s) => s.invalidate)
+  const [splatWanted, setSplatWanted] = useState(view === 'auto' || view === 'splat')
+  useEffect(() => {
+    if (view === 'auto' || view === 'splat') setSplatWanted(true)
+  }, [view])
   const [splatStatus, setSplatStatus] = useState<SplatStatus>({ state: 'loading' })
   const onStatus = useCallback(
     (s: SplatStatus) => {
@@ -79,7 +83,7 @@ export function SceneRoom({ scene, view = 'auto', dim = 1, selection = null, bud
       {points && (
         <RoomPoints points={points} budget={budget} dim={dim} visible={shown === 'points' || shown === 'dots'} dots={shown === 'dots' ? DOT_FILL : undefined} />
       )}
-      {scene.splat && splatStatus.state !== 'failed' && (
+      {splatWanted && scene.splat && splatStatus.state !== 'failed' && (
         <Suspense fallback={null}>
           <SplatRoom url={scene.splat.url} format={scene.splat.format} visible={shown === 'splat'} dim={selection ? 0.45 * dim : dim} onStatus={onStatus} />
         </Suspense>

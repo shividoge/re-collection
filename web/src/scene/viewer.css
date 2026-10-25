@@ -125,6 +125,26 @@
 .viewer-foot .err {
   color: var(--bd-error, #ff6b6b);
 }
+.scene-notes {
+  position: relative;
+  pointer-events: auto;
+}
+.scene-notes summary {
+  cursor: pointer;
+}
+.scene-notes > div {
+  position: absolute;
+  bottom: 24px;
+  left: 0;
+  width: min(460px, 75vw);
+  max-height: 35vh;
+  overflow: auto;
+  padding: 8px 12px;
+  background: #111317;
+  border: 1px solid var(--bd-line, #22252b);
+  color: var(--bd-fg, #e8e6e3);
+  line-height: 1.5;
+}
 .viewer-selection {
   position: absolute;
   top: 12px;

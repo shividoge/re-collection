@@ -127,7 +127,7 @@ export function Gallery() {
           {captures.data.map((c) => (
             <li key={c.id}>
               <a className="card" href={`#/capture/${c.id}`}>
-                {c.thumbUrl ? <img src={c.thumbUrl} alt="" loading="lazy" /> : <div className="thumb-missing" />}
+                {c.thumbUrl ? <img crossOrigin="anonymous" src={c.thumbUrl} alt="" loading="lazy" /> : <div className="thumb-missing" />}
                 <div className="card-body">
                   <h2>{c.title || 'Untitled visit'}</h2>
                   {c.source === 'video' && <span className="estimated-badge">Estimated from a video</span>}

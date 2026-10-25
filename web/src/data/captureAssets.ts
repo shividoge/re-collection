@@ -13,6 +13,7 @@ export type AssetsSource = {
   derivedFiles: NamedFile[]
   status?: CaptureStatus
   public?: boolean
+  reconstruction?: Omit<AssetsSource, 'reconstruction'>
 }
 
 const lookup = (files: NamedFile[]) => {
@@ -29,6 +30,7 @@ export function toCaptureAssets(source: AssetsSource): CaptureAssets {
     rawUrl: lookup(source.files),
     derivedUrl: lookup(source.derivedFiles),
     ...(source.public === undefined ? {} : { public: source.public }),
+    ...(source.reconstruction ? { reconstruction: { ...toCaptureAssets(source.reconstruction), id: source.id } } : {}),
   }
 }
 
@@ -39,7 +41,7 @@ export function toCaptureAssets(source: AssetsSource): CaptureAssets {
  */
 export function assetsKey(source: AssetsSource): string {
   const files = (list: NamedFile[]) => list.map((f) => `${f.name}@${f.rev}`).join('|')
-  return [source.id, String(source.public), source.manifestJson, files(source.files), JSON.stringify(source.derived), files(source.derivedFiles)].join('\n')
+  return [source.id, String(source.public), source.manifestJson, files(source.files), JSON.stringify(source.derived), files(source.derivedFiles), source.reconstruction ? assetsKey(source.reconstruction) : ''].join('\n')
 }
 
 /**

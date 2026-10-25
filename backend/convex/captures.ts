@@ -2,8 +2,8 @@ import { ConvexError, v } from 'convex/values'
 import { parseManifest } from '../../shared/manifest'
 import { internal } from './_generated/api'
 import type { Doc } from './_generated/dataModel'
-import { action, internalAction, internalMutation, mutation, query, type MutationCtx } from './_generated/server'
-import { conflict, getCapture, getFile, getMomentDoc, initialStatus, invalid, keepSplat, listFiles, requireCapture } from './lib/data'
+import { action, internalAction, internalMutation, mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
+import { conflict, getCapture, getFile, getMomentDoc, initialStatus, invalid, keepSplat, listFiles, manifestOf, requireCapture } from './lib/data'
 import { abortMultipart, deletePrefix, r2Config, r2ConfigOrNull, stableGetUrl, type R2Config } from './lib/r2'
 import { queuedJobs } from './lib/jobs'
 import { completeUpload } from './lib/stages'
@@ -11,6 +11,29 @@ import { isSourceName } from './lib/validate'
 import { captureStatus, derived, fileUrl, jobKind } from './validators'
 
 export const namedFile = v.object({ name: v.string(), ...fileUrl.fields })
+
+export const reconstructionAssets = v.object({
+  id: v.string(), manifestJson: v.string(), files: v.array(namedFile),
+  derived: v.union(derived, v.null()), derivedFiles: v.array(namedFile),
+})
+
+/** Resolve a completed alternate scene without changing the memory's identity or facts. */
+export async function preferredReconstruction(ctx: QueryCtx, capture: Doc<'captures'>) {
+  const candidates = await ctx.db.query('captures')
+    .withIndex('by_reconstructionOf', (q) => q.eq('reconstructionOf', capture.captureId)).order('desc').take(32)
+  let best: Doc<'captures'> | null = null
+  let points = manifestOf(capture)?.room?.points ?? 0
+  for (const candidate of candidates) {
+    if (candidate.deleting || candidate.status.upload !== 'done' || candidate.status.bake !== 'done' || !candidate.derived) continue
+    const count = candidate.derived.stats.points
+    if (count > points) { best = candidate; points = count }
+  }
+  if (!best) return undefined
+  const raw = (await listFiles(ctx, best.captureId, 'raw')).filter((f) => f.name !== 'room.ply')
+  const baked = await listFiles(ctx, best.captureId, 'derived')
+  const cfg = r2Config()
+  return { id: best.captureId, manifestJson: best.manifestJson, files: signFiles(cfg, raw), derived: best.derived, derivedFiles: signFiles(cfg, baked) }
+}
 
 /** A queued job and what it needs, so the web can say when no online worker can take it. */
 export const queuedJob = v.object({ kind: jobKind, needs: v.object({ gpu: v.boolean(), frames: v.optional(v.number()) }) })
@@ -40,6 +63,7 @@ export const captureDetail = v.object({
   derivedFiles: v.array(namedFile),
   /** A video capture's uploaded source (`source.<ext>` under videos/<id>/), or null. */
   sourceVideo: v.union(namedFile, v.null()),
+  reconstruction: v.optional(reconstructionAssets),
 })
 
 /** Presigned, day-stable GET URLs for files (architecture-v3.md §6.4). */
@@ -110,7 +134,7 @@ export const list = query({
   args: {},
   returns: v.array(captureSummary),
   handler: async (ctx) => {
-    const captures = (await ctx.db.query('captures').withIndex('by_createdAt').order('desc').collect()).filter((c) => !c.deleting)
+    const captures = (await ctx.db.query('captures').withIndex('by_createdAt').order('desc').collect()).filter((c) => !c.deleting && !c.reconstructionOf)
     return Promise.all(
       captures.map(async (c) => {
         const moment = await getMomentDoc(ctx, c.captureId)
@@ -150,6 +174,7 @@ export const get = query({
       derived: capture.derived,
       derivedFiles: cfg ? signFiles(cfg, derivedRows) : [],
       sourceVideo: cfg ? (signFiles(cfg, videoRows)[0] ?? null) : null,
+      reconstruction: await preferredReconstruction(ctx, capture),
     }
   },
 })
@@ -180,6 +205,10 @@ export const remove = mutation({
 /** Deletes a capture's rows, leaves the tombstone and schedules the purge (captures.remove, the abandoned sweep). */
 async function removeCapture(ctx: MutationCtx, capture: Doc<'captures'>): Promise<void> {
   const id = capture.captureId
+  if (!capture.reconstructionOf) {
+    const scenes = await ctx.db.query('captures').withIndex('by_reconstructionOf', (q) => q.eq('reconstructionOf', id)).take(32)
+    for (const scene of scenes) if (!scene.deleting) await removeCapture(ctx, scene)
+  }
   const openUploads: { key: string; uploadId: string }[] = []
   for (const u of await ctx.db.query('uploads').withIndex('by_capture', (q) => q.eq('captureId', id)).collect()) {
     if (u.status === 'open' && u.r2UploadId) openUploads.push({ key: u.key, uploadId: u.r2UploadId })

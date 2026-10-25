@@ -265,6 +265,15 @@ Never cut: real capture, grounded facts with family approval, grounding enforcem
 
 ## Status
 
+**Oct 25, dense scene defaults (`t3/start-project-preview`):** the dev backend now supports linked
+reconstruction packages, selecting the densest completed scene while retaining the original
+memory ID, facts, sessions and files. Wooden hatches defaults to 4,430,861 points and Hallway to
+5,403,276; both were aligned to the phone's coordinate frame without dropping points. The web
+defaults to connected Points, and palace entry follows the recorded camera. The three older video
+memories already have denser published packages than their saved Fedora previews. New video
+uploads retain the converter's 1008 px detail / 5 mm / 6 M point defaults; a real browser upload
+produced 4,425,268 points and was removed after verification. Setup: backend/README.md → Dense scene.
+
 **Last updated:** Sat Oct 24, 16:30 PT, by Shivin's Claude session. **What's left, who does it and the timeline: the top of `TASKS.md` ("Everything left until submission").** The final feature's plan: `docs/LAST-STEP.md`. Sponsor plan: `docs/SPONSOR-PLAN.md`. Theme: `docs/THEME.md` (public name **Relive With A Smile**; "Braindance" stays the internal code name).
 
 **v3 architecture (branch `arch/v3`, draft PR, not merged; Srinivas's session, Sun Oct 25 ~01:30):** Convex (dev deployment `dev:adamant-schnauzer-171`, team `srinivas-i-b`) + Cloudflare R2 (`braindance-dev`) + pull-based workers replace the guide server. Contract: `docs/architecture-v3.md`. The 7 team captures are imported and baked; the web reads only baked files. Run the bake worker: `systemctl --user status bd-bake-dev` (or `workers/bake/README.md`). GPU worker: `workers/gpu/README.md`. The guide keeps running until the cutover checklist (§9 of the contract) passes. Open items: iOS changes need a Mac build and phone checks (`ios/VERIFY.md`); the museum needs an iPad check; family functions have no login (decided: leave open for now).
@@ -351,3 +360,5 @@ Append one line per work chunk, newest last: `date time | who | what changed | w
 - 2026-10-25 08:05 | Srinivas + Claude | all 9 captures on dev have trained splats (6 phone `trained-from-lidar-capture`, 3 video); the 3 old clips re-converted with the dense converter (4.3–6.0 M points; IMG_9516 in 2 windows of 82 on the 5060 Ti, 1.6 cm join misfit); fixed the GPU worker's multipart upload (Convex sends float part sizes); cleared ~10 GB of stale /tmp (tmpfs) | merge #63, then run `bd-gpu-dev` from `main` as a permanent service; GX10 worker for videos over ~8 s
 - 2026-10-25 08:30 | Srinivas + Claude | PR #68 (`web/palace-capture-player`): the Memory Palace opens a visit in the capture page's player (video, sound, people in 3D; was video off, Camera view) | try it on the iPad, then merge
 - 2026-10-25 08:40 | Srinivas + Claude | PR #68: the palace turns phone visits' sideways pictures upright from the camera poses (Hallway, Wooden hatches); captures list and front page thumbnails still sideways (needs the turn stored by the bake) | try #68 in a browser and on the iPad, then merge
+
+- 2026-10-25 08:16 PT | Srinivas | `t3/start-project-preview`: dev selects linked, fully baked dense reconstructions without replacing memory identity/facts/sessions; Wooden hatches 4,430,861 points, Hallway 5,403,276, aligned with all colors/points preserved; connected Points default, palace Camera view, lazy splat loading, CORS-safe image caching. Verified a real UI video upload produced and played 4,425,268 points, then removed it; web 222 and backend 153 tests pass, 13 external-storage tests skipped; both typechecks pass. | Merge this branch before the next backend deployment; import other completed alternatives with backend/scripts/import-reconstruction.ts.

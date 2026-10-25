@@ -23,7 +23,7 @@ const STATIC = dataMode === 'static'
 /** A piece's picture (a video's poster), upright as it hangs. */
 function PieceImg({ art }: { art: Artwork }) {
   const src = useUprightSrc(art.poster ?? art.src, art.turns)
-  return src ? <img src={src} alt="" loading="lazy" /> : null
+  return src ? <img crossOrigin="anonymous" src={src} alt="" loading="lazy" /> : null
 }
 
 const CAPTION_MAX = 240

@@ -82,7 +82,8 @@ const EMPTY_LOG: FrameLog = { scan: [], moment: [] }
  * splat; the points load when "Points" is chosen). Every viewer of the same capture shares the
  * loaded data.
  */
-export function useCaptureScene(assets: CaptureAssets | null, opts: { points?: boolean } = {}): CaptureSceneState {
+export function useCaptureScene(memory: CaptureAssets | null, opts: { points?: boolean } = {}): CaptureSceneState {
+  const assets = memory?.reconstruction ?? memory
   const derived = assets?.derived ?? null
   const durl = (name: string | undefined) => (assets && name ? assets.derivedUrl(name) : null)
   const framesUrl = assets?.rawUrl('frames.jsonl') ?? null
