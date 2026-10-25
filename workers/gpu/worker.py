@@ -25,7 +25,6 @@ import threading
 import time
 import traceback
 from collections.abc import Callable, Mapping
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path, PurePosixPath
 from types import FrameType
 from typing import Protocol, cast
@@ -324,11 +323,12 @@ class Worker:
         lock = threading.Lock()
         done = {"bytes": 0, "files": 0}
 
-        def one(f: OutputFile) -> None:
+        def one(f: OutputFile, stop: transfer.ShouldStop) -> None:
             target = targets[f["name"]]
             parts = transfer.upload(target, root / f["name"], f["contentType"], sleep=self._sleep,
-                                    should_stop=job.should_stop, threads=self._upload_threads)
-            job.check()
+                                    should_stop=stop, threads=self._upload_threads)
+            if stop():
+                raise Cancelled()
             stored = self._api.finish_output(job.id, job.attempt, target["uploadId"], parts)
             if stored != f["bytes"]:
                 raise SizeMismatch(f"{f['name']}: storage has {stored} bytes, expected {f['bytes']}.")
@@ -337,15 +337,8 @@ class Worker:
                 done["files"] += 1
                 job.progress("uploading", done["bytes"] / total, f"Uploaded {done['files']} of {len(files)} files")
 
-        with ThreadPoolExecutor(self._upload_threads) as pool:
-            futures = [pool.submit(one, f) for f in files]
-            try:
-                for fut in as_completed(futures):
-                    fut.result()
-            except BaseException:
-                for fut in futures:
-                    fut.cancel()
-                raise
+        # One failed file stops the others; a real failure is reported, never a cancellation.
+        transfer.parallel(files, one, threads=self._upload_threads, should_stop=job.should_stop)
 
 
 def _stub_fields(manifest_json: str | None) -> tuple[str, list[str]]:

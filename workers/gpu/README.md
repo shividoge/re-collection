@@ -49,7 +49,9 @@ size mismatches, CUDA out of memory (after the pipeline retried in-process with 
 smaller; the worker then stops claiming for 60 s, since on a shared GPU it's usually contention).
 Not retryable: bad input (no video, undecodable, model output not finite), deliberate `ConvexError`s,
 code bugs. SIGTERM/SIGINT stop the job and hand it straight back (`fail(retryable: true)`); a killed
-worker's job comes back when its 120 s lease expires.
+worker's job comes back when its 120 s lease expires. Transfers check for a stop before every try,
+during backoff waits and between 1 MiB chunks, and a failed file stops the other transfers, so a
+stop takes seconds (at most one 30 s socket timeout), well inside `TimeoutStopSec=60`.
 
 ## Setup
 
