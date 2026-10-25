@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react'
 import { visits, type Exhibition } from './exhibitions'
 import { planMuseum } from './layout'
 import { MuseumScene } from './MuseumScene'
@@ -9,14 +9,23 @@ import type { WalkerHandle } from './Walker'
 import { IN_MS, LEAVE_MS, OUT_MS, type Dive } from './warp'
 import './museum.css'
 
+/** What the editor can do with the museum it shows: walk to a picture. */
+export interface MuseumHandle {
+  goTo: (i: number) => void
+}
+
 /**
  * Her museum: walk through the pictures the caretaker hung, in real-looking rooms, and step into
  * any of them. This is the patient's page, so it changes nothing: no adding, no taking down, no
  * other exhibitions and no way out to the rest of the site. The caretaker arranges it at
  * `#/museum/edit` (MuseumEditor). `#/museum/<id>` links from before land here too.
+ *
+ * The editor shows this same museum as its preview: `preview` is the arrangement being edited
+ * (instead of the saved one), `onFocus` says which picture the visitor is at, and `ref` walks to one.
  */
-export function MuseumPage(_props: { id?: string }) {
-  const [exhibition, setExhibition] = useState<Exhibition | null | undefined>(undefined)
+export function MuseumPage({ preview, onFocus, ref }: { id?: string; preview?: Exhibition; onFocus?: (i: number) => void; ref?: Ref<MuseumHandle> }) {
+  const [loaded, setLoaded] = useState<Exhibition | null | undefined>(undefined)
+  const exhibition = preview ?? loaded
   const [error, setError] = useState<string | null>(null)
   const [focus, setFocus] = useState(-1)
   const [arrived, setArrived] = useState(false)
@@ -40,10 +49,13 @@ export function MuseumPage(_props: { id?: string }) {
   const [musicOn, setMusicOn] = useState(sound.musicOn)
 
   useEffect(() => {
+    if (preview) return
     visits()
-      .then(setExhibition)
+      .then(setLoaded)
       .catch((e: Error) => setError(e.message))
-  }, [])
+  }, [preview])
+  // Leaving the page (the editor going back to the front page) stops the music.
+  useEffect(() => () => sound.dispose(), [sound])
 
   // Rooms are planned for the number of pictures; adding one may add a room.
   const count = Math.max(1, exhibition?.items.length ?? 1)
@@ -158,11 +170,15 @@ export function MuseumPage(_props: { id?: string }) {
     setArrived(slot >= 0)
   }, [])
 
+  useImperativeHandle(ref, () => ({ goTo }), [goTo])
+  useEffect(() => onFocus?.(focus), [focus, onFocus])
+
   // Keys for the guided tour: N / P or Page Down / Page Up; Escape steps back.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT')) return
+      // Not while typing (in the editor's labels, say).
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       if (inside) return
       if (e.code === 'KeyN' || e.code === 'PageDown') goTo(focus + 1)
       if (e.code === 'KeyP' || e.code === 'PageUp') goTo(Math.max(0, focus - 1))

@@ -7,8 +7,8 @@
 
 const MUSIC_URL = `${import.meta.env.BASE_URL}museum/audio/gymnopedie-1.mp3`
 const PREF_KEY = 'relive.museum.music'
-/** The music's normal level: background, below a voice. */
-const MUSIC_LEVEL = 0.32
+/** The music's normal level: clearly heard, still below a voice. */
+const MUSIC_LEVEL = 0.62
 
 export class MuseumSound {
   private ctx: AudioContext | null = null
@@ -71,6 +71,17 @@ export class MuseumSound {
       const m = this.music
       setTimeout(() => !this.enabled && m.pause(), 1300)
     }
+  }
+
+  /** Stops everything: the music and the audio engine (the page is going away). */
+  dispose() {
+    this.music?.pause()
+    void this.ctx?.close().catch(() => {})
+    this.ctx = null
+    this.music = null
+    this.musicGain = null
+    this.fx = null
+    this.warps = null
   }
 
   /** Fades the music to `level` (0–1 of the normal level) over `seconds`. */

@@ -14,10 +14,7 @@ import {
   type Artwork,
   type Visit,
 } from './exhibitions'
-import { planMuseum } from './layout'
-import { MuseumScene } from './MuseumScene'
-import type { WalkerHandle } from './Walker'
-import type { Dive } from './warp'
+import { MuseumPage, type MuseumHandle } from './MuseumPage'
 import './museum.css'
 import './editor.css'
 
@@ -57,6 +54,8 @@ export function MuseumEditor() {
   const [uploads, setUploads] = useState<MuseumUpload[]>([])
   const [transfers, setTransfers] = useState<Transfer[]>([])
   const [dropping, setDropping] = useState(false)
+  // Folded: the panel slides away and the caretaker walks her museum exactly as she will.
+  const [folded, setFolded] = useState(false)
   const dragFrom = useRef(-1)
   const filePicker = useRef<HTMLInputElement>(null)
 
@@ -158,20 +157,16 @@ export function MuseumEditor() {
     () => (draft && visits ? arrangedExhibition(toArrangement(draft) as Arrangement, visits, uploads) : null),
     [draft, visits, uploads],
   )
-  const plan = useMemo(() => planMuseum(Math.max(1, exhibition?.items.length ?? 1)), [exhibition?.items.length])
-  const walker = useRef<WalkerHandle>(null)
-  const dive = useRef<Dive | null>(null)
-  const [focus, setFocus] = useState(-1)
-  const show = useCallback(
-    (i: number) => {
-      setSelected(i)
-      const slot = plan.slots[i]
-      if (!slot) return
-      setFocus(i)
-      walker.current?.walkTo(slot.view, slot.center)
-    },
-    [plan],
-  )
+  const museum = useRef<MuseumHandle>(null)
+  /** Walking up to a picture in the museum picks its row in the list. */
+  const onMuseumFocus = useCallback((i: number) => {
+    if (i >= 0) setSelected(i)
+  }, [])
+  /** A row picked in the list: walk to its picture. */
+  const show = useCallback((i: number) => {
+    setSelected(i)
+    museum.current?.goTo(i)
+  }, [])
 
   async function save() {
     if (!draft) return
@@ -205,7 +200,7 @@ export function MuseumEditor() {
   if (!draft || !visits || !exhibition) return <div className="museum-message">Opening the museum…</div>
 
   return (
-    <div className="museum museum-editor">
+    <div className={`museum museum-editor${folded ? ' folded' : ''}`}>
       <aside
         className={`me-panel${dropping ? ' dropping' : ''}`}
         // Photos and videos dropped anywhere on the panel are uploaded (a row being dragged carries no files).
@@ -226,9 +221,14 @@ export function MuseumEditor() {
         }}
       >
         <header className="me-head">
-          <a className="me-back" href="#/">
-            ← Front page
-          </a>
+          <div className="me-head-row">
+            <a className="me-back" href="#/">
+              ← Front page
+            </a>
+            <button className="me-fold" onClick={() => setFolded(true)} title="Hide this panel and walk through the museum as she will">
+              Hide panel ⟩
+            </button>
+          </div>
           <h1>Set up her museum</h1>
           <p>Choose the pictures she'll see, put them in order, and write a few words for each label. She sees exactly this.</p>
           {STATIC && <p className="me-note">This public demo has no server, so saving keeps it in this browser only.</p>}
@@ -413,9 +413,9 @@ export function MuseumEditor() {
             <button className="me-save" onClick={() => void save()} disabled={!dirty || status?.kind === 'busy'}>
               {dirty ? 'Save' : 'Saved'}
             </button>
-            <a className="me-open" href="#/museum">
-              Open her museum →
-            </a>
+            <button className="me-open" onClick={() => setFolded(true)}>
+              Walk through it →
+            </button>
           </div>
           {status && <p className={`me-status ${status.kind}`}>{status.text}</p>}
           <label className="me-field me-link">
@@ -431,18 +431,14 @@ export function MuseumEditor() {
       </aside>
 
       <div className="me-preview">
-        <MuseumScene
-          exhibition={exhibition}
-          plan={plan}
-          focus={focus}
-          onSelect={show}
-          onArrive={() => {}}
-          onLook={() => {}}
-          walker={walker}
-          dive={dive}
-          onMeasure={() => {}}
-        />
-        <p className="me-preview-label">Live preview · drag to look around, click a picture to find it in the list</p>
+        <MuseumPage preview={exhibition} onFocus={onMuseumFocus} ref={museum} />
+        {folded ? (
+          <button className="me-unfold" onClick={() => setFolded(false)}>
+            ✎ Edit
+          </button>
+        ) : (
+          <p className="me-preview-label">Live preview · tap a picture to walk to it, again to step in</p>
+        )}
       </div>
     </div>
   )
