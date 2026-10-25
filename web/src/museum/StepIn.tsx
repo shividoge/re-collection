@@ -50,9 +50,9 @@ function fadeVolume(v: HTMLVideoElement, to: number, ms: number, done?: () => vo
 /**
  * The world inside a picture, which the visitor reaches by diving into its frame (the museum
  * does the dive; this is the far side).
- * - A visit's picture opens onto the visit's own 3D room, seen from where the phone was at that
- *   moment, so the picture and the room line up; the visitor can look around, replay the visit
- *   and talk about it there. The room loads during the dive; until it's ready the picture
+ * - A visit's picture opens onto the visit's own 3D room, in the same player as the capture page
+ *   (the room, the video and its sound, the people replayed in 3D); the visitor can look around,
+ *   replay the visit and talk about it there. The room loads during the dive; until it's ready the picture
  *   itself stands in for it.
  * - Any other photo fills the view and drifts slowly; a video plays, its own sound rising
  *   gently as the visitor arrives.
@@ -249,6 +249,7 @@ function Room({ assets, startAt, onReady, onError }: { assets: CaptureAssets; st
   }, [status, message, onReady, onError])
   if (status !== 'ready') return null
   return (
-    <SceneViewer assets={assets} initialMode="follow" startAt={startAt} showVideo={false} overlay={(controls) => <VisitDock captureId={assets.id} controls={controls} />} />
+    // The same player as the capture page: its video, sound and people replayed in 3D.
+    <SceneViewer assets={assets} startAt={startAt} overlay={(controls) => <VisitDock captureId={assets.id} controls={controls} />} />
   )
 }
