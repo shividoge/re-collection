@@ -52,9 +52,11 @@ export default function App() {
     const m = pattern.exec(hash)
     if (m) view = render(m[1], m[2])
   }
-  // A static site has no family tools: everything else lands on the front page.
+  // A static site has no family tools: everything but the museum and its Memory Windows lands
+  // on the front page. (Visit together needs the live guide, so #/memories isn't in it.)
+  const staticPage = /^#\/(museum(\/[\w-]+)?|window\/[0-9a-f-]{36}(\?from=museum)?)$/i.test(hash)
   if (visitor) view = <PublicView key={visitor[1]} id={visitor[1]} />
-  else if (front || STATIC) view = <Showcase />
+  else if (front || (STATIC && !staticPage)) view = <Showcase />
 
   return (
     <div className="app">

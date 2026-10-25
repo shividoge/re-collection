@@ -7,7 +7,7 @@
 //   are still there after a reload.
 // Nothing is invented: an exhibition only shows what was put into it.
 
-import { captureFileUrl, guide } from '../api'
+import { captureFileUrl, guide, publicGuide, STATIC } from '../api'
 
 export type ArtworkKind = 'photo' | 'video'
 
@@ -72,7 +72,10 @@ const formatDate = (iso: string | null) =>
 async function visits(): Promise<Exhibition | null> {
   let list
   try {
-    list = await guide.captures()
+    // The public (static) site has only the visits the family published, all finished uploads.
+    list = STATIC
+      ? (await publicGuide.captures()).map((c) => ({ ...c, status: { upload: 'done' } }))
+      : await guide.captures()
   } catch {
     return null
   }
