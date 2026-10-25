@@ -9,7 +9,7 @@ afterEach(() => {
 
 describe('import planning', () => {
   test("the guide's own files, partial uploads and Mac litter are never uploaded", () => {
-    for (const name of ['status.json', 'moment.json', 'video.mp4.part', 'x.tmp', '._room.bin', '.DS_Store', 'keyframes/._k0001.jpg', '../x']) expect(isPackageFile(name), name).toBe(false)
+    for (const name of ['status.json', 'moment.json', 'room.ply', 'video.mp4.part', 'x.tmp', '._room.bin', '.DS_Store', 'keyframes/._k0001.jpg', '../x']) expect(isPackageFile(name), name).toBe(false)
     for (const name of ['manifest.json', 'room.bin', 'keyframes/k0001.jpg', 'room.splat.ply']) expect(isPackageFile(name), name).toBe(true)
   })
 

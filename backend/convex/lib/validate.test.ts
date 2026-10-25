@@ -56,6 +56,12 @@ describe('package checks', () => {
     expect(errorsOf(tinyManifest(), tinyFiles().filter((f) => f.name !== 'video.mov'))).toMatch(/video\.mov is missing/)
   })
 
+  test("room.ply is never required, even when an older manifest names it", () => {
+    const files = tinyFiles().filter((f) => f.name !== 'room.ply')
+    expect(tinyManifest().room?.ply).toBe('room.ply')
+    expect(validatePackage(CAPTURE_ID, tinyManifest(), files)).toMatchObject({ ok: true, errors: [] })
+  })
+
   test('room.bin must be 4 + 15 bytes per point', () => {
     const files = tinyFiles().map((f) => (f.name === 'room.bin' ? { ...f, bytes: 30 } : f))
     expect(errorsOf(tinyManifest(), files)).toMatch(/room\.bin is 30 bytes, but the manifest implies 34/)
