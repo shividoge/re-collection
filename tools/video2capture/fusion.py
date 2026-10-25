@@ -13,6 +13,8 @@ from typing import Callable
 import torch
 import torch.nn.functional as F
 
+from decode import ConvertError
+
 # COCO labels (torchvision numbering) for things that move during a visit and must not become
 # part of the static room: people and pets.
 MOVING_LABELS = (1, 17, 18)  # person, cat, dog
@@ -115,6 +117,11 @@ class VoxelGrid:
         self.sums = torch.zeros((0, 7), dtype=torch.float64, device=device)  # w·xyz, w·rgb, w
 
     def add(self, points: torch.Tensor, colors: torch.Tensor, weights: torch.Tensor) -> None:
+        """Adds observations; ones with weight <= 0 or anything non-finite carry no evidence and are
+        skipped (a voxel seen only by those would otherwise come out as a black point at 0, 0, 0)."""
+        ok = (weights > 0) & torch.isfinite(weights) & torch.isfinite(points).all(1) & torch.isfinite(colors).all(1)
+        if not ok.all():
+            points, colors, weights = points[ok], colors[ok], weights[ok]
         w = weights.double()[:, None]
         rows = torch.cat([points.double() * w, colors.double() * w, w], 1)
         keys = torch.cat([self.keys, voxel_keys(points, self.voxel)])
@@ -123,10 +130,10 @@ class VoxelGrid:
         self.sums = torch.zeros((len(self.keys), 7), dtype=torch.float64, device=rows.device).index_add_(0, inverse, rows)
 
     def result(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """(points float32, colours uint8, total weight) per voxel."""
-        w = self.sums[:, 6:7].clamp_min(1e-12)
-        return ((self.sums[:, :3] / w).float(), (self.sums[:, 3:6] / w).round().clamp(0, 255).to(torch.uint8),
-                self.sums[:, 6].float())
+        """(points float32, colours uint8, total weight) per voxel (every weight > 0)."""
+        sums = self.sums[self.sums[:, 6] > 0]
+        w = sums[:, 6:7]
+        return ((sums[:, :3] / w).float(), (sums[:, 3:6] / w).round().clamp(0, 255).to(torch.uint8), sums[:, 6].float())
 
 
 def voxel_downsample(points: torch.Tensor, colors: torch.Tensor, voxel: float,
@@ -208,4 +215,7 @@ def fuse_room(depth: torch.Tensor, keep: torch.Tensor, Ks: torch.Tensor, poses: 
             cols.append(colors(k)[m])
             ws.append(weights[k][m] if weights is not None else torch.ones(int(m.sum()), device=depth.device))
         grid.add(torch.cat(pts), torch.cat(cols), torch.cat(ws))
-    return grid.result()
+    points, cols, weight = grid.result()
+    if len(points) == 0:
+        raise ConvertError("No pixel had usable depth and confidence, so there is no room to build.")
+    return points, cols, weight

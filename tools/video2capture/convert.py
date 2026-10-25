@@ -28,7 +28,7 @@ import decode
 import estimate
 import package
 from decode import ConvertError
-from geometry import level_world
+from geometry import leveling
 
 Progress = Callable[[str, float | None, str], None]
 
@@ -134,7 +134,9 @@ class Converter:
             est = self.run_depth(images, window, opts, progress, checkpoint, log)
             lap("depth")
             poses_np = est.poses
-            level = level_world(poses_np)  # turn the world so gravity points down -y, like ARKit
+            level, level_warning = leveling(poses_np)  # turn the world so gravity points down -y, like ARKit
+            if level_warning:
+                log(f"  {level_warning}")
             poses_np = [level @ T for T in poses_np]
             _, h, w = est.depth.shape
 
@@ -208,6 +210,8 @@ class Converter:
         model_name = self.depth_model.name
         warnings = [f"Reconstructed from an ordinary video by Depth Anything 3 ({model_name}). "
                     "The room, depth, scale and camera path are estimated, not measured."]
+        if level_warning:
+            warnings.append(level_warning)
         if len(est.windows) > 1:
             warnings.append(f"A long video: estimated in {len(est.windows)} overlapping stretches lined up with each other.")
         room = {"bin": "room.bin", "points": int(len(points_np)), "voxelMeters": round(voxel, 4), "source": "estimated-from-video"}

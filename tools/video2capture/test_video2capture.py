@@ -10,8 +10,9 @@ import torch
 
 import fusion
 import splat
+from decode import ConvertError
 from estimate import to_capture_pose
-from geometry import level_world
+from geometry import level_world, leveling
 
 
 def look(eye, yaw=0.0, pitch=0.0, roll=0.0) -> np.ndarray:
@@ -44,6 +45,29 @@ class Geometry(unittest.TestCase):
         poses = [look([0, 0, z], pitch=math.radians(-30), roll=math.radians(10)) for z in np.linspace(0, 1, 5)]
         x = (level_world(poses) @ poses[0])[:3, 0]
         self.assertAlmostEqual(float(x[1]), 0.0, places=6)
+
+    def test_level_world_with_a_fixed_camera_keeps_its_up(self):
+        # A camera on a stand: yaw and pitch never change, only a little roll jitter. Its x axes then
+        # vary within the camera's own x-y plane, so "most perpendicular to every x" is the viewing
+        # direction: leveling by it would put the room on its side.
+        rng = np.random.default_rng(3)
+        for yaw, pitch in ((0.0, -30.0), (40.0, 10.0), (-120.0, 0.0)):
+            with self.subTest(yaw=yaw, pitch=pitch):
+                poses = [look([0.01 * k, 0, 0], yaw=math.radians(yaw), pitch=math.radians(pitch),
+                              roll=math.radians(rng.normal(0, 0.5))) for k in range(30)]
+                L, warning = leveling(poses)
+                up = (L @ poses[0])[:3, 1]
+                self.assertGreater(float(up[1]), 0.999)  # the camera's own up, no invented tilt
+                self.assertIsNotNone(warning)
+
+    def test_level_world_with_a_modest_pan_is_confident(self):
+        rng = np.random.default_rng(4)
+        tilt = look([0, 0, 0], pitch=math.radians(15), roll=math.radians(-10))
+        poses = [tilt @ look([0, 0, 0], yaw=a, pitch=math.radians(-20), roll=math.radians(rng.normal(0, 0.5)))
+                 for a in np.linspace(-0.3, 0.3, 30)]  # ±17 degrees
+        L, warning = leveling(poses)
+        self.assertIsNone(warning)
+        np.testing.assert_allclose((L @ tilt)[:3, 1], [0, 1, 0], atol=0.03)  # the world tilt is undone
 
     def test_capture_pose_flips_opencv_axes(self):
         T = to_capture_pose(np.eye(4))
@@ -97,6 +121,25 @@ class Filters(unittest.TestCase):
         pts, cols = fusion.voxel_downsample(p, c, 0.01)
         self.assertEqual(len(pts), 2)
         self.assertIn(50, cols[:, 0].tolist())
+
+    def test_fuse_room_ignores_zero_confidence_pixels(self):
+        # A wall 2 m in front of the camera; the right half has confidence 0 (or NaN), as the
+        # model gives pixels without usable depth. Those must not become black points at the origin.
+        poses = torch.tensor(look([0, 0, 0]), dtype=torch.float32)[None]
+        depth = torch.full((1, 48, 64), 2.0)
+        conf = torch.ones(1, 48, 64)
+        conf[0, :, 32:] = 0
+        conf[0, :4, 32:] = float("nan")
+        keep = torch.ones_like(depth, dtype=torch.bool)
+        rgb = lambda k: torch.full((48, 64, 3), 200.0)  # noqa: E731
+        pts, cols, w = fusion.fuse_room(depth, keep, K[None], poses, rgb, [0], 0.05, weights=conf)
+        self.assertGreater(len(pts), 0)
+        self.assertTrue(torch.isfinite(pts).all() and (w > 0).all())
+        self.assertGreater(float(pts.norm(dim=1).min()), 1.9)  # nothing at (0, 0, 0)
+        self.assertTrue((cols == 200).all())
+        self.assertTrue((pts[:, 0] < 0.1).all())  # only the confident (left) half
+        with self.assertRaisesRegex(ConvertError, "no room"):
+            fusion.fuse_room(depth, keep, K[None], poses, rgb, [0], 0.05, weights=torch.zeros_like(conf))
 
 
 class Splats(unittest.TestCase):

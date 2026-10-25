@@ -25,7 +25,6 @@ import threading
 import time
 import traceback
 from collections.abc import Callable, Mapping
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path, PurePosixPath
 from types import FrameType
 from typing import Protocol, cast
@@ -123,15 +122,16 @@ class _Job:
         except Exception as exc:
             if is_lease_lost(exc):
                 log.warning("job %s is no longer leased to this worker; stopping it", self.id)
-                self._cancel()
+                self.lose_lease()
             else:
                 log.warning("heartbeat for job %s failed (keeps going): %s", self.id, redact(str(exc)))
             return
         if reply.get("cancelled") or not reply.get("ok", True):
             log.info("Convex cancelled job %s; stopping it", self.id)
-            self._cancel()
+            self.lose_lease()
 
-    def _cancel(self) -> None:
+    def lose_lease(self) -> None:
+        """Convex says stop: the job was cancelled or this attempt doesn't hold it any more."""
         self.cancelled = True
         self.stop.set()
 
@@ -233,6 +233,10 @@ class Worker:
             else:
                 log.info("job %s cancelled", job.id)
         except Exception as exc:
+            if is_lease_lost(exc):  # e.g. inputs/outputUrls/complete answered `cancelled`
+                job.lose_lease()
+                log.info("job %s is no longer this attempt's (%s); not reporting anything", job.id, redact(str(exc)))
+                return
             message, retryable = classify(exc)
             log.error("job %s failed (%s): %s\n%s", job.id, "will retry" if retryable else "permanent",
                       message, redact(traceback.format_exc()))
@@ -324,11 +328,12 @@ class Worker:
         lock = threading.Lock()
         done = {"bytes": 0, "files": 0}
 
-        def one(f: OutputFile) -> None:
+        def one(f: OutputFile, stop: transfer.ShouldStop) -> None:
             target = targets[f["name"]]
             parts = transfer.upload(target, root / f["name"], f["contentType"], sleep=self._sleep,
-                                    should_stop=job.should_stop, threads=self._upload_threads)
-            job.check()
+                                    should_stop=stop, threads=self._upload_threads)
+            if stop():
+                raise Cancelled()
             stored = self._api.finish_output(job.id, job.attempt, target["uploadId"], parts)
             if stored != f["bytes"]:
                 raise SizeMismatch(f"{f['name']}: storage has {stored} bytes, expected {f['bytes']}.")
@@ -337,15 +342,8 @@ class Worker:
                 done["files"] += 1
                 job.progress("uploading", done["bytes"] / total, f"Uploaded {done['files']} of {len(files)} files")
 
-        with ThreadPoolExecutor(self._upload_threads) as pool:
-            futures = [pool.submit(one, f) for f in files]
-            try:
-                for fut in as_completed(futures):
-                    fut.result()
-            except BaseException:
-                for fut in futures:
-                    fut.cancel()
-                raise
+        # One failed file stops the others; a real failure is reported, never a cancellation.
+        transfer.parallel(files, one, threads=self._upload_threads, should_stop=job.should_stop)
 
 
 def _stub_fields(manifest_json: str | None) -> tuple[str, list[str]]:

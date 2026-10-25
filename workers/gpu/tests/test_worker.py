@@ -50,6 +50,9 @@ class Store:
         self.put_headers: dict[str, dict[str, str]] = {}
         self.post_replies: list[tuple[int, bytes]] = []
         self.posts: list[dict[str, object]] = []
+        self.put_statuses: list[int] = []  # replies for the next PUTs (then 200)
+        self.put_count = 0
+        self.get_count = 0
 
 
 def make_handler(store: Store) -> type[BaseHTTPRequestHandler]:
@@ -69,12 +72,22 @@ def make_handler(store: Store) -> type[BaseHTTPRequestHandler]:
             name = urlsplit(self.path).path.removeprefix("/files/")
             with store.lock:
                 store.gets.append(name)
+                store.get_count += 1
                 data = store.files.get(name)
             self._reply(404) if data is None else self._reply(200, data)
 
         def do_PUT(self) -> None:
-            body = self.rfile.read(int(self.headers["Content-Length"]))
+            size = int(self.headers["Content-Length"])
+            body = self.rfile.read(size)
             key = urlsplit(self.path).path
+            with store.lock:
+                store.put_count += 1
+                status = store.put_statuses.pop(0) if store.put_statuses else 200
+            if len(body) < size:  # the client stopped sending
+                return
+            if status != 200:
+                self._reply(status)
+                return
             with store.lock:
                 store.puts[key] = body
                 store.put_headers[key] = dict(self.headers)
@@ -114,6 +127,7 @@ class FakeConvex:
         self.claim_errors: list[Exception] = []
         self.cancel_on_stage: str | None = None
         self.lease_lost_on_stage: str | None = None
+        self.cancelled_calls: set[str] = set()  # these worker:* calls answer ConvexError cancelled
         self._n = 0
 
     def add_job(self, kind: str, *, files: dict[str, tuple[str, bytes]], frames: int | None = 30,
@@ -146,12 +160,16 @@ class FakeConvex:
         rest = {k: v for k, v in args.items() if k != "token"}
         with self.lock:
             self.calls.append((name, rest))
+        if name in self.cancelled_calls:
+            raise ConvexError("This job attempt no longer holds the lease.", {"code": "cancelled"})
         return getattr(self, "_" + name.split(":")[1])(rest)
 
     def _claim(self, a: dict[str, object]) -> object:
         self.claim_times.append(self.clock())
         if self.claim_errors:
             raise self.claim_errors.pop(0)
+        if a.get("protocol") != 2:  # like the backend: an outdated worker takes no jobs
+            raise ConvexError("This worker speaks an old job protocol.", {"code": "invalid"})
         max_frames = a.get("maxFrames")
         for job_id, j in self.jobs.items():
             frames = j["frames"]
@@ -370,7 +388,7 @@ def test_convert_happy_path(harness: Harness) -> None:
     by_name = {u["name"]: u["contentType"] for u in harness.convex.uploads.values()}
     assert by_name["manifest.json"] == "application/json" and by_name["frames.jsonl"] == "application/x-ndjson"
     claim_args = harness.convex.calls[0][1]
-    assert claim_args == {"workerId": "test-gpu", "kinds": ["convert", "splat"], "gpu": True, "maxFrames": 67}
+    assert claim_args == {"workerId": "test-gpu", "kinds": ["convert", "splat"], "gpu": True, "maxFrames": 67, "protocol": 2}
     assert any(p["stage"] == "depth" for p in j["progress"])  # type: ignore[union-attr]
     assert harness.job_dir_gone(job)
 
@@ -401,6 +419,17 @@ def test_cancel_mid_job(server: tuple[str, Store], tmp_path: Path, how: str) -> 
     assert "worker:complete" not in h.convex.names() and "worker:fail" not in h.convex.names()
     assert "worker:outputUrls" not in h.convex.names()
     assert h.job_dir_gone(job)
+
+
+@pytest.mark.parametrize("call", ["worker:inputs", "worker:outputUrls", "worker:finishOutput", "worker:complete"])
+def test_cancelled_answer_from_any_call_stops_silently(harness: Harness, call: str) -> None:
+    harness.convex.cancelled_calls = {call}
+    job = harness.convert_job()
+    harness.worker.run(once=True)
+
+    assert "worker:fail" not in harness.convex.names()  # the backend said stop: report nothing
+    assert harness.convex.jobs[job]["error"] is None
+    assert harness.job_dir_gone(job)
 
 
 def test_sigterm_mid_job_requeues_and_exits(server: tuple[str, Store], tmp_path: Path) -> None:
@@ -482,6 +511,113 @@ def test_token_never_logged(harness: Harness, caplog: pytest.LogCaptureFixture) 
     assert "WorkerApi(<token hidden>)" == repr(WorkerApi(harness.convex, TOKEN))
     assert TOKEN not in repr(Config("u", TOKEN, "w", ("convert",), 1, Path(".")))
     # The autouse fixture checks every log line of every test for the token and URL signatures.
+
+
+# ---- transfers stop when told to ---------------------------------------------------------------
+
+
+class Stopper:
+    """should_stop() that turns true once `when()` does; records the sleeps meanwhile."""
+
+    def __init__(self, when: Callable[[], bool]) -> None:
+        self.when = when
+        self.slept = 0.0
+
+    def __call__(self) -> bool:
+        return self.when()
+
+    def sleep(self, seconds: float) -> None:
+        self.slept += seconds
+
+
+def single_target(base: str, uid: str = "u1") -> dict[str, object]:
+    return {"uploadId": uid, "key": "k", "single": {"url": f"{base}/put/{uid}?{SIG}", "headers": {}}}
+
+
+def test_single_upload_stops_retrying_when_cancelled(server: tuple[str, Store], tmp_path: Path) -> None:
+    base, store = server
+    store.put_statuses = [503, 503, 503]
+    (tmp_path / "room.bin").write_bytes(b"x" * 1000)
+    stop = Stopper(lambda: store.put_count >= 1)
+    with pytest.raises(Cancelled):
+        transfer.upload(single_target(base), tmp_path / "room.bin", "application/octet-stream",  # type: ignore[arg-type]
+                        sleep=stop.sleep, should_stop=stop)
+    assert store.put_count == 1 and stop.slept <= transfer.STOP_POLL_SEC  # no retries, no full backoff
+
+
+def test_multipart_upload_stops_retrying_when_cancelled(server: tuple[str, Store], tmp_path: Path) -> None:
+    base, store = server
+    store.put_statuses = [503] * 20
+    (tmp_path / "room.bin").write_bytes(os.urandom(3 * PART_SIZE))
+    target = {"uploadId": "u2", "key": "k", "partSize": PART_SIZE,
+              "parts": [{"partNumber": i, "url": f"{base}/part/u2/{i}?{SIG}"} for i in (1, 2, 3)]}
+    stop = Stopper(lambda: store.put_count >= 1)
+    with pytest.raises(Cancelled):
+        transfer.upload(target, tmp_path / "room.bin", "application/octet-stream",  # type: ignore[arg-type]
+                        sleep=stop.sleep, should_stop=stop, threads=1)
+    assert store.put_count == 1 and stop.slept <= transfer.STOP_POLL_SEC
+
+
+def test_put_stops_mid_body(server: tuple[str, Store], tmp_path: Path) -> None:
+    base, store = server
+    (tmp_path / "room.bin").write_bytes(os.urandom(8 * transfer.CHUNK))
+    calls = {"n": 0}
+
+    def stop() -> bool:
+        calls["n"] += 1
+        return calls["n"] > 3  # after a few MiB of the body
+    with pytest.raises(Cancelled):
+        transfer.upload(single_target(base, "u3"), tmp_path / "room.bin", "application/octet-stream",  # type: ignore[arg-type]
+                        sleep=lambda s: None, should_stop=stop)
+    assert "/put/u3" not in store.puts
+
+
+def test_download_stops_retrying_when_cancelled(server: tuple[str, Store], tmp_path: Path) -> None:
+    base, store = server
+    store.files["j/source.mov"] = b"MOVIE"
+    stop = Stopper(lambda: stop.slept > 0)  # the stop comes during the first backoff wait
+    with pytest.raises(Cancelled):  # the size is wrong, so it would retry
+        transfer.download(f"{base}/files/j/source.mov?{SIG}", tmp_path / "source.mov", 6, sleep=stop.sleep, should_stop=stop)
+    assert store.get_count == 1 and stop.slept <= transfer.STOP_POLL_SEC
+    assert not (tmp_path / "source.mov").exists() and not (tmp_path / "source.mov.part").exists()
+
+
+def test_backoff_wait_wakes_up_on_stop() -> None:
+    flag = threading.Event()
+    timer = threading.Timer(0.2, flag.set)
+    timer.start()
+    t0 = time.monotonic()
+    with pytest.raises(Cancelled):
+        transfer._wait(30.0, time.sleep, flag.is_set)
+    assert time.monotonic() - t0 < 1.0
+
+
+def test_parallel_reports_the_real_failure_not_the_cancellations() -> None:
+    def fn(i: int, stop: Callable[[], bool]) -> int:
+        if i == 2:
+            time.sleep(0.05)
+            raise SizeMismatch("part 2 broke")
+        deadline = time.monotonic() + 5
+        while not stop():
+            assert time.monotonic() < deadline, "the others were never told to stop"
+            time.sleep(0.01)
+        raise Cancelled()
+    with pytest.raises(SizeMismatch, match="part 2"):
+        transfer.parallel([0, 1, 2, 3], fn, threads=4)
+    assert transfer.parallel([1, 2], lambda i, stop: i * 10, threads=2) == [10, 20]
+
+
+def test_sigterm_during_upload_retries_hands_the_job_back(server: tuple[str, Store], tmp_path: Path) -> None:
+    h = Harness(server[0], server[1], tmp_path / "work")
+    h.store.put_statuses = [503] * 100
+    job = h.convert_job()
+    h.time.on_sleep = lambda: h.worker.request_stop() if h.store.put_count else None
+    h.worker.run(once=True)
+
+    assert h.convex.jobs[job]["error"] == (STOP_MESSAGE, True)
+    assert "worker:complete" not in h.convex.names() and "worker:finishOutput" not in h.convex.names()
+    assert h.store.put_count <= h.worker._upload_threads * 2  # no third try of anything
+    assert max(h.time.sleeps) <= transfer.STOP_POLL_SEC  # no full 1 s or 2 s backoff
 
 
 # ---- pieces -------------------------------------------------------------------------------------
