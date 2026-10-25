@@ -2,7 +2,7 @@ import { Environment, Lightformer } from '@react-three/drei'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { EffectComposer, N8AO, SMAA, ToneMapping, Vignette } from '@react-three/postprocessing'
 import { ToneMappingMode } from 'postprocessing'
-import { memo, useEffect, useMemo, useRef, useState, type Ref, type RefObject } from 'react'
+import { memo, useEffect, useMemo, useRef, type Ref, type RefObject } from 'react'
 import * as THREE from 'three'
 import { Artwork } from './Artwork'
 import { Furniture, Sconces, Window } from './Classic'
@@ -14,7 +14,7 @@ import { Merged } from './Merged'
 import { IDLE_HZ, idleFrameDue } from './pace'
 import { choosePlaying, Playlist, type Piece } from './playback'
 import { Rooms } from './Rooms'
-import { loadMuseumTextures } from './textures'
+import { useMuseumTextures } from './textures'
 import { EYE, Walker, type WalkerHandle } from './Walker'
 import type { Dive } from './warp'
 
@@ -23,22 +23,6 @@ const handheld = typeof navigator !== 'undefined' && /iPad|iPhone|Android|Mobile
 const AO_COLOR = new THREE.Color('#1a1210')
 const GL = { antialias: false, powerPreference: 'high-performance', stencil: false } as const
 const DPR: [number, number] = handheld ? [1, 1.5] : [1, 2]
-
-/** The baked surfaces (textures.ts), loaded once per page: ready, or why they couldn't load. */
-function useMuseumTextures(): { ready: boolean; error: string | null } {
-  const [state, setState] = useState<{ ready: boolean; error: string | null }>({ ready: false, error: null })
-  useEffect(() => {
-    let cancelled = false
-    loadMuseumTextures().then(
-      () => !cancelled && setState({ ready: true, error: null }),
-      (e: Error) => !cancelled && setState({ ready: false, error: e.message }),
-    )
-    return () => {
-      cancelled = true
-    }
-  }, [])
-  return state
-}
 
 export function MuseumScene({
   exhibition,

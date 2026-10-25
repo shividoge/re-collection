@@ -11,6 +11,7 @@ import type { Artwork as Art } from '../museum/exhibitions'
 import { fitPicture, planMuseum, route, type MuseumPlan } from '../museum/layout'
 import { LOOK } from '../museum/looks'
 import { Rooms } from '../museum/Rooms'
+import { useMuseumTextures } from '../museum/textures'
 import { EYE } from '../museum/Walker'
 import { coverDistance } from '../museum/warp'
 import { HeroCloud, WithCaptureAssets } from './Scenes'
@@ -151,6 +152,8 @@ export default function MemoryLane({ captures, diveId }: { captures: PublicCaptu
   }, [captures, diveId])
   const items = useMemo(() => hallItems(moments), [moments])
   const plan = useMemo(() => planMuseum(items.length), [items.length])
+  // Rooms, furniture and frames read the baked museum textures synchronously.
+  const textures = useMuseumTextures()
   const look = LOOK
   const [sizes, setSizes] = useState<{ w: number; h: number }[]>([])
   const onMeasure = useCallback((slot: number, w: number, h: number) => {
@@ -280,15 +283,19 @@ export default function MemoryLane({ captures, diveId }: { captures: PublicCaptu
               <Lightformer key={i} form="rect" intensity={2.4} color={look.light} position={[0, plan.spec.height, (r.zFront + r.zBack) / 2]} rotation-x={Math.PI / 2} scale={[plan.spec.width * 0.5, plan.spec.depth * 0.6, 1]} />
             ))}
           </Environment>
-          <Rooms plan={plan} look={look} title="Her life, in moments" subtitle="Oldest first" reflections={512} />
-          {plan.features.length > 0 && (
+          {textures.ready && (
             <>
-              <Furniture plan={plan} />
-              <Sconces plan={plan} count={items.length} />
-              <Window plan={plan} />
+              <Rooms plan={plan} look={look} title="Her life, in moments" subtitle="Oldest first" reflections={512} />
+              {plan.features.length > 0 && (
+                <>
+                  <Furniture plan={plan} />
+                  <Sconces plan={plan} count={items.length} />
+                  <Window plan={plan} />
+                </>
+              )}
+              {items.map((art, i) => (plan.slots[i] ? <Artwork key={art.id} art={art} slot={plan.slots[i]} look={look} focused={i === at} onSelect={() => {}} onMeasure={onMeasure} /> : null))}
             </>
           )}
-          {items.map((art, i) => (plan.slots[i] ? <Artwork key={art.id} art={art} slot={plan.slots[i]} look={look} focused={i === at} onSelect={() => {}} onMeasure={onMeasure} /> : null))}
           <ScrollCamera stops={stops} progress={progress} />
           <EffectComposer multisampling={0} enableNormalPass={false}>
             <SMAA />
@@ -297,6 +304,7 @@ export default function MemoryLane({ captures, diveId }: { captures: PublicCaptu
           </EffectComposer>
         </Canvas>
 
+        {textures.error && <p className="lane-error">{textures.error}</p>}
         <div className="lane-copy" style={{ opacity: 1 - clamp01(shown * segments * 1.5) }}>
           <p className="eyebrow">The Memory Museum</p>
           <h2>Scroll through her life.</h2>

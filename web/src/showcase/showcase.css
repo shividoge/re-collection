@@ -255,3 +255,5 @@
   .site .site-nav .sn-long { display: none; }
   .site .site-nav .sn-short { display: inline; }
 }
+
+.site .lane-error { position: absolute; left: 0; right: 0; bottom: 24px; text-align: center; color: #ffb4a8; font-size: 14px; z-index: 2; }

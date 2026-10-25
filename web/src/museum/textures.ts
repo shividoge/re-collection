@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 // The museum's surfaces. The floors, walls, wood, rug, porcelain and window glass are drawn in
 // code at build time (src/museum/textureGen.ts, run by web/scripts/bake-museum-textures.ts) and
 // shipped as small images, so opening the museum only decodes them, off the main thread. Wall
@@ -71,6 +72,26 @@ export function loadMuseumTextures(): Promise<void> {
     throw e
   })
   return loading
+}
+
+/**
+ * The baked surfaces, loaded once per page: ready, or why they couldn't load. Every component
+ * that draws museum rooms, furniture or artwork must wait for `ready` (they read the textures
+ * synchronously).
+ */
+export function useMuseumTextures(): { ready: boolean; error: string | null } {
+  const [state, setState] = useState<{ ready: boolean; error: string | null }>({ ready: false, error: null })
+  useEffect(() => {
+    let cancelled = false
+    loadMuseumTextures().then(
+      () => !cancelled && setState({ ready: true, error: null }),
+      (e: Error) => !cancelled && setState({ ready: false, error: e.message }),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  return state
 }
 
 function baked(name: Baked): THREE.Texture {
