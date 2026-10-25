@@ -59,16 +59,25 @@ export const claude = {
   during: null as null | (() => Promise<void>),
 }
 
-export function setup() {
-  vi.stubEnv('R2_ENDPOINT', R2_ORIGIN)
-  vi.stubEnv('R2_ACCESS_KEY_ID', 'test-key')
-  vi.stubEnv('R2_SECRET_ACCESS_KEY', 'test-secret')
-  vi.stubEnv('R2_BUCKET', BUCKET)
+/** A real S3-compatible server for end-to-end tests (see lib/r2.test.ts), or null. */
+export function realS3() {
+  const e = process.env
+  if (!e.R2_TEST_ENDPOINT || !e.R2_TEST_ACCESS_KEY_ID || !e.R2_TEST_SECRET_ACCESS_KEY) return null
+  return { endpoint: e.R2_TEST_ENDPOINT, accessKeyId: e.R2_TEST_ACCESS_KEY_ID, secretAccessKey: e.R2_TEST_SECRET_ACCESS_KEY, bucket: e.R2_TEST_BUCKET || 'braindance-test', region: e.R2_TEST_REGION || 'us-east-1' }
+}
+
+/** convex-test with a stub Claude and the fake bucket (or a real S3 server when given). */
+export function setup(s3: ReturnType<typeof realS3> = null) {
+  vi.stubEnv('R2_ENDPOINT', s3?.endpoint ?? R2_ORIGIN)
+  vi.stubEnv('R2_ACCESS_KEY_ID', s3?.accessKeyId ?? 'test-key')
+  vi.stubEnv('R2_SECRET_ACCESS_KEY', s3?.secretAccessKey ?? 'test-secret')
+  vi.stubEnv('R2_BUCKET', s3?.bucket ?? BUCKET)
+  if (s3) vi.stubEnv('R2_REGION', s3.region)
   vi.stubEnv('WORKER_TOKEN', TOKEN)
   vi.stubEnv('MOCK_CLAUDE', '0')
   vi.stubEnv('MODEL_OFFLINE', 'opus')
   vi.stubEnv('MODEL_LIVE', 'sonnet')
-  vi.stubGlobal('fetch', fakeFetch)
+  if (!s3) vi.stubGlobal('fetch', fakeFetch)
   bucket.clear()
   claude.calls = []
   claude.next = () => ({})
