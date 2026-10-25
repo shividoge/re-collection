@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { STATIC, type Arrangement, type ArrangementItem } from '../api'
+import { dataMode, type Arrangement, type ArrangementItem } from '../data'
 import {
   arrangedExhibition,
   automaticArrangement,
@@ -17,6 +17,8 @@ import type { WalkerHandle } from './Walker'
 import type { Dive } from './warp'
 import './museum.css'
 import './editor.css'
+
+const STATIC = dataMode === 'static'
 
 const CAPTION_MAX = 240
 const TITLE_MAX = 80
@@ -36,7 +38,7 @@ const toArrangement = (d: Draft): Omit<Arrangement, 'updatedAt'> => ({
 /**
  * The caretaker's side of the museum (`#/museum/edit`): choose which pictures hang, put them in
  * order, and write a title and a few words for each one's label, with the museum itself as a live
- * preview. Saving stores it on the guide, and the patient's museum (`#/museum`) shows exactly that.
+ * preview. Saving stores it on the server, and the patient's museum (`#/museum`) shows exactly that.
  */
 export function MuseumEditor() {
   const [visits, setVisits] = useState<Visit[] | null>(null)

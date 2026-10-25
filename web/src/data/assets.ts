@@ -17,6 +17,8 @@ export interface CaptureAssets {
   rawUrl(name: string): string | null
   /** URL of a derived file by its name in derived.files ("points.pack"), or null if absent. */
   derivedUrl(name: string): string | null
+  /** Whether the family shared it on the public site (family view only; absent elsewhere). */
+  public?: boolean
 }
 
 /**

@@ -1,7 +1,6 @@
 import { OrbitControls } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { publicGuide } from '../api'
 import { cloudBounds } from '../scene/cloudBounds'
 import { CameraPath } from '../scene/CameraPath'
 import { DepthReplay } from '../scene/DepthReplay'
@@ -19,7 +18,7 @@ const cache = new Map<string, Promise<LoadedCapture>>()
 function loadOnce(id: string): Promise<LoadedCapture> {
   let found = cache.get(id)
   if (!found) {
-    found = loadGuideCapture(id)
+    found = loadGuideCapture(id, { public: true })
     found.catch(() => cache.delete(id))
     cache.set(id, found)
   }
@@ -128,7 +127,7 @@ export function MiniViewer({ id, layers, label }: { id: string; layers: Layers; 
       <video
         ref={attachVideo}
         className={layers.video ? 'pip show' : 'pip'}
-        src={publicGuide.file(id, manifest.video.file)}
+        src={capture?.videoUrl ?? undefined}
         crossOrigin="anonymous"
         muted
         loop

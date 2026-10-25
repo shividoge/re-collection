@@ -1,32 +1,42 @@
-import { useEffect, useState } from 'react'
+import { onlineWorkers, useCaptureStatus, useHealth, useNow } from '../data'
 import { SceneViewer } from '../scene/SceneViewer'
-import { loadGuideCapture, type LoadedCapture } from '../scene/loadCapture'
 import { PublicSwitch } from './PublicSwitch'
 import { EstimatedBadge } from './EstimatedBadge'
+import { PipelineStatus } from './Gallery'
+import { useLoadedCapture } from './useLoadedCapture'
 import { VisitDock } from './VisitDock'
 
 /**
- * One capture from the guide: the 3D room and the visit, where the person revisits it: a narrated
- * tour they can pause to look around, point at things and ask. `startAt` opens it at that second.
+ * One capture: the 3D room and the visit, where the person revisits it: a narrated tour they can
+ * pause to look around, point at things and ask. `startAt` opens it at that second.
  */
 export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
-  const [capture, setCapture] = useState<LoadedCapture | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const { capture, assets, error } = useLoadedCapture(id)
+  const status = useCaptureStatus(id)
+  const health = useHealth()
+  const now = useNow()
 
-  useEffect(() => {
-    let cancelled = false
-    loadGuideCapture(id)
-      .then((c) => !cancelled && setCapture(c))
-      .catch((e: Error) => !cancelled && setError(e.message))
-    return () => {
-      cancelled = true
-    }
-  }, [id])
-
+  const workers = onlineWorkers(health.status === 'ready' ? health.data : null, now)
+  const live = status.status === 'ready' ? status.data : null
+  // An old video has no 3D (and only a seed manifest) until it's converted: show that instead.
+  if (live && live.source === 'video' && live.convert !== 'done') {
+    return (
+      <div className="center-message">
+        <div>
+          <p>This video is being turned into a 3D moment. It opens here when it's ready.</p>
+          <PipelineStatus capture={{ status: live, durationSec: 0 }} workers={workers} />
+          <p>
+            <a href="#/captures">← Captures</a>
+          </p>
+        </div>
+      </div>
+    )
+  }
   if (error) return <div className="center-message error">{error}</div>
-  if (!capture) return <div className="center-message">Loading the capture…</div>
+  if (!capture || !assets) return <div className="center-message">Loading the capture…</div>
 
   const { manifest } = capture
+  const pending = live && (['facts', 'bake', 'convert', 'splat'] as const).some((k) => live[k] !== 'done' && live[k] !== 'skipped')
   return (
     <div className="page">
       <header className="bar">
@@ -46,9 +56,14 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
           <a href={`#/window/${id}`}>Memory Window</a>
           <a href={`#/facts/${id}`}>Facts</a>
           <a href={`#/dashboard/${id}`}>Dashboard</a>
-          <PublicSwitch id={id} initial={capture.isPublic} />
+          <PublicSwitch key={String(assets.public)} id={id} initial={assets.public === true} />
         </nav>
       </header>
+      {live && pending && (
+        <div className="banner">
+          <PipelineStatus capture={{ status: live, durationSec: manifest?.video.durationSec ?? 0 }} workers={workers} />
+        </div>
+      )}
       {capture.errors.length > 0 && (
         <div className="banner error">
           {capture.errors.map((e) => (

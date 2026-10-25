@@ -1,57 +1,55 @@
-import { useCallback, useEffect, useState } from 'react'
-import { fileUrl, getKey, guide, GuideError, setKey } from '../api'
-import type { CaptureSummary } from '../api'
-import { readFolder, readZip, uploadPackage } from '../upload'
-import { openRoomFile } from './RoomFile'
+import { useState } from 'react'
+import { errorMessage, family, onlineWorkers, useCaptures, useHealth, useNow, usePerson, type CaptureSummary, type WorkerInfo } from '../data'
+import { readFolder, readZip, uploadPackage, uploadVideo, type UploadProgress } from '../upload'
+import { stageLines } from './pipeline'
 
 type UploadState =
   | { kind: 'idle' }
   | { kind: 'reading'; name: string }
-  | { kind: 'uploading'; sent: number; total: number; file: string }
+  | { kind: 'video'; file: File }
+  | { kind: 'uploading'; progress: UploadProgress }
   | { kind: 'error'; message: string }
 
-/** Every capture on the guide, plus the drop zone for new ones from the phone. */
+const VIDEO = /\.(mp4|mov|m4v|webm)$/i
+
+/** Every capture, live, plus the drop zone for new ones from the phone or an old video. */
 export function Gallery() {
-  const [captures, setCaptures] = useState<CaptureSummary[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [needsKey, setNeedsKey] = useState(false)
+  const captures = useCaptures()
+  const health = useHealth()
+  const now = useNow()
+  const workers = onlineWorkers(health.status === 'ready' ? health.data : null, now)
   const [upload, setUpload] = useState<UploadState>({ kind: 'idle' })
   const [dragging, setDragging] = useState(false)
-
-  const refresh = useCallback(() => {
-    guide
-      .captures()
-      .then((list) => {
-        setCaptures(list)
-        setError(null)
-        setNeedsKey(false)
-      })
-      .catch((e: GuideError) => {
-        if (e.status === 401) setNeedsKey(true)
-        else setError(e.message)
-      })
-  }, [])
-
-  useEffect(refresh, [refresh])
 
   async function handleFiles(files: File[]) {
     if (files.length === 0) return
     try {
+      const one = files.length === 1 ? files[0] : null
       // A bare room scan opens straight in the viewer, without uploading anything.
-      if (files.length === 1 && files[0].name.toLowerCase().endsWith('.bin')) {
-        setUpload({ kind: 'reading', name: files[0].name })
-        await openRoomFile(files[0])
+      if (one && one.name.toLowerCase().endsWith('.bin')) {
+        setUpload({ kind: 'reading', name: one.name })
+        const { openRoomFile } = await import('./RoomFile')
+        await openRoomFile(one)
         return
       }
-      const zip = files.length === 1 && files[0].name.toLowerCase().endsWith('.zip') ? files[0] : null
+      if (one && VIDEO.test(one.name)) return setUpload({ kind: 'video', file: one })
+      const zip = one && one.name.toLowerCase().endsWith('.zip') ? one : null
       setUpload({ kind: 'reading', name: zip?.name ?? `${files.length} files` })
       const pkg = zip ? await readZip(zip) : await readFolder(files)
-      await uploadPackage(pkg, (sent, total, file) => setUpload({ kind: 'uploading', sent, total, file }))
+      const { captureId } = await uploadPackage(pkg, (progress) => setUpload({ kind: 'uploading', progress }))
       setUpload({ kind: 'idle' })
-      location.hash = `#/capture/${pkg.id}`
+      location.hash = `#/capture/${captureId}`
     } catch (e) {
-      setUpload({ kind: 'error', message: (e as Error).message })
-      refresh()
+      setUpload({ kind: 'error', message: errorMessage(e) })
+    }
+  }
+
+  async function sendVideo(file: File, title: string, attendees: string[]) {
+    try {
+      await uploadVideo(file, { title, attendees }, (progress) => setUpload({ kind: 'uploading', progress }))
+      setUpload({ kind: 'idle' })
+    } catch (e) {
+      setUpload({ kind: 'error', message: errorMessage(e) })
     }
   }
 
@@ -81,17 +79,24 @@ export function Gallery() {
         </a>
       </header>
 
-      {needsKey && <KeyForm onSaved={refresh} />}
+      <PersonForm />
 
       <section className="dropzone">
         {upload.kind === 'idle' && (
           <>
-            <p className="drop-title">Drop a capture zip from the phone</p>
-            <p className="drop-hint">AirDrop it from the app's review screen, then drag it here. A room.bin on its own opens just the room.</p>
+            <p className="drop-title">Drop a capture zip from the phone, or an old video</p>
+            <p className="drop-hint">
+              AirDrop the zip from the app's review screen, then drag it here. An ordinary video is turned into an estimated 3D moment. A room.bin on its own
+              opens just the room.
+            </p>
             <div className="drop-actions">
               <label className="btn">
                 Choose a zip
                 <input type="file" accept=".zip" hidden onChange={(e) => void handleFiles([...(e.target.files ?? [])])} />
+              </label>
+              <label className="btn ghost">
+                Choose a video
+                <input type="file" accept="video/*,.mp4,.mov,.m4v,.webm" hidden onChange={(e) => void handleFiles([...(e.target.files ?? [])])} />
               </label>
               <label className="btn ghost">
                 Open a room.bin
@@ -101,15 +106,8 @@ export function Gallery() {
           </>
         )}
         {upload.kind === 'reading' && <p className="drop-title">Opening {upload.name}…</p>}
-        {upload.kind === 'uploading' && (
-          <>
-            <p className="drop-title">{upload.file === 'checking' ? 'Checking every file…' : `Uploading ${upload.file}`}</p>
-            <progress value={upload.sent} max={upload.total || 1} />
-            <p className="drop-hint">
-              {(upload.sent / 1e6).toFixed(0)} of {(upload.total / 1e6).toFixed(0)} MB
-            </p>
-          </>
-        )}
+        {upload.kind === 'video' && <VideoForm file={upload.file} onCancel={() => setUpload({ kind: 'idle' })} onSend={(t, a) => void sendVideo(upload.file, t, a)} />}
+        {upload.kind === 'uploading' && <UploadView progress={upload.progress} />}
         {upload.kind === 'error' && (
           <>
             <p className="drop-title error">{upload.message}</p>
@@ -118,24 +116,27 @@ export function Gallery() {
         )}
       </section>
 
-      {error && <p className="error">{error}</p>}
-
-      {captures && captures.length === 0 && <p className="muted">No captures yet.</p>}
-      {captures && captures.length > 0 && (
+      {workers.length > 0 && (
+        <p className="meta">Workers online: {workers.map((w) => `${w.workerId}${w.gpu ? ' (GPU)' : ''}`).join(', ')}</p>
+      )}
+      {captures.status === 'error' && <p className="error">{captures.message}</p>}
+      {captures.status === 'loading' && <p className="muted">Loading…</p>}
+      {captures.status === 'ready' && captures.data.length === 0 && <p className="muted">No captures yet.</p>}
+      {captures.status === 'ready' && captures.data.length > 0 && (
         <ul className="cards">
-          {captures.map((c) => (
+          {captures.data.map((c) => (
             <li key={c.id}>
               <a className="card" href={`#/capture/${c.id}`}>
-                {c.thumb ? <img src={fileUrl(c.thumb)} alt="" loading="lazy" /> : <div className="thumb-missing" />}
+                {c.thumbUrl ? <img src={c.thumbUrl} alt="" loading="lazy" /> : <div className="thumb-missing" />}
                 <div className="card-body">
                   <h2>{c.title || 'Untitled visit'}</h2>
                   {c.source === 'video' && <span className="estimated-badge">Estimated from a video</span>}
                   <p className="meta">
-                    {c.createdAt ? new Date(c.createdAt).toLocaleString() : 'Unknown date'}
-                    {c.durationSec != null && ` · ${Math.round(c.durationSec)} s`}
+                    {new Date(c.createdAt).toLocaleString()}
+                    {c.durationSec > 0 && ` · ${Math.round(c.durationSec)} s`}
                   </p>
-                  <StatusBadge capture={c} />
-                  {(c.status.warnings?.length ?? 0) > 0 && <p className="meta">{c.status.warnings![0]}</p>}
+                  <PipelineStatus capture={c} workers={workers} />
+                  {c.status.warnings.length > 0 && <p className="meta">{c.status.warnings[0]}</p>}
                 </div>
               </a>
             </li>
@@ -146,33 +147,116 @@ export function Gallery() {
   )
 }
 
-/** Where the capture is in the pipeline, from the guide's real status. */
-function StatusBadge({ capture }: { capture: CaptureSummary }) {
-  const { upload, facts, factsError } = capture.status
-  if (upload === 'invalid') return <span className="badge failed">Incomplete: {capture.status.uploadErrors?.[0] ?? 'upload failed'}</span>
-  if (upload !== 'done') return <span className="badge working">Still uploading</span>
-  if (facts === 'done') return <span className="badge done">Facts ready</span>
-  if (facts === 'failed') return <span className="badge failed">Facts failed{factsError ? `: ${factsError}` : ''}</span>
-  if (facts === 'queued' || facts === 'running') return <span className="badge working">Claude is reading it…</span>
-  return <span className="badge">No facts yet</span>
+/** Where the capture is in the pipeline, live from its status. */
+export function PipelineStatus({ capture, workers }: { capture: Pick<CaptureSummary, 'status' | 'durationSec'>; workers: WorkerInfo[] }) {
+  const lines = stageLines(capture.status, workers, capture.durationSec || null)
+  return (
+    <div className="stage-lines">
+      {lines.map((l) => (
+        <span key={l.key} className={`badge ${l.tone === 'idle' ? '' : l.tone}`}>
+          {l.label}
+        </span>
+      ))}
+    </div>
+  )
 }
 
-function KeyForm({ onSaved }: { onSaved: () => void }) {
-  const [value, setValue] = useState(getKey())
+function UploadView({ progress }: { progress: UploadProgress }) {
+  const total = progress.files.reduce((n, f) => n + f.bytes, 0)
+  const sent = progress.files.reduce((n, f) => n + f.sent, 0)
+  const active = progress.files.filter((f) => f.state === 'uploading' || f.state === 'failed')
+  const finished = progress.files.filter((f) => f.state === 'done' || f.state === 'skipped').length
+  return (
+    <>
+      <p className="drop-title">{progress.phase === 'checking' ? 'Checking every file…' : progress.phase === 'done' ? 'Uploaded.' : 'Uploading…'}</p>
+      <progress value={sent} max={total || 1} />
+      <p className="drop-hint">
+        {(sent / 1e6).toFixed(0)} of {(total / 1e6).toFixed(0)} MB · {finished} of {progress.files.length} files
+      </p>
+      <ul className="upload-files">
+        {active.map((f) => (
+          <li key={f.name} className={f.state}>
+            <span>{f.name}</span>
+            <progress value={f.sent} max={f.bytes || 1} />
+            <span className="meta">{f.state === 'failed' ? 'failed' : `${Math.round((f.sent / (f.bytes || 1)) * 100)}%`}</span>
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
+function VideoForm({ file, onSend, onCancel }: { file: File; onSend: (title: string, attendees: string[]) => void; onCancel: () => void }) {
+  const [title, setTitle] = useState(file.name.replace(/\.[^.]+$/, ''))
+  const [people, setPeople] = useState('')
   return (
     <form
-      className="key-form"
+      className="video-form"
       onSubmit={(e) => {
         e.preventDefault()
-        setKey(value.trim())
-        onSaved()
+        const attendees = people
+          .split(',')
+          .map((p) => p.trim())
+          .filter(Boolean)
+        onSend(title.trim(), attendees)
+      }}
+    >
+      <p className="drop-title">Turn {file.name} into a moment</p>
+      <p className="drop-hint">The room and people are estimated from the video, not measured. Names come only from what you type.</p>
+      <label>
+        Title
+        <input value={title} onChange={(e) => setTitle(e.target.value)} required autoFocus />
+      </label>
+      <label>
+        Who was there (comma separated)
+        <input value={people} onChange={(e) => setPeople(e.target.value)} placeholder="Priya, Sam" />
+      </label>
+      <div className="drop-actions">
+        <button className="btn">Upload</button>
+        <button type="button" className="btn ghost" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  )
+}
+
+/** Who the visits are for: their name, and how Claude addresses them ("Mom"). */
+function PersonForm() {
+  const person = usePerson()
+  const [draft, setDraft] = useState<{ displayName: string; preferredAddress: string } | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  if (person.status === 'loading') return null
+  if (person.status === 'error') return <p className="error small">Couldn’t load who the visits are for: {person.message}</p>
+  const value = draft ?? person.data
+  const dirty = draft !== null && (draft.displayName !== person.data.displayName || draft.preferredAddress !== person.data.preferredAddress)
+  return (
+    <form
+      className="person-form"
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (!draft) return
+        family
+          .setPerson({ displayName: draft.displayName.trim(), preferredAddress: draft.preferredAddress.trim() })
+          .then(() => {
+            setDraft(null)
+            setNote('Saved.')
+          })
+          .catch((err: unknown) => setNote(errorMessage(err)))
       }}
     >
       <label>
-        Team password
-        <input value={value} onChange={(e) => setValue(e.target.value)} autoFocus />
+        The visits are for
+        <input value={value.displayName} onChange={(e) => setDraft({ ...value, displayName: e.target.value })} required />
       </label>
-      <button className="btn">Unlock</button>
+      <label>
+        Claude calls them
+        <input value={value.preferredAddress} onChange={(e) => setDraft({ ...value, preferredAddress: e.target.value })} required />
+      </label>
+      <button className="btn ghost" disabled={!dirty}>
+        Save
+      </button>
+      {note && <span className="meta">{note}</span>}
     </form>
   )
 }

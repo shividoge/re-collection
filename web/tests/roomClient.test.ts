@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GuideError, type Room, type RoomChange, type RoomState, type RoomWho } from '../src/api'
-import { KEEP_MS, POLL_MS, RETRY_MS, RoomClient, STREAM_GRACE_MS, acquireRoom, type RoomEvents, type RoomTransport } from '../src/museum/roomClient'
+import type { Room, RoomChange, RoomPeers, RoomState, RoomWho } from '../src/data/types'
+import { HEARTBEAT_MS, KEEP_MS, RETRY_MS, RoomClient, acquireRoom, type RoomTransport } from '../src/museum/roomClient'
 import { follow, sendFailed, shown } from '../src/museum/roomSync'
 
 const A = '11111111-1111-4111-8111-111111111111'
@@ -18,43 +18,38 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve, reject }
 }
 
-class FakeEvents implements RoomEvents {
-  readonly listeners = new Map<string, ((e: { data?: unknown }) => void)[]>()
-  closed = false
-  addEventListener(type: string, listener: (e: { data?: unknown }) => void) {
-    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener])
-  }
-  close() {
-    this.closed = true
-  }
-  emit(type: string, data?: unknown) {
-    for (const listener of this.listeners.get(type) ?? []) listener({ data: data === undefined ? undefined : JSON.stringify(data) })
-  }
-}
-
-/** A guide whose answers the test hands out one by one. */
+/** A Convex room whose answers the test hands out one by one. */
 function fakeGuide() {
   const posts: { change: RoomChange; answer: Deferred<{ state: RoomState }> }[] = []
-  const polls: { since: number | null; answer: Deferred<Room | null> }[] = []
-  const streams: FakeEvents[] = []
+  const watchers: { onRoom: (room: Room | null) => void; onError: (e: unknown) => void; stopped: boolean }[] = []
+  const beats: RoomWho[] = []
+  const links: ((connected: boolean) => void)[] = []
+  let peers: RoomPeers = { patient: 1, helpers: [] }
   const transport: RoomTransport = {
     setState: (_code, change) => {
       const answer = deferred<{ state: RoomState }>()
       posts.push({ change, answer })
       return answer.promise
     },
-    poll: (_code, _who, since) => {
-      const answer = deferred<Room | null>()
-      polls.push({ since, answer })
-      return answer.promise
+    watch: (_code, onRoom, onError) => {
+      const w = { onRoom, onError, stopped: false }
+      watchers.push(w)
+      return () => void (w.stopped = true)
     },
-    events: () => {
-      const events = new FakeEvents()
-      streams.push(events)
-      return events
+    heartbeat: async (_code, who) => void beats.push(who),
+    connection: (onChange) => {
+      links.push(onChange)
+      return () => {}
     },
   }
-  return { transport, posts, polls, streams }
+  /** The query delivers this state (and the current peers). */
+  const push = (state: RoomState, nextPeers: RoomPeers = peers) => {
+    peers = nextPeers
+    for (const w of watchers) if (!w.stopped) w.onRoom({ code: 'KTRB', state, peers })
+  }
+  const vanish = () => watchers.forEach((w) => !w.stopped && w.onRoom(null))
+  const link = (connected: boolean) => links.forEach((f) => f(connected))
+  return { transport, posts, watchers, beats, push, vanish, link }
 }
 
 const patient: RoomWho = { as: 'patient', name: null, client: 'ipad-tab-1' }
@@ -65,7 +60,7 @@ function connect(who: RoomWho, first: RoomState) {
   const guide = fakeGuide()
   const client = new RoomClient('KTRB', who, guide.transport)
   client.start()
-  guide.streams[0].emit('state', first)
+  guide.push(first)
   return { guide, client, sync: () => client.getSnapshot().sync }
 }
 
@@ -87,8 +82,8 @@ describe('RoomClient', () => {
   it('finding 1: the iPad follows a helper Back that came in while its own step-in was unconfirmed', async () => {
     const { guide, client, sync } = connect(patient, state(0, { by: 'patient', name: null }))
     client.change(() => ({ at: 0, atId: A, window: A }))
-    guide.streams[0].emit('state', state(1, { by: 'patient', name: null, window: A, atId: A }))
-    guide.streams[0].emit('state', state(2, { window: null, atId: A }))
+    guide.push(state(1, { by: 'patient', name: null, window: A, atId: A }))
+    guide.push(state(2, { window: null, atId: A }))
     expect(follow(sync(), 0, A)).toBe(null)
     guide.posts[0].answer.resolve({ state: state(1, { by: 'patient', name: null, window: A, atId: A }) })
     await settle()
@@ -99,8 +94,8 @@ describe('RoomClient', () => {
   it('finding 2: a failed iPad change never covers a newer helper move', async () => {
     const { guide, client, sync } = connect(patient, state(0, { by: 'patient', name: null }))
     client.change(() => ({ at: 1, atId: null, window: null }))
-    guide.streams[0].emit('state', state(1, { at: 2 }))
-    guide.posts[0].answer.reject(new GuideError(500, 'boom'))
+    guide.push(state(1, { at: 2 }))
+    guide.posts[0].answer.reject(new Error('boom'))
     await settle()
     expect(sync().confirmed?.rev).toBe(1)
     expect(shown(sync())?.at).toBe(2)
@@ -112,7 +107,7 @@ describe('RoomClient', () => {
   it('the iPad walks alone when the guide misses a change, and sends it again', async () => {
     const { guide, client, sync } = connect(patient, state(0, { by: 'patient', name: null }))
     client.change(() => ({ at: 1, atId: null, window: null }))
-    guide.posts[0].answer.reject(new GuideError(0, "Can't reach the guide server."))
+    guide.posts[0].answer.reject(new Error('offline'))
     await settle()
     expect(shown(sync())?.at).toBe(1)
     expect(client.getSnapshot().status).toBe('live')
@@ -151,7 +146,7 @@ describe('RoomClient', () => {
   it("finding 4: a helper change that fails is shown on the helper's phone, and can be sent again", async () => {
     const { guide, client, sync } = connect(helper, state(0, { by: 'patient', name: null }))
     client.change(() => ({ at: 1, atId: null, window: null }))
-    guide.posts[0].answer.reject(new GuideError(500, 'boom'))
+    guide.posts[0].answer.reject(new Error('boom'))
     await settle()
     expect(sendFailed(sync())).toBe(true)
     expect(shown(sync())?.at).toBe(0)
@@ -167,44 +162,39 @@ describe('RoomClient', () => {
     client.stop()
   })
 
-  it('polls when the stream sends nothing, sends back the version, and ignores older states', async () => {
-    const guide = fakeGuide()
-    const client = new RoomClient('KTRB', helper, guide.transport)
-    client.start()
-    await vi.advanceTimersByTimeAsync(STREAM_GRACE_MS)
-    expect(guide.streams[0].closed).toBe(true)
-    expect(guide.polls[0].since).toBe(null)
-    guide.polls[0].answer.resolve({ code: 'KTRB', state: state(5, { at: 5 }), peers: { patient: 1, helpers: ['Priya'] }, version: 9 })
-    await settle()
-    expect(client.getSnapshot()).toMatchObject({ status: 'live', peers: { patient: 1, helpers: ['Priya'] } })
-    await vi.advanceTimersByTimeAsync(POLL_MS)
-    expect(guide.polls[1].since).toBe(9)
-    guide.polls[1].answer.resolve(null)
-    await vi.advanceTimersByTimeAsync(POLL_MS)
-    guide.polls[2].answer.resolve({ code: 'KTRB', state: state(4, { at: 4 }), peers: { patient: 1, helpers: ['Priya'] }, version: 10 })
-    await settle()
+  it('ignores older states from the query', () => {
+    const { guide, client } = connect(helper, state(5, { at: 5 }))
+    guide.push(state(4, { at: 4 }), { patient: 1, helpers: ['Priya'] })
     expect(shown(client.getSnapshot().sync)?.at).toBe(5)
+    expect(client.getSnapshot().peers).toEqual({ patient: 1, helpers: ['Priya'] })
     client.stop()
   })
 
-  it('a stream error switches to polling at once, and a 404 means the room is gone', async () => {
-    const guide = fakeGuide()
-    const client = new RoomClient('KTRB', helper, guide.transport)
-    client.start()
-    guide.streams[0].emit('error')
-    expect(guide.polls).toHaveLength(1)
-    guide.polls[0].answer.reject(new GuideError(404, 'No such room.'))
-    await settle()
-    expect(client.getSnapshot().status).toBe('gone')
-    expect(client.closed).toBe(true)
+  it('says it is here every five seconds, and stops when closed', async () => {
+    const { guide, client } = connect(helper, state(0))
+    expect(guide.beats).toEqual([helper])
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS * 2)
+    expect(guide.beats).toHaveLength(3)
+    client.stop()
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS * 2)
+    expect(guide.beats).toHaveLength(3)
+    expect(guide.watchers[0].stopped).toBe(true)
   })
 
-  it('a 404 on a change means the room is gone', async () => {
-    const { guide, client } = connect(patient, state(0, { by: 'patient', name: null }))
-    client.change(() => ({ at: 1, atId: null, window: null }))
-    guide.posts[0].answer.reject(new GuideError(404, 'No such room.'))
-    await settle()
+  it('shows reconnecting while the connection is down', () => {
+    const { guide, client } = connect(helper, state(0))
+    guide.link(false)
+    expect(client.getSnapshot().status).toBe('reconnecting')
+    guide.link(true)
+    expect(client.getSnapshot().status).toBe('live')
+    client.stop()
+  })
+
+  it('a room the query no longer finds is gone', () => {
+    const { guide, client } = connect(helper, state(0))
+    guide.vanish()
     expect(client.getSnapshot().status).toBe('gone')
+    expect(client.closed).toBe(true)
   })
 })
 
@@ -212,12 +202,12 @@ describe('acquireRoom', () => {
   it("keeps the iPad's room, and its unsent change, across the switch from museum to window", async () => {
     const guide = fakeGuide()
     const museum = acquireRoom('KTRB', patient, guide.transport)
-    guide.streams[0].emit('state', state(0, { by: 'patient', name: null }))
+    guide.push(state(0, { by: 'patient', name: null }))
     museum.client.change(() => ({ at: 0, atId: A, window: A }))
     museum.release()
     const window = acquireRoom('KTRB', patient, guide.transport)
     expect(window.client).toBe(museum.client)
-    expect(guide.streams).toHaveLength(1)
+    expect(guide.watchers).toHaveLength(1)
     expect(shown(window.client.getSnapshot().sync)?.window).toBe(A)
     window.release()
     await vi.advanceTimersByTimeAsync(KEEP_MS)

@@ -1,16 +1,20 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 
-import { guide, publicGuide, STATIC } from '../api';
-import type { CaptureDetail, Fact, Moment, Progress, PublicCapture, PublicSession } from '../api';
-import { HeroCloud, MiniViewer } from '../showcase/Scenes';
+import { dataMode, loadCaptureAssets, publicData, type CaptureAssets, type Fact, type Moment, type Progress, type PublicCapture, type PublicSession } from '../data';
 import type { Layers } from '../showcase/Scenes';
+
+// The 3D scenes (three.js) load only once the page has something to show in them, so the front
+// page's first download stays small.
+const HeroCloud = lazy(() => import('../showcase/Scenes').then((m) => ({ default: m.HeroCloud })));
+const MiniViewer = lazy(() => import('../showcase/Scenes').then((m) => ({ default: m.MiniViewer })));
+const STATIC = dataMode === 'static';
 import '../showcase/showcase.css';
 
 const MemoryLane = lazy(() => import('../showcase/MemoryLane'));
 
 type Entry = {
   capture: PublicCapture;
-  detail: CaptureDetail;
+  assets: CaptureAssets;
   moment: Moment | null;
   progress: Progress | null;
   sessions: PublicSession[];
@@ -29,23 +33,26 @@ export function Showcase() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const list = await publicGuide.captures();
+      const list = await publicData.captures();
       const loaded = await Promise.all(
-        list.map(async (capture): Promise<Entry> => {
-          const [detail, moment, progress] = await Promise.all([
-            guide.capture(capture.id),
-            publicGuide.moment(capture.id).catch(() => null),
-            publicGuide.progress(capture.id).catch(() => null),
+        list.map(async (capture): Promise<Entry | null> => {
+          // A moment that can't be read (e.g. a video still being converted) is left out, not guessed at.
+          const assets = await loadCaptureAssets(capture.id, { public: true }).catch(() => null);
+          if (!assets) return null;
+          const [moment, progress] = await Promise.all([
+            publicData.moment(capture.id).catch(() => null),
+            publicData.progress(capture.id).catch(() => null),
           ]);
           const sessions = await Promise.all(
-            (progress?.sessions ?? []).map((s) => publicGuide.session(s.sessionId).catch(() => null)),
+            (progress?.sessions ?? []).map((s) => publicData.session(s.sessionId).catch(() => null)),
           );
-          return { capture, detail, moment, progress, sessions: sessions.filter((s): s is PublicSession => s !== null) };
+          return { capture, assets, moment, progress, sessions: sessions.filter((s): s is PublicSession => s !== null) };
         }),
       );
       if (cancelled) return;
-      setEntries(loaded);
-      setSceneId(loaded[0]?.capture.id ?? null);
+      const ready = loaded.filter((e): e is Entry => e !== null);
+      setEntries(ready);
+      setSceneId(ready[0]?.capture.id ?? null);
     })().catch((e: Error) => !cancelled && setError(e.message));
     return () => {
       cancelled = true;
@@ -80,7 +87,7 @@ export function Showcase() {
       </nav>
 
       <header className="hero">
-        {lead && <HeroCloud id={lead.capture.id} />}
+        {lead && <Suspense fallback={null}><HeroCloud id={lead.capture.id} /></Suspense>}
         <div className="hero-fade" />
         <div className="hero-copy">
           <p className="eyebrow">For families of people living with Alzheimer's</p>
@@ -147,12 +154,12 @@ export function Showcase() {
           <div className="moment-grid">
             {entries.map((e) => (
               <a key={e.capture.id} className="moment-card" href={`#/p/${e.capture.id}`}>
-                {e.capture.thumb ? <img src={publicGuide.file(e.capture.id, 'thumb.jpg')} alt="" loading="lazy" /> : <div className="no-thumb" />}
+                {e.capture.thumbUrl ? <img src={e.capture.thumbUrl} alt="" loading="lazy" /> : <div className="no-thumb" />}
                 <div>
                   <strong>{e.capture.title || 'A visit'}</strong>
                   <span className="muted small">
                     {e.capture.durationSec ? `${Math.round(e.capture.durationSec)} s` : ''} · {e.capture.facts} approved facts
-                    {e.detail.manifest.room ? ` · ${(e.detail.manifest.room.points / 1000).toFixed(0)}k room points` : ''}
+                    {e.assets.manifest.room ? ` · ${(e.assets.manifest.room.points / 1000).toFixed(0)}k room points` : ''}
                   </span>
                   <span className="walk">Walk in →</span>
                 </div>
@@ -274,7 +281,7 @@ const SCENES: { id: string; layers: Layers; label: string }[] = [
 function Walkthrough({ entries, scene, setSceneId }: { entries: Entry[]; scene: Entry; setSceneId: (id: string) => void }) {
   const active = useActiveStep(SCENES.map((s) => s.id));
   const current = SCENES.find((s) => s.id === active) ?? SCENES[0];
-  const m = scene.detail.manifest;
+  const m = scene.assets.manifest;
   const files: [string, string][] = [
     ['room.bin', m.room ? `${m.room.points.toLocaleString()} coloured points, 1 cm apart` : 'no room scan'],
     ['video.mp4', `${Math.round(m.video.durationSec)} s, ${m.video.width}×${m.video.height}, with sound`],
@@ -330,7 +337,7 @@ function Walkthrough({ entries, scene, setSceneId }: { entries: Entry[]; scene: 
         </div>
 
         <div className="walk-stage">
-          <MiniViewer id={scene.capture.id} layers={current.layers} label={current.label} />
+          <Suspense fallback={<div className="mini-viewer note">Loading the scene…</div>}><MiniViewer id={scene.capture.id} layers={current.layers} label={current.label} /></Suspense>
           {entries.length > 1 && (
             <div className="scene-pills" role="group" aria-label="Choose a scan">
               {entries.map((e) => (
@@ -393,7 +400,7 @@ function FactsStep({ entry }: { entry: Entry }) {
           const fr = frameOf(f);
           return (
             <li key={f.id}>
-              {fr && fr.type === 'frame' && <img src={publicGuide.file(entry.capture.id, fr.keyframe)} alt="" loading="lazy" />}
+              {fr && fr.type === 'frame' && entry.assets.rawUrl(fr.keyframe) && <img src={entry.assets.rawUrl(fr.keyframe)!} alt="" loading="lazy" />}
               <div>
                 <p>{f.text}</p>
                 <span className="muted small">{fr && fr.type === 'frame' ? `evidence: frame at ${Math.round(fr.t)} s` : ''} · {f.kind}</span>

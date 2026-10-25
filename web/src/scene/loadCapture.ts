@@ -1,13 +1,13 @@
-// Load the parts of a capture the viewer needs: from the guide server, or a room.bin opened
+// Load the parts of a capture the viewer needs: from the data layer, or a room.bin opened
 // from this computer. Every missing or broken file becomes an error the UI shows; nothing is
 // substituted.
 
-import { captureFileUrl, fetchBytes, fetchText, guide } from '../api'
+import { fetchBytes, fetchText, loadCaptureAssets, type CaptureAssets } from '../data'
 import type { Manifest, RoomSplat } from '../api'
 import { parseFramesJsonl, parseRoomBin, type FrameLog, type PointCloud } from './formats'
 
 export interface LoadedCapture {
-  /** Guide capture id; null for a room.bin opened from this computer. */
+  /** Capture id; null for a room.bin opened from this computer. */
   id: string | null
   label: string
   manifest: Manifest | null
@@ -18,14 +18,25 @@ export interface LoadedCapture {
   /** The room as 3D Gaussians, when the capture has one; the points stay available as the raw view. */
   splat: (RoomSplat & { url: string }) | null
   errors: string[]
-  /** True when the family marked this capture public (only meaningful for guide captures). */
+  /** True when the family marked this capture public (only meaningful for server captures). */
   isPublic: boolean
+  /** Where its files are (null for a room.bin opened from this computer). */
+  assets: CaptureAssets | null
 }
 
 const FRAMES_FILE = 'frames.jsonl'
 
-export async function loadGuideCapture(id: string): Promise<LoadedCapture> {
-  const { manifest, status } = await guide.capture(id)
+export async function loadGuideCapture(id: string, opts: { public?: boolean } = {}): Promise<LoadedCapture> {
+  return loadFromAssets(await loadCaptureAssets(id, opts))
+}
+
+export async function loadFromAssets(assets: CaptureAssets): Promise<LoadedCapture> {
+  const { id, manifest } = assets
+  const file = (name: string) => {
+    const url = assets.rawUrl(name)
+    if (!url) throw new Error('not uploaded')
+    return url
+  }
   const errors: string[] = []
   const attempt = async <T>(what: string, load: () => Promise<T>): Promise<T | null> => {
     try {
@@ -36,8 +47,8 @@ export async function loadGuideCapture(id: string): Promise<LoadedCapture> {
     }
   }
   const [cloud, frames] = await Promise.all([
-    manifest.room ? attempt('room.bin', async () => parseRoomBin(await fetchBytes(id, manifest.room!.bin))) : Promise.resolve(null),
-    attempt(FRAMES_FILE, async () => parseFramesJsonl(await fetchText(id, FRAMES_FILE))),
+    manifest.room ? attempt('room.bin', async () => parseRoomBin(await fetchBytes(file(manifest.room!.bin)))) : Promise.resolve(null),
+    attempt(FRAMES_FILE, async () => parseFramesJsonl(await fetchText(file(FRAMES_FILE)))),
   ])
   if (!manifest.room) errors.push('This capture has no room scan (room.bin).')
   const from = manifest.source === 'video' ? 'Note' : 'Warning from the phone'
@@ -48,10 +59,11 @@ export async function loadGuideCapture(id: string): Promise<LoadedCapture> {
     manifest,
     cloud,
     frames,
-    videoUrl: manifest.video?.file ? captureFileUrl(id, manifest.video.file) : null,
-    splat: manifest.room?.splat ? { ...manifest.room.splat, url: captureFileUrl(id, manifest.room.splat.file) } : null,
+    videoUrl: manifest.video?.file ? assets.rawUrl(manifest.video.file) : null,
+    splat: manifest.room?.splat && assets.rawUrl(manifest.room.splat.file) ? { ...manifest.room.splat, url: assets.rawUrl(manifest.room.splat.file)! } : null,
     errors,
-    isPublic: status.public === true,
+    isPublic: assets.public === true,
+    assets,
   }
 }
 
@@ -67,5 +79,6 @@ export async function loadRoomFile(file: File): Promise<LoadedCapture> {
     splat: null,
     errors: [],
     isPublic: false,
+    assets: null,
   }
 }
