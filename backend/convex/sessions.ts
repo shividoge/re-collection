@@ -28,6 +28,9 @@ import {
 import { endReason, endSummary, focus, reply, score, session, type Reply } from './validators'
 
 const proposed = v.array(v.object({ sentence: v.string(), factIds: v.array(v.string()), free: v.optional(v.boolean()) }))
+/** The facts, in the wording Claude was given; a sentence citing one the family reworded since is dropped. */
+const seenFacts = v.array(v.object({ id: v.string(), text: v.string() }))
+const seenMap = (seen: { id: string; text: string }[]) => new Map(seen.map((f) => [f.id, f.text]))
 
 async function loadSession(ctx: QueryCtx | MutationCtx, sessionId: string): Promise<Doc<'sessions'>> {
   const doc = await ctx.db.query('sessions').withIndex('by_sessionId', (q) => q.eq('sessionId', sessionId)).unique()
@@ -59,7 +62,7 @@ function summaryOf(s: Doc<'sessions'>) {
 }
 
 function publicFields(s: Doc<'sessions'>) {
-  const { _id, _creationTime, endingAt, ...rest } = s
+  const { _id, _creationTime, endingAt, endingToken, ...rest } = s
   return rest
 }
 
@@ -113,12 +116,12 @@ export const narrationInput = internalQuery({
 })
 
 export const commitNarration = internalMutation({
-  args: { sessionId: v.string(), chapterIndex: v.union(v.number(), v.null()), sentences: proposed },
+  args: { sessionId: v.string(), chapterIndex: v.union(v.number(), v.null()), sentences: proposed, seen: seenFacts },
   returns: reply,
-  handler: async (ctx, { sessionId, chapterIndex, sentences }) => {
+  handler: async (ctx, { sessionId, chapterIndex, sentences, seen }) => {
     const { session: s, ground } = await sessionContext(ctx, sessionId)
     if (s.endedAt || s.endingAt !== undefined) throw conflict('This session has ended.')
-    const grounded = finalReply(sentences, ground)
+    const grounded = finalReply(sentences, ground, { seen: seenMap(seen) })
     const t = new Date().toISOString()
     await ctx.db.patch(s._id, {
       said: addSaid(s.said, grounded),
@@ -148,6 +151,7 @@ export const narrate = action({
       sessionId,
       chapterIndex: input.chapter ? chapterIndex : null,
       sentences: readReply(data).sentences.map((s) => ({ sentence: s.sentence ?? '', factIds: s.factIds ?? [], free: s.free })),
+      seen: input.allowed.map((f) => ({ id: f.id, text: f.text })),
     })
     return { reply: grounded }
   },
@@ -171,6 +175,7 @@ export const commitTurn = internalMutation({
     saidAt: v.string(),
     focus: v.union(focus, v.null()),
     sentences: proposed,
+    seen: seenFacts,
     branch: v.union(v.string(), v.null()),
     distress: v.boolean(),
   },
@@ -181,7 +186,7 @@ export const commitTurn = internalMutation({
     const flagged = soundsDistressed(args.text)
     const distress = flagged || args.distress
     const cleanedFocus = cleanFocus(args.focus, ground.allowed)
-    const grounded = finalReply(args.sentences, ground, { distress, branch: Boolean(args.branch), echo: words(args.text) })
+    const grounded = finalReply(args.sentences, ground, { distress, branch: Boolean(args.branch), echo: words(args.text), seen: seenMap(args.seen) })
     const t = new Date().toISOString()
     await ctx.db.patch(s._id, {
       said: addSaid(s.said, grounded),
@@ -217,6 +222,7 @@ export const turn = action({
       saidAt,
       focus: cleanedFocus,
       sentences: r.sentences.map((s) => ({ sentence: s.sentence ?? '', factIds: s.factIds ?? [], free: s.free })),
+      seen: input.allowed.map((f) => ({ id: f.id, text: f.text })),
       branch: r.branch,
       distress: r.distress,
     })
@@ -236,20 +242,21 @@ export const beginEnd = internalMutation({
     if (s.endedAt) return { state: 'ended' as const, summary: summaryOf(s) }
     const now = Date.now()
     if (s.endingAt !== undefined && now - s.endingAt < ENDING_MS) return { state: 'ending' as const }
-    await ctx.db.patch(s._id, { endingAt: now })
+    const token = crypto.randomUUID()
+    await ctx.db.patch(s._id, { endingAt: now, endingToken: token })
     const moment = momentOf(await getMomentDoc(ctx, s.captureId))
     const allowedIds = moment ? s.allowedFactIds.filter((id) => moment.facts.some((f) => f.id === id)) : []
-    return { state: 'scoring' as const, moment, allowedIds, turns: s.turns }
+    return { state: 'scoring' as const, token, moment, allowedIds, turns: s.turns }
   },
 })
 
-/** Scoring failed: let the next `end` try again. */
+/** Scoring failed: let the next `end` try again (unless a newer `end` has taken over the claim). */
 export const abandonEnd = internalMutation({
-  args: { sessionId: v.string() },
+  args: { sessionId: v.string(), token: v.string() },
   returns: v.null(),
-  handler: async (ctx, { sessionId }) => {
+  handler: async (ctx, { sessionId, token }) => {
     const s = await loadSession(ctx, sessionId)
-    if (!s.endedAt) await ctx.db.patch(s._id, { endingAt: undefined })
+    if (!s.endedAt && s.endingToken === token) await ctx.db.patch(s._id, { endingAt: undefined, endingToken: undefined })
     return null
   },
 })
@@ -265,6 +272,7 @@ export const summary = internalQuery({
 export const commitEnd = internalMutation({
   args: {
     sessionId: v.string(),
+    token: v.string(),
     endedAt: v.string(),
     reason: endReason,
     scores: v.array(score),
@@ -275,6 +283,7 @@ export const commitEnd = internalMutation({
   handler: async (ctx, args) => {
     const s = await loadSession(ctx, args.sessionId)
     if (s.endedAt) return summaryOf(s)
+    if (s.endingToken !== args.token) throw conflict('This session is being scored by another call. Try again in a minute.')
     const next = {
       endedAt: args.endedAt,
       endReason: args.reason,
@@ -282,7 +291,7 @@ export const commitEnd = internalMutation({
       note: args.note,
       branches: mergeBranches(s.branches, args.branches, args.endedAt),
     }
-    await ctx.db.patch(s._id, { ...next, endingAt: undefined })
+    await ctx.db.patch(s._id, { ...next, endingAt: undefined, endingToken: undefined })
     return summaryOf({ ...s, ...next })
   },
 })
@@ -306,6 +315,7 @@ export const end = action({
       throw conflict('This session is still being scored. Try again in a minute.')
     }
     const endedAt = new Date().toISOString()
+    const { token } = input
     try {
       const { lines, patientLines } = scoringLines(input.turns)
       let scored: ReturnType<typeof applyScores>
@@ -317,9 +327,9 @@ export const end = action({
         const { data } = await claudeFromEnv().json(scoringRequest(claudeConfig().models, input.moment, input.allowedIds, lines))
         scored = applyScores(data, input.allowedIds, input.turns, patientLines)
       }
-      return await ctx.runMutation(internal.sessions.commitEnd, { sessionId, endedAt, reason, ...scored })
+      return await ctx.runMutation(internal.sessions.commitEnd, { sessionId, token, endedAt, reason, ...scored })
     } catch (error) {
-      await ctx.runMutation(internal.sessions.abandonEnd, { sessionId })
+      await ctx.runMutation(internal.sessions.abandonEnd, { sessionId, token })
       throw toConvexError(error)
     }
   },

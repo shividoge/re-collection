@@ -140,6 +140,39 @@ describe('sessions', () => {
     expect(turn.reply.dropped[0].reason).toMatch(/don't bring this up/)
   })
 
+  test('a fact the family rewords during the Claude call is not spoken in the old wording (turn and narration)', async () => {
+    const { sessionId } = await t.mutation(api.sessions.start, { captureId: CAPTURE_ID })
+    claude.next = () => ({ sentences: [{ sentence: 'Priya brought the mango cake.', factIds: ['f1'], free: false }], branch: null, distress: false })
+    claude.during = () => t.mutation(api.moments.patchFact, { captureId: CAPTURE_ID, factId: 'f1', editedText: 'Priya brought a lemon tart.' }).then(() => undefined)
+    const turn = await t.action(api.sessions.turn, { sessionId, text: 'Tell me about it.' })
+    expect(turn.reply.sentences.map((s) => s.sentence)).toEqual(["I'm right here with you."])
+    expect(turn.reply.dropped[0].reason).toMatch(/wording the family changed/)
+
+    claude.during = () => t.mutation(api.moments.patchFact, { captureId: CAPTURE_ID, factId: 'f1', editedText: 'Priya brought a plum tart.' }).then(() => undefined)
+    const narration = await t.action(api.sessions.narrate, { sessionId, chapterIndex: 0 })
+    expect(narration.reply.sentences.map((s) => s.sentence)).not.toContain('Priya brought the mango cake.')
+    expect(narration.reply.dropped[0].reason).toMatch(/wording the family changed/)
+    expect((await t.query(api.sessions.get, { sessionId }))?.said).not.toContain('f1')
+  })
+
+  test("an older end that gave up can't release a newer end's scoring claim", async () => {
+    const { sessionId } = await t.mutation(api.sessions.start, { captureId: CAPTURE_ID })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const a = await t.mutation(internal.sessions.beginEnd, { sessionId })
+      vi.setSystemTime(Date.now() + 5 * 60_000 + 1) // A looks stuck: B takes over
+      const b = await t.mutation(internal.sessions.beginEnd, { sessionId })
+      if (a.state !== 'scoring' || b.state !== 'scoring') throw new Error('both should have claimed scoring')
+      await t.mutation(internal.sessions.abandonEnd, { sessionId, token: a.token })
+      expect((await t.mutation(internal.sessions.beginEnd, { sessionId })).state).toBe('ending') // B still holds it
+      const commit = { sessionId, endedAt: new Date().toISOString(), reason: 'complete' as const, scores: [], branches: [], note: 'x' }
+      await expect(t.mutation(internal.sessions.commitEnd, { ...commit, token: a.token })).rejects.toThrow(/another call/)
+      expect((await t.mutation(internal.sessions.commitEnd, { ...commit, token: b.token, note: 'B' })).note).toBe('B')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test('a turn that lands while the session is being scored is refused, not lost silently', async () => {
     const { sessionId } = await t.mutation(api.sessions.start, { captureId: CAPTURE_ID })
     claude.next = () => ({ sentences: [{ sentence: 'Priya brought the mango cake.', factIds: ['f1'], free: false }], branch: null, distress: false })
