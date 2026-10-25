@@ -12,7 +12,6 @@ check) -> fuse (room.bin) -> write (depth, frames.jsonl, manifest). The splat is
 from __future__ import annotations
 
 import json
-import math
 import shutil
 import time
 import uuid
@@ -178,12 +177,9 @@ class Converter:
             checkpoint()
             progress("fuse", None, "Building the room")
             colors = lambda k: fusion.resize_images(full[k:k + 1], h, w)[0].to(dev)  # noqa: E731
-            voxel = opts.voxel
-            points, cols, weight = fusion.fuse_room(depth, keep, Ks, poses, colors, usable, voxel, weights=conf)
-            while len(points) > opts.max_points:  # surface points scale with 1/voxel^2
-                voxel *= max(1.2, math.sqrt(len(points) / opts.max_points))
-                points, cols = fusion.voxel_downsample(points, cols.float(), voxel, weight)
-                weight = None
+            # Bigger scenes end at coarser voxels: the grid grows them whenever it passes max_points.
+            points, cols, _, voxel = fusion.fuse_room(depth, keep, Ks, poses, colors, usable, opts.voxel, weights=conf,
+                                                      limit=opts.max_points)
             if len(points) == 0 or not torch.isfinite(points).all():
                 raise ConvertError("The room came out empty or with non-finite points.")
             points_np, cols_np = points.cpu().numpy(), cols.cpu().numpy()

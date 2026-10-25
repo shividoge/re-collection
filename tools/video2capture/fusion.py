@@ -8,6 +8,7 @@ on torch tensors so the same code works on CUDA, MPS or CPU.
 
 from __future__ import annotations
 
+import math
 from typing import Callable
 
 import torch
@@ -109,10 +110,13 @@ def voxel_keys(points: torch.Tensor, voxel: float) -> torch.Tensor:
 
 class VoxelGrid:
     """Running weighted sums of positions and colours per voxel, so a long video's frames can be
-    fused a batch at a time instead of all at once."""
+    fused a batch at a time instead of all at once. With a `limit`, the grid coarsens itself
+    whenever it holds more voxels than that (sums add up exactly, so merging voxels loses nothing
+    but resolution): memory stays bounded however much surface the video shows."""
 
-    def __init__(self, voxel: float, device: torch.device):
+    def __init__(self, voxel: float, device: torch.device, limit: int | None = None):
         self.voxel = voxel
+        self.limit = limit
         self.keys = torch.zeros(0, dtype=torch.long, device=device)
         self.sums = torch.zeros((0, 7), dtype=torch.float64, device=device)  # w·xyz, w·rgb, w
 
@@ -124,8 +128,17 @@ class VoxelGrid:
             points, colors, weights = points[ok], colors[ok], weights[ok]
         w = weights.double()[:, None]
         rows = torch.cat([points.double() * w, colors.double() * w, w], 1)
-        keys = torch.cat([self.keys, voxel_keys(points, self.voxel)])
-        rows = torch.cat([self.sums, rows])
+        self._merge(torch.cat([self.keys, voxel_keys(points, self.voxel)]), torch.cat([self.sums, rows]))
+        while self.limit is not None and len(self.keys) > self.limit:
+            self.coarsen(max(1.2, math.sqrt(len(self.keys) / self.limit)))
+
+    def coarsen(self, factor: float) -> None:
+        """Voxels `factor` times bigger; each old voxel goes where its centroid falls."""
+        self.voxel *= factor
+        centroids = self.sums[:, :3] / self.sums[:, 6:7].clamp_min(1e-12)
+        self._merge(voxel_keys(centroids.float(), self.voxel), self.sums)
+
+    def _merge(self, keys: torch.Tensor, rows: torch.Tensor) -> None:
         self.keys, inverse = torch.unique(keys, return_inverse=True)
         self.sums = torch.zeros((len(self.keys), 7), dtype=torch.float64, device=rows.device).index_add_(0, inverse, rows)
 
@@ -262,23 +275,30 @@ def blur_masked(x: torch.Tensor, ok: torch.Tensor, sigma: float) -> torch.Tensor
 
 def fuse_room(depth: torch.Tensor, keep: torch.Tensor, Ks: torch.Tensor, poses: torch.Tensor,
               colors: Callable[[int], torch.Tensor], frames: list[int], voxel: float, weights: torch.Tensor | None = None,
-              batch: int = 16) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Fuse the kept pixels of `frames` into one coloured cloud at the depth maps' own resolution
-    (no upsampling: at 1.5 cm voxels several frames already land in every voxel). Each voxel is the
-    `weights`-weighted average (the model's confidence) of the pixels that fall in it. `colors(k)` is
-    frame k's float RGB (h, w, 3), made on demand so a long video never holds them all. Returns points, uint8 colours and each voxel's total weight."""
+              limit: int | None = None, batch_rows: int = 4_000_000) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
+    """Fuse the kept pixels of `frames` into one coloured cloud at the depth maps' own resolution.
+    Each voxel is the `weights`-weighted average (the model's confidence) of the pixels that fall in
+    it. `colors(k)` is frame k's float RGB (h, w, 3), made on demand so a long video never holds
+    them all. Frames are added about `batch_rows` pixels at a time; with a `limit` the voxels grow
+    whenever there would be more than that (VoxelGrid). Returns points, uint8 colours, each
+    voxel's total weight and the voxel size it ended at."""
     if not frames:
         raise ValueError("no frames to fuse")
-    grid = VoxelGrid(voxel, depth.device)
-    for s in range(0, len(frames), batch):
-        pts, cols, ws = [], [], []
-        for k in frames[s:s + batch]:
-            m = keep[k]
-            pts.append(unproject(depth[k], Ks[k], poses[k])[m])
-            cols.append(colors(k)[m])
-            ws.append(weights[k][m] if weights is not None else torch.ones(int(m.sum()), device=depth.device))
-        grid.add(torch.cat(pts), torch.cat(cols), torch.cat(ws))
-    points, cols, weight = grid.result()
+    grid = VoxelGrid(voxel, depth.device, limit)
+    pts: list[torch.Tensor] = []
+    cols: list[torch.Tensor] = []
+    ws: list[torch.Tensor] = []
+    rows = 0
+    for i, k in enumerate(frames):
+        m = keep[k]
+        pts.append(unproject(depth[k], Ks[k], poses[k])[m])
+        cols.append(colors(k)[m])
+        ws.append(weights[k][m] if weights is not None else torch.ones(int(m.sum()), device=depth.device))
+        rows += len(pts[-1])
+        if rows >= batch_rows or i == len(frames) - 1:
+            grid.add(torch.cat(pts), torch.cat(cols), torch.cat(ws))
+            pts, cols, ws, rows = [], [], [], 0
+    points, colours, weight = grid.result()
     if len(points) == 0:
         raise ConvertError("No pixel had usable depth and confidence, so there is no room to build.")
-    return points, cols, weight
+    return points, colours, weight, grid.voxel

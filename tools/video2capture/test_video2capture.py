@@ -132,7 +132,7 @@ class Filters(unittest.TestCase):
         conf[0, :4, 32:] = float("nan")
         keep = torch.ones_like(depth, dtype=torch.bool)
         rgb = lambda k: torch.full((48, 64, 3), 200.0)  # noqa: E731
-        pts, cols, w = fusion.fuse_room(depth, keep, K[None], poses, rgb, [0], 0.05, weights=conf)
+        pts, cols, w, _ = fusion.fuse_room(depth, keep, K[None], poses, rgb, [0], 0.05, weights=conf)
         self.assertGreater(len(pts), 0)
         self.assertTrue(torch.isfinite(pts).all() and (w > 0).all())
         self.assertGreater(float(pts.norm(dim=1).min()), 1.9)  # nothing at (0, 0, 0)

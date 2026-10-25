@@ -254,6 +254,21 @@ class TorchParts(unittest.TestCase):
         self.assertAlmostEqual(float(out[48, 60]), 2.5, delta=0.02)
         self.assertEqual(float(fusion.transfer_detail(coarse, torch.zeros_like(coarse, dtype=torch.bool), fine).abs().max()), 0.0)
 
+    def test_voxel_grid_limit_coarsens_without_losing_weight(self):
+        import fusion
+
+        g = torch.Generator().manual_seed(0)
+        p = torch.rand((20_000, 3), generator=g)
+        grid = fusion.VoxelGrid(0.01, p.device, limit=1000)
+        for chunk in p.split(5000):
+            grid.add(chunk, torch.full((len(chunk), 3), 50.0), torch.ones(len(chunk)))
+        pts, cols, w = grid.result()
+        self.assertLessEqual(len(pts), 1000)
+        self.assertGreater(grid.voxel, 0.01)
+        self.assertAlmostEqual(float(w.sum()), 20_000, places=3)
+        self.assertTrue(torch.allclose((pts * w[:, None]).sum(0) / w.sum(), p.mean(0), atol=1e-5))
+        self.assertTrue((cols == 50).all())
+
     def test_voxel_keys_handle_negative_coordinates(self):
         import fusion
 
@@ -269,7 +284,7 @@ class TorchParts(unittest.TestCase):
         keep = torch.ones_like(depth, dtype=torch.bool)
         Ks = torch.tensor(K, dtype=torch.float32).expand(2, 3, 3)
         poses = torch.tensor(np.stack([pose([0, 0, 0]), pose([0, 0, 0])]), dtype=torch.float32)
-        pts, cols, w = fusion.fuse_room(depth, keep, Ks, poses, lambda k: torch.full((48, 64, 3), 128.0), [0, 1], 0.0001)
+        pts, cols, w, _ = fusion.fuse_room(depth, keep, Ks, poses, lambda k: torch.full((48, 64, 3), 128.0), [0, 1], 0.0001)
         self.assertEqual(len(pts), 48 * 64)  # one point per pixel, no upsampling
         self.assertTrue(torch.all(w == 2))
 
