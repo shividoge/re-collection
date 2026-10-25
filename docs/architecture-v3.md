@@ -172,8 +172,8 @@ Function names are the contract (`backend/convex/<module>.ts`). Validators live 
 | `uploads.resume` | action | `{ uploadId }` | same shape as start, listing only parts R2 doesn't have yet |
 | `uploads.finish` | action | `{ uploadId, parts?: [{ partNumber, etag }] }` | `{ ok, bytes }`; completes the multipart upload, HEADs the object, registers the file (→ stage triggers). Idempotent: a repeat (e.g. after a lost answer) returns the same `{ ok, bytes }` and registers nothing twice |
 | `captures.complete` | mutation | `{ captureId }` | `{ ok: true }` or throws `ConvexError({ code: 'invalid', errors })` |
-| `captures.list` | query | `{}` | `CaptureSummary[]` newest first: `{ id, title, createdAt, durationSec, source, thumbUrl, status, public }` |
-| `captures.get` | query | `{ captureId }` | `{ id, manifest, status, public, files: { [name]: { url, bytes, rev } }, derived: Derived | null, derivedFiles: { [name]: { url, bytes, rev } }, sourceVideo: { name, url, bytes, rev } \| null }` (`sourceVideo`: a video capture's uploaded `source.<ext>`) |
+| `captures.list` | query | `{}` | `CaptureSummary[]` newest first: `{ id, title, createdAt, durationSec, source, thumbUrl, status, queued, public }`; `queued`: the capture's queued jobs as `[{ kind, needs: { gpu, frames? } }]`, so the web can tell when no online worker can take one (§7) |
+| `captures.get` | query | `{ captureId }` | `{ id, manifest, status, queued, public, files: { [name]: { url, bytes, rev } }, derived: Derived | null, derivedFiles: { [name]: { url, bytes, rev } }, sourceVideo: { name, url, bytes, rev } \| null }` (`sourceVideo`: a video capture's uploaded `source.<ext>`) |
 | `captures.setPublic` | mutation | `{ captureId, public }` | `{ ok, public }` |
 | `captures.remove` | mutation | `{ captureId }` | `{ ok }` (deletes rows and leaves a tombstone; a scheduled action deletes the R2 objects, then the tombstone. Until then `captures.begin` for that id throws `ConvexError({ code: 'conflict' })`) |
 | (cron, daily) | – | – | Removes abandoned uploads the same way: `upload: receiving`, no file, upload or status change for 7 days, nothing queued or running, no session, no reviewed fact, and (video) no uploaded source |
@@ -316,7 +316,7 @@ Worker functions take `token` (env `WORKER_TOKEN` in Convex; workers read it fro
 
 - A cron every 30 s re-queues jobs whose lease expired (`attempts += 1`; at 3 → `failed` with "The worker stopped responding three times.").
 - On worker startup, nothing special: expired leases come back on their own.
-- Routing: `convert` jobs set `needs.frames` from the video duration (the converter's own frame-count formula: `min(240, max(16, floor(durationSec × 10) + 1))`, `tools/video2capture/convert.py frames_needed`); `splat` jobs need no frames (training uses at most 240 views; a 30 s phone capture peaked at 9.5 GB on the 16 GB card). The Fedora worker advertises `maxFrames` ≈ 67 (16 GB), the GX10 ≈ 240. A job no live worker can take stays queued and the web says so ("Waiting for a GPU worker that can handle a 4-minute video").
+- Routing: `convert` jobs set `needs.frames` from the video duration (the converter's own frame-count formula: `min(240, max(16, floor(durationSec × 10) + 1))`, `tools/video2capture/convert.py frames_needed`); `splat` jobs need no frames (training uses at most 240 views; a 30 s phone capture peaked at 9.5 GB on the 16 GB card). The Fedora worker advertises `maxFrames` ≈ 67 (16 GB), the GX10 ≈ 240. A job no live worker can take stays queued and the web says so ("Waiting for a GPU that can take a 31-second video. None is online right now."), checking each online worker with the scheduler's own rule (`canRun` in `shared/jobs.ts`) against the job's `needs` from `captures.list`/`get` `queued`.
 - The `workers` table records `{ workerId, kinds, gpu, maxFrames, lastSeen }` from claims/heartbeats so the web can show which workers are online.
 
 ## 8. Static site export

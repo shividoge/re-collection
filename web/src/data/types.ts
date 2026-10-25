@@ -31,6 +31,8 @@ export type { Manifest, RoomSplat, DepthInfo } from '../../../shared/manifest'
 export type Stage = 'not_started' | 'queued' | 'running' | 'done' | 'failed' | 'skipped'
 export type CaptureSummary = Infer<typeof captureSummary>
 export type CaptureDetail = Infer<typeof captureDetail>
+/** A capture's queued job and what it needs (captures.list / captures.get `queued`). */
+export type QueuedJob = CaptureSummary['queued'][number]
 /** A file entry as captures.get / public.capture list it. */
 export type NamedFile = Infer<typeof namedFile>
 /** public.captures (backend/convex/public.ts). */

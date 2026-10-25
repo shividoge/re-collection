@@ -6,8 +6,12 @@ import { ConvexError } from 'convex/values'
 import { internal } from '../_generated/api'
 import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
+import type { JobNeeds } from '../../../shared/jobs'
 import type { JobKind } from '../validators'
 import { getCapture, patchStatus } from './data'
+
+/** The routing rule lives in shared/ so the web's "no worker can take this" hint uses the same one. */
+export { canRun } from '../../../shared/jobs'
 
 export const LEASE_MS = 120_000
 /** Facts run in one Convex action (10-minute limit), so its lease outlasts the action. */
@@ -16,7 +20,7 @@ export const MAX_ATTEMPTS = 3
 export const STOPPED_RESPONDING = 'The worker stopped responding three times.'
 export const CONVEX_WORKER = 'convex'
 
-export type Needs = { gpu: boolean; frames?: number }
+export type Needs = JobNeeds
 
 /** True when the token matches WORKER_TOKEN (compared without early exit). */
 export function tokenMatches(token: string, expected: string | undefined): boolean {
@@ -48,12 +52,10 @@ export async function requireLease(ctx: QueryCtx | MutationCtx, jobId: Id<'jobs'
   return job
 }
 
-/** Can this worker run the job? */
-export function canRun(job: Pick<Doc<'jobs'>, 'kind' | 'needs'>, worker: { kinds: readonly string[]; gpu: boolean; maxFrames?: number }): boolean {
-  if (job.kind === 'facts' || !worker.kinds.includes(job.kind)) return false
-  if (job.needs.gpu && !worker.gpu) return false
-  if (job.needs.frames !== undefined && job.needs.frames > (worker.maxFrames ?? Infinity)) return false
-  return true
+/** The capture's queued jobs and what each needs (captures.list/get `queued`). */
+export async function queuedJobs(ctx: QueryCtx, captureId: string): Promise<{ kind: JobKind; needs: Needs }[]> {
+  const jobs = await ctx.db.query('jobs').withIndex('by_capture', (q) => q.eq('captureId', captureId)).collect()
+  return jobs.filter((j) => j.status === 'queued').map((j) => ({ kind: j.kind, needs: j.needs }))
 }
 
 export async function activeJob(ctx: MutationCtx, captureId: string, kind: JobKind): Promise<Doc<'jobs'> | null> {

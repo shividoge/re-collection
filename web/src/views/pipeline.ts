@@ -1,5 +1,6 @@
 // Pure: a capture's pipeline status (architecture-v3.md §5) as short plain-language lines.
-import type { CaptureStatus, Stage, WorkerInfo } from '../data'
+import { canRun } from '../../../shared/jobs'
+import type { CaptureStatus, QueuedJob, Stage, WorkerInfo } from '../data'
 
 export type Tone = 'done' | 'working' | 'failed' | 'idle'
 export type StageLine = { key: string; label: string; tone: Tone }
@@ -16,19 +17,27 @@ const VERBS: Record<Kind, Partial<Record<Stage, string>>> = {
 
 const toneOf = (s: Stage): Tone => (s === 'done' ? 'done' : s === 'failed' ? 'failed' : s === 'queued' || s === 'running' ? 'working' : 'idle')
 
-const minutes = (sec: number) => {
-  const m = Math.max(1, Math.round(sec / 60))
-  return `${m}-minute`
+/** "a 31-second video", "an 8-second video", "a 4-minute video"; "this video" when the length is unknown. */
+export function aVideoOf(sec: number | null): string {
+  if (!sec || !Number.isFinite(sec) || sec <= 0) return 'this video'
+  const n = sec < 90 ? Math.max(1, Math.round(sec)) : Math.round(sec / 60)
+  const an = n === 11 || n === 18 || String(n).startsWith('8')
+  return `${an ? 'an' : 'a'} ${n}-${sec < 90 ? 'second' : 'minute'} video`
 }
 
-/** Can some online worker take a job of this kind? (Frame limits aren't in the status; see the report.) */
-const canRun = (workers: WorkerInfo[], kind: Kind, gpu: boolean) => workers.some((w) => w.kinds.includes(kind) && (!gpu || w.gpu))
+/** What a queued job nobody online can take says (the same rule the scheduler uses: shared/jobs.ts). */
+const NO_WORKER: Record<Exclude<Kind, 'facts'>, (durationSec: number | null) => string> = {
+  convert: (sec) => `Waiting for a GPU that can take ${aVideoOf(sec)}. None is online right now.`,
+  splat: () => 'Waiting for a GPU to train the splat. None is online right now.',
+  bake: () => 'Waiting for a worker to build the room. None is online right now.',
+}
 
 /**
- * One line per stage that applies, in pipeline order. `workers` are the ones online now; a queued
- * job nobody online can take says what it's waiting for.
+ * One line per stage that applies, in pipeline order. `workers` are the ones online now and
+ * `queued` the capture's queued jobs with their needs; a queued job nobody online can take says
+ * what it's waiting for.
  */
-export function stageLines(status: CaptureStatus, workers: WorkerInfo[], durationSec: number | null): StageLine[] {
+export function stageLines(status: CaptureStatus, workers: WorkerInfo[], durationSec: number | null, queued: QueuedJob[]): StageLine[] {
   if (status.upload === 'invalid') {
     return [{ key: 'upload', label: `Incomplete: ${status.uploadErrors[0] ?? 'the upload didn’t match its manifest'}`, tone: 'failed' }]
   }
@@ -43,11 +52,9 @@ export function stageLines(status: CaptureStatus, workers: WorkerInfo[], duratio
       continue
     }
     let label = VERBS[kind][stage] ?? `${NAMES[kind]}: not started`
-    const gpu = kind === 'convert' || kind === 'splat'
-    if (stage === 'queued' && kind !== 'facts' && !canRun(workers, kind, gpu)) {
-      label = gpu
-        ? `Waiting for a GPU worker that can handle ${durationSec ? `a ${minutes(durationSec)} video` : 'this video'}`
-        : 'Waiting for a worker to build the room'
+    if (stage === 'queued' && kind !== 'facts') {
+      const needs = queued.find((j) => j.kind === kind)?.needs ?? { gpu: kind !== 'bake' }
+      if (!workers.some((w) => canRun({ kind, needs }, w))) label = NO_WORKER[kind](durationSec)
     }
     lines.push({ key: kind, label, tone: toneOf(stage) })
   }

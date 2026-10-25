@@ -17,14 +17,16 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
   const now = useNow()
 
   const workers = onlineWorkers(health.status === 'ready' ? health.data : null, now)
-  const live = status.status === 'ready' ? status.data : null
+  const pipeline = status.status === 'ready' ? status.data : null
+  const live = pipeline?.status ?? null
+  const queued = pipeline?.queued ?? []
   // An old video has no 3D (and only a seed manifest) until it's converted: show that instead.
   if (live && live.source === 'video' && live.convert !== 'done') {
     return (
       <div className="center-message">
         <div>
           <p>This video is being turned into a 3D moment. It opens here when it's ready.</p>
-          <PipelineStatus capture={{ status: live, durationSec: 0 }} workers={workers} />
+          <PipelineStatus capture={{ status: live, durationSec: 0, queued }} workers={workers} />
           <p>
             <a href="#/captures">← Captures</a>
           </p>
@@ -63,7 +65,7 @@ export function CaptureView({ id, startAt }: { id: string; startAt?: number }) {
       </header>
       {live && pending && (
         <div className="banner">
-          <PipelineStatus capture={{ status: live, durationSec: manifest.video.durationSec ?? 0 }} workers={workers} />
+          <PipelineStatus capture={{ status: live, durationSec: manifest.video.durationSec ?? 0, queued }} workers={workers} />
         </div>
       )}
       <main className="main">

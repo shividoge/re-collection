@@ -148,8 +148,8 @@ export function Gallery() {
 }
 
 /** Where the capture is in the pipeline, live from its status. */
-export function PipelineStatus({ capture, workers }: { capture: Pick<CaptureSummary, 'status' | 'durationSec'>; workers: WorkerInfo[] }) {
-  const lines = stageLines(capture.status, workers, capture.durationSec || null)
+export function PipelineStatus({ capture, workers }: { capture: Pick<CaptureSummary, 'status' | 'durationSec' | 'queued'>; workers: WorkerInfo[] }) {
+  const lines = stageLines(capture.status, workers, capture.durationSec || null, capture.queued)
   return (
     <div className="stage-lines">
       {lines.map((l) => (
