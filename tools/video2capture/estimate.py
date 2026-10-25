@@ -23,9 +23,10 @@ import align
 from decode import ConvertError
 
 FLIP = np.diag([1.0, -1.0, -1.0, 1.0])  # OpenCV <-> ARKit axes, for camera and world frames
-# Measured on CUDA at DA3's 504 px processing size (README "The model"): the 1.4B-parameter
-# model's weights stay resident; every frame of a pass adds about this much at the peak.
-GIB_PER_FRAME = 0.065
+# Measured with workers/gpu/calibrate.py at DA3's 504 px processing size on the RTX 5060 Ti:
+# above the resident weights, a pass peaks at 1.85 GiB + 0.070 GiB per frame (16-80 frames).
+GIB_PER_FRAME = 0.070
+PASS_CONSTANT_GIB = 1.85
 MAX_PASS_FRAMES = 240
 
 
@@ -36,9 +37,9 @@ def to_capture_pose(w2c: np.ndarray) -> np.ndarray:
     return FLIP @ np.linalg.inv(m) @ FLIP
 
 
-def frames_that_fit(free_gib: float, reserve_gib: float = 1.5) -> int:
-    """Model frames one pass can take with `free_gib` free after the model is loaded."""
-    return int(max(0, min(MAX_PASS_FRAMES, (free_gib - reserve_gib) / GIB_PER_FRAME)))
+def frames_that_fit(free_gib: float, margin_gib: float = 0.5) -> int:
+    """Model frames one pass can take with `free_gib` free after the models are loaded."""
+    return int(max(0, min(MAX_PASS_FRAMES, (free_gib - PASS_CONSTANT_GIB - margin_gib) / GIB_PER_FRAME)))
 
 
 @dataclass

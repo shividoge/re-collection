@@ -45,8 +45,11 @@ class GpuPipeline:
                  log: Callable[[str], None] = print) -> None:
         import torch
 
+        import decode
         from convert import Converter
 
+        for codec in ("h264", "hevc"):  # this machine's ffmpeg must handle phone videos; fail now, not per job
+            decode.check_ffmpeg(codec)
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         if not Path(model).exists() and "/" not in model:
             raise RuntimeError(f"No Depth Anything 3 model at {model}; set BRAINDANCE_DA3_MODEL (README).")

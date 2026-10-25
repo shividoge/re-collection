@@ -110,7 +110,7 @@ class Merge(unittest.TestCase):
 class Budget(unittest.TestCase):
     def test_frames_that_fit(self):
         self.assertEqual(estimate.frames_that_fit(1.0), 0)
-        self.assertEqual(estimate.frames_that_fit(1.5 + 0.065 * 67 + 0.01), 67)
+        self.assertEqual(estimate.frames_that_fit(1.85 + 0.5 + 0.070 * 67 + 0.01), 67)
         self.assertEqual(estimate.frames_that_fit(100), estimate.MAX_PASS_FRAMES)
 
     def test_frames_needed_for_routing(self):
