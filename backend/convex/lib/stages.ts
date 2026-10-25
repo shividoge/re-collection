@@ -110,10 +110,12 @@ export async function completeUpload(ctx: MutationCtx, capture: Doc<'captures'>)
  * trains it on its own video frames, LiDAR depth and ARKit poses, a converted video on its
  * estimates. Returns why it didn't when it doesn't. Never replaces a splat or a finished job.
  */
-export async function maybeQueueSplat(ctx: MutationCtx, capture: Doc<'captures'>, { dryRun = false } = {}): Promise<'queued' | 'would queue' | 'has a splat' | 'no room' | 'already queued'> {
+export async function maybeQueueSplat(ctx: MutationCtx, capture: Doc<'captures'>, { dryRun = false } = {}): Promise<'queued' | 'would queue' | 'has a splat' | 'no room' | 'already queued' | 'converting'> {
   const fresh = (await ctx.db.get(capture._id)) ?? capture
   const manifest = manifestOf(fresh)
   if (!manifest?.room) return 'no room'
+  // The conversion queues the splat for its new package when it completes.
+  if (await activeJob(ctx, fresh.captureId, 'convert')) return 'converting'
   if (manifest.room.splat || fresh.status.splat === 'done') return 'has a splat'
   if (await activeJob(ctx, fresh.captureId, 'splat')) return 'already queued'
   if (dryRun) return 'would queue'

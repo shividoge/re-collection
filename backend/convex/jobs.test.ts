@@ -397,6 +397,7 @@ describe('old video → capture', () => {
     await t.action(api.uploads.finish, { uploadId: target.uploadId })
     expect((await statusOf(t))?.convert).toBe('queued')
     await expect(t.mutation(api.admin.reconvertVideo, { token: TOKEN, captureId: CAPTURE_ID })).rejects.toThrow(/already being converted/)
+    expect((await t.mutation(internal.splats.backfill, { dryRun: false }))[0].result).toBe('converting') // not on the old package
 
     const job = await t.mutation(api.worker.claim, fedoraGpu)
     expect(job).toMatchObject({ kind: 'convert', captureId: CAPTURE_ID })
