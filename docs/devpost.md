@@ -5,11 +5,11 @@
 **Links**
 - Demo video (YouTube): https://youtu.be/FQ0vPIS4VM8
 - Live demo: https://shividoge.github.io/re-collection-site/
-- Code: https://github.com/shividoge/re-collection (private until we submit; see step 1 below)
+- Code: https://github.com/shividoge/re-collection (public)
 - Gallery images: Shivin has them in `~/Downloads/re-collection-devpost-gallery/` (12 images, 3:2)
 
 **How to submit (in this order)**
-1. **Right before submitting, make the repo public:** GitHub → `shividoge/re-collection` → Settings → General → Danger Zone → Change visibility → Public. (Shivin, as the owner, has to do this. The old API key in its history is already deleted and doesn't work.)
+1. ~~Make the repo public~~ **Done**: github.com/shividoge/re-collection is public.
 2. Fill in each Devpost field from the sections below, top to bottom.
 3. Upload the 12 gallery images in order, and put the YouTube link in "Video demo link".
 4. Add all three team members, tick the prizes listed below, and submit by **8:30 AM PT** (hard deadline 9:00).
@@ -159,7 +159,7 @@ claude, anthropic, convex, cloudflare-r2, cartesia, moss, swift, swiftui, arkit,
 
 - **Live demo:** https://shividoge.github.io/re-collection-site/ (all 9 rooms: 6 iPhone LiDAR scans and 3 rebuilt from old videos, plus the Memory Palace)
 - **Demo video:** https://youtu.be/FQ0vPIS4VM8
-- **Code:** https://github.com/shividoge/re-collection (make it public right before submitting: step 1 at the top)
+- **Code:** https://github.com/shividoge/re-collection
 
 ---
 
